@@ -409,3 +409,23 @@ h2 {
     color: #fff;
     transform: scale(1.2);
 }
+
+/* Easter Egg Button */
+.easter-egg-btn {
+    display: inline-block;
+    margin-top: 40px;
+    color: #222;
+    opacity: 0.15;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+}
+
+.easter-egg-btn:hover {
+    color: #fff;
+    opacity: 1;
+    transform: rotate(45deg) scale(1.2);
+}
+
+.easter-egg-btn svg {
+    display: block;
+}
