@@ -256,3 +256,79 @@ h2 {
 .nav-list {
     gap: 14px;
 }
+
+/* Closing Section Styles */
+.closing-section {
+    flex-direction: column;
+    text-align: center;
+}
+
+.closing-content {
+    max-width: 800px;
+    padding: 60px 40px;
+}
+
+.closing-title {
+    font-size: 2.2rem;
+    margin-bottom: 50px;
+    letter-spacing: 0.05em;
+}
+
+.closing-text {
+    font-size: 1.2rem;
+    line-height: 2.2;
+    color: #bbb;
+}
+
+.closing-text p {
+    margin-bottom: 25px;
+}
+
+.closing-text .highlight {
+    color: #fff;
+    font-size: 1.3rem;
+    margin: 35px 0;
+}
+
+.closing-text .emphasis {
+    font-size: 1.4rem;
+    color: #fff;
+    margin: 40px 0;
+    padding: 20px;
+    border-left: 3px solid #fff;
+    text-align: left;
+}
+
+.closing-text em {
+    color: #999;
+    font-style: italic;
+}
+
+.closing-text strong {
+    color: #fff;
+    font-weight: 500;
+}
+
+.closing-cta {
+    margin-top: 60px;
+    padding-top: 40px;
+    border-top: 1px solid #333;
+    font-size: 1.5rem;
+    line-height: 1.8;
+}
+
+.closing-cta .accent {
+    color: #fff;
+    font-weight: 700;
+}
+
+.closing-credits {
+    margin-top: 60px;
+    color: #555;
+    font-size: 0.95rem;
+    letter-spacing: 0.1em;
+}
+
+.closing-credits p {
+    margin-bottom: 8px;
+}
