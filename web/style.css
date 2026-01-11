@@ -412,18 +412,30 @@ h2 {
 
 /* Easter Egg Button */
 .easter-egg-btn {
-    display: inline-block;
-    margin-top: 40px;
-    color: #222;
-    opacity: 0.15;
-    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 60px;
+    width: 24px;
+    height: 24px;
+    border: 1px solid #333;
+    /* 增加一個深灰色邊框形成圓圈 */
+    border-radius: 50%;
+    color: #444;
+    /* 稍微提升基礎亮度 */
+    opacity: 0.3;
+    /* 提升基礎不透明度 */
+    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
     cursor: pointer;
+    text-decoration: none;
 }
 
 .easter-egg-btn:hover {
     color: #fff;
+    border-color: #fff;
     opacity: 1;
-    transform: rotate(45deg) scale(1.2);
+    transform: scale(1.2);
+    box-shadow: 0 0 15px rgba(255, 255, 255, 0.2);
 }
 
 .easter-egg-btn svg {
