@@ -416,24 +416,28 @@ h2 {
     align-items: center;
     justify-content: center;
     margin-top: 60px;
-    width: 32px;
-    height: 32px;
-    color: #444;
-    /* 微妙的灰色 */
-    opacity: 0.5;
-    /* 保持常駐顯示 */
-    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    width: 48px;
+    height: 48px;
+    opacity: 0.6;
+    transition: opacity 0.3s ease;
     cursor: pointer;
     text-decoration: none;
 }
 
-.easter-egg-btn:hover {
-    color: #fff;
-    opacity: 1;
-    transform: rotate(45deg) scale(1.1);
-    /* hover 時旋轉增加動態感 */
+.easter-egg-btn img {
+    width: 100%;
+    height: auto;
+    display: block;
+    /* 關鍵：將白底黑線圖片轉為適合深色背景的顯示效果 */
+    filter: invert(1) contrast(1.2);
+    mix-blend-mode: screen;
+    transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
 }
 
-.easter-egg-btn svg {
-    display: block;
+.easter-egg-btn:hover {
+    opacity: 1;
+}
+
+.easter-egg-btn:hover img {
+    transform: rotate(180deg) scale(1.1);
 }
