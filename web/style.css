@@ -441,3 +441,53 @@ h2 {
 .easter-egg-btn:hover img {
     transform: rotate(180deg) scale(1.1);
 }
+
+/* HOW & Technique Box */
+.how-tech-box {
+    margin-top: 40px;
+    padding: 25px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(10, 10, 10, 0.5);
+    backdrop-filter: blur(10px);
+    border-radius: 4px;
+    max-width: 500px;
+}
+
+.how-tech-item {
+    margin-bottom: 20px;
+}
+
+.how-tech-item:last-child {
+    margin-bottom: 0;
+}
+
+.how-tech-label {
+    display: block;
+    font-size: 0.8rem;
+    font-family: monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #888;
+    margin-bottom: 8px;
+}
+
+.how-tech-content {
+    display: block;
+    font-size: 1rem;
+    line-height: 1.6;
+    color: rgba(255, 255, 255, 0.8);
+    font-weight: 700;
+}
+
+.how-tech-content.technique {
+    font-family: monospace;
+    font-size: 0.9rem;
+    letter-spacing: 0.02em;
+}
+
+@media (max-width: 900px) {
+    .how-tech-box {
+        margin: 40px auto 0;
+        text-align: left;
+    }
+}
