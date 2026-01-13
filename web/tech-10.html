@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>10 / The Becoming - Identity Integration</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <style>
+        /* Tech-10 Specific Styles (Becoming Theme) */
+        body {
+            background-color: #050505;
+            color: #d4d4d4;
+        }
+
+        .tech-container {
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 80px 20px;
+        }
+
+        .tech-header {
+            text-align: center;
+            margin-bottom: 80px;
+        }
+
+        .tech-title {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 3rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            letter-spacing: -0.05em;
+        }
+
+        .tech-subtitle {
+            font-family: 'Noto Sans TC', sans-serif;
+            color: #888;
+            font-size: 1.2rem;
+            font-weight: 300;
+        }
+
+        /* Transformation Visual */
+        .transformation-stage {
+            width: 100%;
+            height: 400px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            position: relative;
+            margin-bottom: 60px;
+        }
+
+        .core-identity {
+            width: 100px;
+            height: 100px;
+            background: #fff;
+            clip-path: polygon(50% 0%, 0% 100%, 100% 100%);
+            /* Triangle */
+            transition: all 2s cubic-bezier(0.68, -0.55, 0.27, 1.55);
+            position: relative;
+            z-index: 10;
+        }
+
+        /* Particles */
+        .particle {
+            position: absolute;
+            width: 6px;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.5);
+            border-radius: 50%;
+            opacity: 0;
+            animation: absorb 3s infinite;
+        }
+
+        @keyframes absorb {
+            0% {
+                transform: translate(var(--tx), var(--ty)) scale(0);
+                opacity: 0;
+            }
+
+            50% {
+                opacity: 1;
+            }
+
+            100% {
+                transform: translate(0, 0) scale(1);
+                opacity: 0;
+            }
+        }
+
+        /* Becoming Animation State (JS will toggle this) */
+        .core-identity.evolved {
+            clip-path: polygon(50% 0%, 100% 38%, 82% 100%, 18% 100%, 0% 38%);
+            /* Pentagon/Star-like */
+            background: #ffcc00;
+            box-shadow: 0 0 50px rgba(255, 204, 0, 0.4);
+            transform: scale(1.5) rotate(720deg);
+        }
+
+        /* Logic Section */
+        .logic-section {
+            display: grid;
+            grid-template-columns: 1fr 1.5fr;
+            gap: 40px;
+            margin-bottom: 60px;
+            align-items: center;
+        }
+
+        .code-window {
+            background: #000;
+            border: 1px solid #333;
+            border-radius: 4px;
+            padding: 25px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            color: #ccc;
+        }
+
+        .code-line {
+            margin-bottom: 10px;
+            display: block;
+        }
+
+        .function {
+            color: #61afef;
+        }
+
+        .string {
+            color: #98c379;
+        }
+
+        .comment {
+            color: #666;
+            font-style: italic;
+        }
+
+        .narrative-box {
+            font-family: 'Noto Sans TC', sans-serif;
+            line-height: 1.8;
+            color: #ccc;
+        }
+
+        .back-btn {
+            display: block;
+            margin: 60px auto 0;
+            font-family: 'JetBrains Mono', monospace;
+            color: #666;
+            text-decoration: none;
+            width: fit-content;
+            border-bottom: 1px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .back-btn:hover {
+            color: #fff;
+            border-bottom-color: #fff;
+        }
+
+        @media (max-width: 768px) {
+            .logic-section {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <main class="tech-container">
+
+        <header class="tech-header">
+            <div class="tech-title">10 / THE BECOMING</div>
+            <div class="tech-subtitle">Model Fine-Tuning & Identity Shift</div>
+        </header>
+
+        <!-- Visual: Absorption & Evolution -->
+        <div class="transformation-stage">
+            <div class="core-identity" id="identityCore"></div>
+            <!-- Particles inserted by JS -->
+        </div>
+
+        <section class="logic-section">
+            <!-- ⚠️ 注意：以下為象徵性偽代碼，用於說明概念，並非真實可執行的 API。 -->
+            <div class="code-window">
+                <span class="comment"># The Ultimate Update Loop</span><br><br>
+                <span class="code-line">
+                    knowledge_base = <span class="function">load_all</span>()
+                </span>
+                <span class="code-line">
+                    <span class="keyword">while</span> <span class="string">True</span>:
+                </span>
+                <span class="code-line" style="margin-left:20px;">
+                    experience = <span class="function">live</span>()
+                </span>
+                <span class="code-line" style="margin-left:20px;">
+                    Model.<span class="function">fine_tune</span>(experience)
+                </span>
+                <span class="code-line" style="margin-left:20px;">
+                    Identity.<span class="function">upgrade</span>() <span class="comment"># v1.0 -> v2.0</span>
+                </span>
+            </div>
+
+            <div class="narrative-box">
+                <p><strong>你以前是拿著地圖的人。現在你自己就是地圖。</strong></p>
+                <p>Fine-Tuning (微調) 是機器學習的術語，但也是人類學習的本質。當你反覆進行高品質的知識 I/O，你的神經網絡（直覺）會被重寫。<br>
+                    你不再需要「查詢」答案。你「就是」答案。</p>
+            </div>
+        </section>
+
+        <a href="index.html#section-10" class="back-btn">← BACK TO PHYSICS OF INSIGHT</a>
+
+    </main>
+
+    <script>
+        // Particle System
+        const stage = document.querySelector('.transformation-stage');
+        const core = document.getElementById('identityCore');
+
+        function createParticle() {
+            const p = document.createElement('div');
+            p.classList.add('particle');
+
+            // Random start position outside
+            const angle = Math.random() * Math.PI * 2;
+            const dist = 150 + Math.random() * 50;
+            const tx = Math.cos(angle) * dist + 'px';
+            const ty = Math.sin(angle) * dist + 'px';
+
+            p.style.setProperty('--tx', tx);
+            p.style.setProperty('--ty', ty);
+
+            stage.appendChild(p);
+
+            // Cleanup
+            setTimeout(() => { p.remove(); }, 3000);
+        }
+
+        setInterval(createParticle, 100);
+
+        // Evolution Toggle Loop
+        setInterval(() => {
+            core.classList.toggle('evolved');
+        }, 4000);
+    </script>
+</body>
+
+</html>

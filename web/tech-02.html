@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>02 / Cultural Decoder - Process Visualization</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <style>
+        /* Tech-02 Specific Styles */
+        body {
+            background-color: #050505;
+        }
+
+        .tech-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 80px 20px;
+        }
+
+        .tech-header {
+            text-align: center;
+            margin-bottom: 80px;
+        }
+
+        .tech-title {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 3rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            letter-spacing: -0.05em;
+        }
+
+        .tech-subtitle {
+            font-family: 'Noto Sans TC', sans-serif;
+            color: #888;
+            font-size: 1.2rem;
+            font-weight: 300;
+        }
+
+        .diagram-section {
+            margin-bottom: 100px;
+            position: relative;
+        }
+
+        .diagram-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 20px;
+            display: block;
+            border-left: 2px solid #333;
+            padding-left: 10px;
+        }
+
+        /* CSS Diagrams */
+        .visual-block {
+            border: 1px solid #333;
+            padding: 40px;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 4px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            gap: 30px;
+            min-height: 300px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* 02-A The Loop of Politeness */
+        .loop-container {
+            position: relative;
+            width: 120px;
+            height: 120px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .loop-circle {
+            width: 100%;
+            height: 100%;
+            border: 2px dashed #666;
+            border-radius: 50%;
+            animation: spin 8s linear infinite;
+        }
+
+        .loop-cut {
+            position: absolute;
+            width: 140%;
+            height: 2px;
+            background: #fff;
+            transform: rotate(-45deg);
+            opacity: 0;
+            animation: slash 3s ease-in-out infinite;
+        }
+
+        .core-dot {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: #fff;
+            border-radius: 50%;
+            box-shadow: 0 0 15px #fff;
+        }
+
+        /* 02-B The Suspense (Inversion) */
+        .suspense-flow {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            width: 80%;
+        }
+
+        .wave-line {
+            flex: 1;
+            height: 2px;
+            background: repeating-linear-gradient(90deg,
+                    #666 0,
+                    #666 5px,
+                    transparent 5px,
+                    transparent 10px);
+            position: relative;
+        }
+
+        .wave-line::after {
+            content: 'CONTEXT / EXCUSE';
+            position: absolute;
+            top: -20px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.6rem;
+            color: #666;
+        }
+
+        .conclusion-dot {
+            width: 20px;
+            height: 20px;
+            background: #333;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            position: relative;
+        }
+
+        .arrow-invert {
+            font-size: 2rem;
+            color: #fff;
+            animation: point-left 2s infinite ease-in-out;
+        }
+
+        /* 02-C Katakana Fog */
+        .fog-container {
+            position: relative;
+            width: 100px;
+            height: 100px;
+        }
+
+        .fog-cloud {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: radial-gradient(circle, rgba(255, 255, 255, 0.4) 0%, rgba(255, 255, 255, 0) 70%);
+            filter: blur(10px);
+            animation: fade-fog 4s infinite alternate;
+        }
+
+        .anchor-shape {
+            position: absolute;
+            top: 25%;
+            left: 25%;
+            width: 50%;
+            height: 50%;
+            border: 2px solid #fff;
+            transform: rotate(45deg);
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            opacity: 0;
+            animation: show-anchor 4s infinite alternate;
+        }
+
+        /* Universal Strategy */
+        .transform-process {
+            display: flex;
+            align-items: center;
+            gap: 30px;
+        }
+
+        .shape-src {
+            width: 0;
+            height: 0;
+            border-left: 30px solid transparent;
+            border-right: 30px solid transparent;
+            border-bottom: 50px solid #666;
+            /* Triangle */
+        }
+
+        .prism {
+            width: 4px;
+            height: 60px;
+            background: #fff;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.5);
+        }
+
+        .shape-target {
+            width: 50px;
+            height: 50px;
+            background: #fff;
+            border-radius: 50%;
+            /* Circle */
+        }
+
+        .narrative-box {
+            margin-top: 30px;
+            font-family: 'Noto Sans TC', sans-serif;
+            line-height: 1.8;
+            color: #ccc;
+            font-size: 1rem;
+        }
+
+        .narrative-box strong {
+            color: #fff;
+            font-weight: 500;
+        }
+
+        .back-btn {
+            display: inline-block;
+            margin-top: 60px;
+            font-family: 'JetBrains Mono', monospace;
+            color: #666;
+            text-decoration: none;
+            border-bottom: 1px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .back-btn:hover {
+            color: #fff;
+            border-bottom-color: #fff;
+        }
+
+        /* Animations */
+        @keyframes spin {
+            100% {
+                transform: rotate(360deg);
+            }
+        }
+
+        @keyframes slash {
+
+            0%,
+            100% {
+                opacity: 0;
+                width: 0;
+            }
+
+            50% {
+                opacity: 1;
+                width: 140%;
+            }
+        }
+
+        @keyframes point-left {
+
+            0%,
+            100% {
+                transform: translateX(0);
+            }
+
+            50% {
+                transform: translateX(-10px);
+            }
+        }
+
+        @keyframes fade-fog {
+
+            0% {
+                opacity: 1;
+            }
+
+            100% {
+                opacity: 0.1;
+            }
+        }
+
+        @keyframes show-anchor {
+
+            0% {
+                opacity: 0;
+                transform: rotate(0deg) scale(0.5);
+            }
+
+            100% {
+                opacity: 1;
+                transform: rotate(45deg) scale(1);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <main class="tech-container">
+
+        <header class="tech-header">
+            <div class="tech-title">02 / DECODER</div>
+            <div class="tech-subtitle">Cultural Friction & The Art of Refactoring</div>
+        </header>
+
+        <!-- Japanese Friction 1: Politeness Loop -->
+        <section class="diagram-section">
+            <span class="diagram-label">JP FRICTION 01: THE DOUBLE-NEGATIVE LOOP</span>
+            <div class="visual-block">
+                <div class="loop-container">
+                    <div class="loop-circle"></div>
+                    <div class="core-dot"></div>
+                    <div class="loop-cut"></div>
+                </div>
+                <div style="font-family:'JetBrains Mono'; font-size:0.8rem; margin-top:20px; color:#888;">
+                    "ないではいけません" → POLARITY INVERSION → "MUST" (COMPLETE)
+                </div>
+            </div>
+            <div class="narrative-box">
+                <p><strong>邏輯極性翻轉 (Polarity Inversion)：</strong> 不為了「直接」而犧牲「完整性」。我們拒絕「矽谷式簡化」，那會丟失慎重的語感。<br>
+                    <strong>技術對策：</strong> 執行數學上的「負負得正」。在完全保留原始語句長度與語氣的前提下，將語法結構翻轉為正向肯定。讓讀者在不流失任何資訊量的情況下，直觀接收核心指令。
+                </p>
+            </div>
+        </section>
+
+        <!-- Japanese Friction 2: Suspense -->
+        <section class="diagram-section">
+            <span class="diagram-label">JP FRICTION 02: THE SUSPENSE STRUCTURE</span>
+            <div class="visual-block">
+                <div class="suspense-flow">
+                    <div class="conclusion-dot"></div>
+                    <div class="arrow-invert">←</div>
+                    <div class="wave-line"></div>
+                </div>
+                <div style="font-family:'JetBrains Mono'; font-size:0.8rem; margin-top:20px; color:#888;">
+                    REORDER: BLUF + FULL CONTEXT RETENTION
+                </div>
+            </div>
+            <div class="narrative-box">
+                <p><strong>前導結論與完整回溯：</strong> 對抗原文的時間軸，但不消滅鋪陳。日文「以小見大」的細節推導是文化精髓。<br>
+                    <strong>技術對策：</strong>
+                    我們在句首建立清晰的觀點路標（BLUF），隨後<strong>無損保留</strong>原本的背景與細節。讓讀者先知道盡頭在哪，再從容欣賞沿途的日式風景，不錯過任何附屬資訊。
+                </p>
+            </div>
+        </section>
+
+        <!-- Japanese Friction 3: Katakana Fog -->
+        <section class="diagram-section">
+            <span class="diagram-label">JP FRICTION 03: THE KATAKANA LAYER</span>
+            <div class="visual-block">
+                <div class="fog-container">
+                    <div class="fog-cloud"></div>
+                    <div class="anchor-shape">
+                        <span style="font-size:1.5rem; color:#fff;">源</span>
+                    </div>
+                </div>
+                <div style="font-family:'JetBrains Mono'; font-size:0.8rem; margin-top:20px; color:#888;">
+                    ANCHOR: SOURCE DEFINITION INTEGRITY
+                </div>
+            </div>
+            <div class="narrative-box">
+                <p><strong>源頭定義錨定：</strong> 片假名並非單純的崇洋，而是對國際專業名詞定義一致性的尊重。強行漢化反而會造成「再次轉義」的誤差。<br>
+                    <strong>技術對策：</strong> 我們不強行「意譯」。對於國際通用的專業術語，我們教導 AI 識別並保留其作為「通用協議」的精確性，維護與世界觀、學術界接軌的流通性。
+                </p>
+            </div>
+        </section>
+
+        <hr style="border:0; border-top:1px solid #333; margin: 80px 0;">
+
+        <!-- Universal Strategy -->
+        <section class="diagram-section">
+            <span class="diagram-label">UNIVERSAL STRATEGY: CORRECTING THE BIAS</span>
+            <div class="visual-block">
+                <div class="transform-process">
+                    <div class="shape-src"></div>
+                    <div class="prism"></div>
+                    <div class="shape-target"></div>
+                </div>
+                <div class="narrative-box" style="text-align: center; max-width: 600px;">
+                    <p><strong>校正模型的「中文視角偏誤」</strong></p>
+                    <p>這不只是翻譯，這是<strong>Model Alignment (模型對齊)</strong>。<br>
+                        大多數模型是用「中文看世界」的觀點訓練的，這導致了誤解與簡化。</p>
+                    <p style="margin-top:20px;">
+                        <em>"必須反覆建立觀念，逐步培養模型具備原文的文化底蘊與理性。"</em><br>
+                        我們的核心技術，就是在訓練過程中不斷植入這套「反對直覺」的文化防火牆，確保在語言轉換中，<strong>保有逐字稿的完整性與不省略的最高指導原則。</strong>
+                    </p>
+                </div>
+            </div>
+        </section>
+
+        <a href="index.html#section-2" class="back-btn">← BACK TO PHYSICS OF INSIGHT</a>
+
+    </main>
+
+</body>
+
+</html>
