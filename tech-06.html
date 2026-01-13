@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>06 / Curator Engine - Process Visualization</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <style>
+        /* Tech-06 Specific Styles */
+        body {
+            background-color: #050505;
+        }
+
+        .tech-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 80px 20px;
+        }
+
+        .tech-header {
+            text-align: center;
+            margin-bottom: 80px;
+        }
+
+        .tech-title {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 3rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            letter-spacing: -0.05em;
+        }
+
+        .tech-subtitle {
+            font-family: 'Noto Sans TC', sans-serif;
+            color: #888;
+            font-size: 1.2rem;
+            font-weight: 300;
+        }
+
+        .diagram-section {
+            margin-bottom: 100px;
+            position: relative;
+        }
+
+        .diagram-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 20px;
+            display: block;
+            border-left: 2px solid #333;
+            padding-left: 10px;
+        }
+
+        /* Funnel Visualization */
+        .funnel-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .funnel-layer {
+            width: 100%;
+            border: 1px solid #fff;
+            padding: 15px;
+            text-align: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            position: relative;
+        }
+
+        .layer-1 {
+            width: 100%;
+            border-color: #666;
+            color: #666;
+        }
+
+        .layer-2 {
+            width: 80%;
+            border-color: #888;
+            color: #888;
+        }
+
+        .layer-3 {
+            width: 60%;
+            border-color: #aaa;
+            color: #aaa;
+        }
+
+        .layer-4 {
+            width: 40%;
+            border-color: #fff;
+            color: #fff;
+            font-weight: bold;
+            background: rgba(255, 255, 255, 0.1);
+        }
+
+        .filter-arrow {
+            color: #fff;
+            font-size: 1.2rem;
+        }
+
+        /* Tech Stack Blocks */
+        .tech-stack-block {
+            border: 1px solid #333;
+            padding: 30px;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 4px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .code-window {
+            background: #000;
+            border: 1px solid #333;
+            border-radius: 4px;
+            padding: 15px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            color: #ccc;
+            overflow-x: auto;
+            position: relative;
+        }
+
+        .code-header {
+            display: flex;
+            gap: 5px;
+            margin-bottom: 10px;
+            padding-bottom: 10px;
+            border-bottom: 1px solid #333;
+        }
+
+        .traffic-light {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+        }
+
+        .red {
+            background: #ff5f56;
+        }
+
+        .yellow {
+            background: #ffbd2e;
+        }
+
+        .green {
+            background: #27c93f;
+        }
+
+        .code-content {
+            line-height: 1.6;
+        }
+
+        .comment {
+            color: #666;
+            font-style: italic;
+        }
+
+        .keyword {
+            color: #c678dd;
+        }
+
+        .string {
+            color: #98c379;
+        }
+
+        .function {
+            color: #61afef;
+        }
+
+        .number {
+            color: #d19a66;
+        }
+
+        .data-flow-viz {
+            height: 100px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 20px;
+            border-top: 1px dashed #333;
+            padding-top: 20px;
+        }
+
+        .viz-node {
+            border: 1px solid #fff;
+            padding: 5px 10px;
+            font-size: 0.7rem;
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .viz-arrow {
+            color: #666;
+        }
+
+        .narrative-box {
+            margin-top: 30px;
+            font-family: 'Noto Sans TC', sans-serif;
+            line-height: 1.8;
+            color: #ccc;
+            font-size: 1rem;
+        }
+
+        .narrative-box strong {
+            color: #fff;
+            font-weight: 500;
+        }
+
+        .back-btn {
+            display: inline-block;
+            margin-top: 60px;
+            font-family: 'JetBrains Mono', monospace;
+            color: #666;
+            text-decoration: none;
+            border-bottom: 1px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .back-btn:hover {
+            color: #fff;
+            border-bottom-color: #fff;
+        }
+    </style>
+</head>
+
+<body>
+
+    <main class="tech-container">
+
+        <header class="tech-header">
+            <div class="tech-title">06 / CURATOR ENGINE</div>
+            <div class="tech-subtitle">Multimodal Indexing Blueprint</div>
+        </header>
+
+        <!-- 06-A Smart Extraction (Funnel) -->
+        <section class="diagram-section">
+            <span class="diagram-label">STEP 1: SMART EXTRACTION FUNNEL</span>
+
+            <div class="tech-stack-block">
+
+                <!-- Python Logic: Layer 1 (Scene Detect) -->
+                <div class="code-window">
+                    <div class="code-header">
+                        <div class="traffic-light red"></div>
+                        <div class="traffic-light yellow"></div>
+                        <div class="traffic-light green"></div>
+                        <span style="margin-left:10px; color:#666;">1_detect_scenes.py</span>
+                    </div>
+                    <div class="code-content">
+                        <span class="keyword">from</span> scenedetect <span class="keyword">import</span> detect,
+                        ContentDetector<br>
+                        <br>
+                        <span class="comment"># 不再傻傻每60秒切一張。</span><br>
+                        <span class="comment"># 只有當畫面發生「顯著變化」（如換頁）時才截圖。</span><br>
+                        scene_list = <span class="function">detect</span>(video_path, <span
+                            class="function">ContentDetector</span>(threshold=<span class="number">30.0</span>))
+                    </div>
+                </div>
+
+                <!-- Python Logic: Layer 2 (pHash) -->
+                <div class="code-window" style="margin-top:20px;">
+                    <div class="code-header">
+                        <span style="margin-left:10px; color:#666;">2_remove_dupes.py</span>
+                    </div>
+                    <div class="code-content">
+                        <span class="keyword">import</span> imagehash<br>
+                        <br>
+                        <span class="comment"># 計算圖片指紋 (Hash)。如果兩張圖指紋太像，</span><br>
+                        <span class="comment"># 代表講師只移動了滑鼠，這就是重複的，刪掉。</span><br>
+                        <span class="keyword">if</span> (hash1 - hash2) < <span class="number">5</span>: <span
+                                class="keyword">return</span> <span class="string">"DUPLICATE"</span>
+                    </div>
+                </div>
+
+                <!-- Funnel Visual -->
+                <div class="funnel-container" style="margin-top: 20px;">
+                    <div class="funnel-layer layer-1">RAW VIDEO (120 mins)</div>
+                    <div class="filter-arrow">↓</div>
+                    <div class="funnel-layer layer-2">SCENE DETECT (Capture Changes)</div>
+                    <div class="filter-arrow">↓</div>
+                    <div class="funnel-layer layer-3">pHASH (Remove Duplicates)</div>
+                    <div class="filter-arrow">↓</div>
+                    <div class="funnel-layer layer-4">40-50 HIGH-VALUE SLIDES</div>
+                </div>
+
+            </div>
+
+            <div class="narrative-box">
+                <p><strong>智能抽幀漏斗 (Smart Extraction)：</strong> 解決「重複」與「沒重點」的問題。<br>
+                    固定間隔截圖會產生大量垃圾（如講師發呆的畫面）。我們採用三層過濾網：
+                    1. <strong>場景偵測</strong>（只抓換頁瞬間）
+                    2. <strong>感知雜湊</strong>（移除相似畫面）
+                    3. <strong>內容過濾</strong>（用 AI 判斷是否為黑屏或無意義過場）。
+                    <br>這樣能把 2 小時的影片，精煉成 40-50 張真正精華的投影片，一張不多，一張不少。
+                </p>
+            </div>
+        </section>
+        使用 <code>ffmpeg</code> 或 <code>OpenCV</code>，以固定時間間隔（例如每 60 秒）或場景變換偵測（Scene
+        Detection）來抽取影片截圖。這些圖片將成為未來記憶檢索的視覺錨點。</p>
+        </div>
+        </section>
+
+        <!-- 06-B Multimodal Binding -->
+        <section class="diagram-section">
+            <span class="diagram-label">STEP 2: MULTIMODAL CONTEXT BINDING (GEMINI/GPT-4V)</span>
+            <div class="tech-stack-block">
+                <div class="code-window">
+                    <div class="code-header">
+                        <div class="traffic-light red"></div>
+                        <div class="traffic-light yellow"></div>
+                        <div class="traffic-light green"></div>
+                        <span style="margin-left:10px; color:#666;">bind_context.js</span>
+                    </div>
+                    <div class="code-content">
+                        <span class="keyword">const</span> <span class="function">analyzeFrame</span> = <span
+                            class="keyword">async</span> (img, transcript) => {<br>
+                        &nbsp;&nbsp;<span class="comment">// Vision + Text Context</span><br>
+                        &nbsp;&nbsp;<span class="keyword">const</span> prompt = <span class="string">`Describe this
+                            image contextually based on the transcript segment: "${transcript}"`</span>;<br>
+                        <br>
+                        &nbsp;&nbsp;<span class="keyword">return await</span> model.<span
+                            class="function">generate</span>([img, prompt]);<br>
+                        }
+                    </div>
+                </div>
+                <div class="data-flow-viz">
+                    <div class="viz-node">IMG</div>
+                    <div class="viz-node" style="border:none;">+</div>
+                    <div class="viz-node">TEXT</div>
+                    <div class="viz-arrow">→</div>
+                    <div class="viz-node" style="border-style:dashed;">GEMINI</div>
+                    <div class="viz-arrow">→</div>
+                    <div class="viz-node">METADATA</div>
+                </div>
+            </div>
+            <div class="narrative-box">
+                <p><strong>多模態脈絡綁定：</strong> 賦予圖片靈魂。<br>
+                    圖片本身是啞巴。我們將圖片與「當下時間點」前後的逐字稿一同送入 <strong>Multimodal LLM</strong> (如 Gemini 1.5 Pro)。AI
+                    會分析畫面內容與課程內容的關聯，生成帶有豐富語義的 Metadata。這張圖從此有了「索引能力」。</p>
+            </div>
+        </section>
+
+        <!-- 06-C Auto Insertion -->
+        <section class="diagram-section">
+            <span class="diagram-label">STEP 3: MARKDOWN INJECTION & MEMORY TRIGGER</span>
+            <div class="tech-stack-block">
+                <div class="code-window">
+                    <div class="code-header">
+                        <div class="traffic-light red"></div>
+                        <div class="traffic-light yellow"></div>
+                        <div class="traffic-light green"></div>
+                        <span style="margin-left:10px; color:#666;">final_note.md</span>
+                    </div>
+                    <div class="code-content">
+                        ## 04. Transformer Architecture<br>
+                        <br>
+                        In this section, we discuss the self-attention mechanism...<br>
+                        <br>
+                        <span class="string">![Diagram of Attention Head](assets/0045.png)</span><br>
+                        <span class="comment">&lt;!-- AI Note: This visualizes the Q/K/V matrix multiplication discussed
+                            above. --&gt;</span><br>
+                        <br>
+                        This allows the model to weigh the importance...
+                    </div>
+                </div>
+            </div>
+            <div class="narrative-box">
+                <p><strong>視覺板機與記憶喚醒：</strong> 完成自動策展。<br>
+                    程式腳本將處理好的圖片自動插入 Markdown 筆記的對應段落。當你未來複習這份筆記時，這張圖片會充當<strong>「視覺板機 (Visual
+                        Trigger)」</strong>，瞬間喚醒你當時觀看影片的動態記憶與情境，達成知識的雙重強化。</p>
+            </div>
+        </section>
+
+        <a href="index.html#section-6" class="back-btn">← BACK TO PHYSICS OF INSIGHT</a>
+
+    </main>
+
+</body>
+
+</html>

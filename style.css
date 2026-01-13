@@ -1,0 +1,668 @@
+/* Global Reset */
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+body {
+    background-color: #000000;
+    color: #FFFFFF;
+    font-family: 'Noto Sans TC', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overflow-x: hidden;
+    font-weight: 400;
+}
+
+/* Sidebar Navigation */
+.sidebar {
+    position: fixed;
+    right: 40px;
+    top: 50%;
+    transform: translateY(-50%);
+    z-index: 100;
+}
+
+.nav-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+    align-items: flex-end;
+    /* Align to right */
+}
+
+.nav-item {
+    position: relative;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+}
+
+.dot {
+    width: 10px;
+    height: 10px;
+    background-color: #333;
+    /* Inactive color */
+    border-radius: 50%;
+    transition: all 0.3s ease;
+    border: 1px solid #333;
+}
+
+.label {
+    position: absolute;
+    right: 25px;
+    /* Position to the left of the dot */
+    opacity: 0;
+    white-space: nowrap;
+    font-size: 0.9rem;
+    color: #fff;
+    font-weight: 300;
+    letter-spacing: 0.05em;
+    transform: translateX(10px);
+    transition: all 0.3s ease;
+    pointer-events: none;
+}
+
+/* Hover and Active States */
+.nav-item:hover .dot,
+.nav-item.active .dot {
+    background-color: #fff;
+    border-color: #fff;
+    transform: scale(1.3);
+}
+
+.nav-item:hover .label,
+.nav-item.active .label {
+    opacity: 1;
+    transform: translateX(0);
+}
+
+/* Main Content Sections */
+.section {
+    min-height: 100vh;
+    width: 100%;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    padding: 40px;
+    /* Optional: Scroll Snap */
+    scroll-snap-align: start;
+}
+
+.container {
+    position: relative;
+    /* Ensure offsetTop is relative to this container */
+    scroll-snap-type: y mandatory;
+    height: 100vh;
+    overflow-y: scroll;
+}
+
+.content-wrapper {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    justify-content: center;
+    gap: 60px;
+    max-width: 1200px;
+    width: 100%;
+}
+
+.image-container {
+    flex: 1;
+    display: flex;
+    justify-content: center;
+}
+
+.image-container img {
+    max-width: 100%;
+    height: auto;
+    object-fit: contain;
+    border: 1px solid #333;
+    /* Subtle border matching the aesthetic */
+    max-height: 80vh;
+}
+
+.text-container {
+    flex: 0.8;
+    text-align: left;
+}
+
+h2 {
+    font-size: 2.5rem;
+    font-weight: 700;
+    margin-bottom: 10px;
+    letter-spacing: -0.02em;
+}
+
+.subtitle {
+    font-size: 1.2rem;
+    color: #888;
+    margin-bottom: 30px;
+    font-family: monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+}
+
+.description {
+    font-size: 1.2rem;
+    line-height: 1.6;
+    color: #ddd;
+    font-weight: 300;
+}
+
+/* Responsive Design */
+@media (max-width: 900px) {
+    .content-wrapper {
+        flex-direction: column;
+        gap: 30px;
+        text-align: center;
+    }
+
+    .text-container {
+        text-align: center;
+        padding-bottom: 50px;
+        /* Space for mobile scrolling */
+    }
+
+    .sidebar {
+        right: 15px;
+        /* Move closer to edge on mobile */
+    }
+
+    .label {
+        display: none;
+        /* Hide labels on very small screens to avoid clutter */
+    }
+
+    h2 {
+        font-size: 1.8rem;
+    }
+
+    .intro-layout {
+        flex-direction: column;
+        gap: 40px;
+    }
+
+    .intro-divider {
+        width: 80% !important;
+        height: 1px !important;
+    }
+
+    .closing-content {
+        padding: 40px 20px !important;
+    }
+}
+
+/* Narrative Text Styling */
+.narrative {
+    font-size: 1.15rem;
+    line-height: 2;
+    color: #ccc;
+    font-weight: 300;
+}
+
+.narrative-text .narrative {
+    margin-top: 20px;
+}
+
+.narrative strong {
+    color: #fff;
+    font-weight: 500;
+}
+
+.narrative em {
+    color: #aaa;
+    font-style: italic;
+}
+
+/* Intro Layout */
+.intro-layout {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 100px;
+}
+
+.intro-left,
+.intro-right {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    max-width: 350px;
+}
+
+.intro-avatar {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 220px;
+    width: 220px;
+}
+
+.placeholder-art {
+    width: 200px;
+    height: 200px;
+    border: 2px solid #fff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.placeholder-art span {
+    font-family: monospace;
+    font-size: 1.1rem;
+    color: #fff;
+    border: 1px solid #fff;
+    padding: 10px 20px;
+    text-align: center;
+    line-height: 1.5;
+}
+
+.portrait-img {
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    object-fit: cover;
+    border: 2px solid #fff;
+    transition: transform 0.5s ease, box-shadow 0.5s ease;
+}
+
+.portrait-img:hover {
+    transform: scale(1.05);
+    box-shadow: 0 0 40px rgba(255, 255, 255, 0.15);
+}
+
+.intro-info {
+    text-align: center;
+    margin-top: 25px;
+}
+
+.intro-title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #fff;
+    margin-bottom: 8px;
+}
+
+.intro-subtitle {
+    font-size: 0.95rem;
+    color: #888;
+    margin-bottom: 15px;
+    font-family: monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.intro-divider {
+    width: 1px;
+    height: 280px;
+    background: #333;
+}
+
+/* Closing Section */
+.closing-section {
+    flex-direction: column;
+}
+
+.closing-narrative p {
+    margin-bottom: 20px;
+}
+
+/* Navigation Dot Gap Adjustment for more items */
+.nav-list {
+    gap: 14px;
+}
+
+/* Closing Section Styles */
+.closing-section {
+    flex-direction: column;
+    text-align: center;
+}
+
+.closing-content {
+    max-width: 800px;
+    padding: 60px 40px;
+}
+
+.closing-title {
+    font-size: 2.2rem;
+    margin-bottom: 50px;
+    letter-spacing: 0.05em;
+}
+
+.closing-text {
+    font-size: 1.2rem;
+    line-height: 2.2;
+    color: #bbb;
+}
+
+.closing-text p {
+    margin-bottom: 25px;
+}
+
+.closing-text .highlight {
+    color: #fff;
+    font-size: 1.3rem;
+    margin: 35px 0;
+}
+
+.closing-text .emphasis {
+    font-size: 1.4rem;
+    color: #fff;
+    margin: 40px 0;
+    padding: 20px;
+    border-left: 3px solid #fff;
+    text-align: left;
+}
+
+.closing-text em {
+    color: #999;
+    font-style: italic;
+}
+
+.closing-text strong {
+    color: #fff;
+    font-weight: 500;
+}
+
+.closing-cta {
+    margin-top: 60px;
+    padding-top: 40px;
+    border-top: 1px solid #333;
+    font-size: 1.5rem;
+    line-height: 1.8;
+}
+
+.closing-cta .accent {
+    color: #fff;
+    font-weight: 700;
+}
+
+.closing-credits {
+    margin-top: 60px;
+    color: #555;
+    font-size: 0.95rem;
+    letter-spacing: 0.1em;
+}
+
+.closing-credits p {
+    margin-bottom: 8px;
+}
+
+/* Pitfalls Box */
+.pitfalls-box {
+    margin-top: 50px;
+    padding: 30px;
+    border: 1px solid #333;
+    background: rgba(255, 50, 50, 0.05);
+    border-left: 3px solid #f66;
+    text-align: left;
+    max-width: 500px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.pitfalls-title {
+    font-size: 1.1rem;
+    color: #f66;
+    margin-bottom: 20px;
+    font-weight: 500;
+}
+
+.pitfalls-list {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.pitfalls-list li {
+    margin-bottom: 18px;
+    line-height: 1.6;
+    color: #ccc;
+}
+
+.pitfalls-list li:last-child {
+    margin-bottom: 0;
+}
+
+.pitfalls-list strong {
+    color: #fff;
+    font-weight: 500;
+}
+
+.pitfall-detail {
+    font-size: 0.9rem;
+    color: #888;
+}
+
+/* Social Links */
+.social-links {
+    display: flex;
+    justify-content: center;
+    gap: 20px;
+    margin-top: 10px;
+}
+
+.social-links a {
+    color: #666;
+    transition: color 0.3s ease, transform 0.3s ease;
+}
+
+.social-links a:hover {
+    color: #fff;
+    transform: scale(1.2);
+}
+
+/* Easter Egg Button */
+.easter-egg-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-top: 60px;
+    width: 48px;
+    height: 48px;
+    opacity: 0.6;
+    transition: opacity 0.3s ease;
+    cursor: pointer;
+    text-decoration: none;
+}
+
+.easter-egg-btn img {
+    width: 100%;
+    height: auto;
+    display: block;
+    /* 關鍵：將白底黑線圖片轉為適合深色背景的顯示效果 */
+    filter: invert(1) contrast(1.2);
+    mix-blend-mode: screen;
+    transition: transform 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.easter-egg-btn:hover {
+    opacity: 1;
+}
+
+.easter-egg-btn:hover img {
+    transform: rotate(180deg) scale(1.1);
+}
+
+/* HOW & Technique Box */
+.how-tech-box {
+    margin-top: 40px;
+    padding: 25px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(10, 10, 10, 0.5);
+    backdrop-filter: blur(10px);
+    border-radius: 4px;
+    max-width: 500px;
+}
+
+.how-tech-item {
+    margin-bottom: 20px;
+}
+
+.how-tech-item:last-child {
+    margin-bottom: 0;
+}
+
+.how-tech-label {
+    display: block;
+    font-size: 0.8rem;
+    font-family: monospace;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #888;
+    margin-bottom: 8px;
+}
+
+.how-tech-content {
+    display: block;
+    font-size: 1rem;
+    line-height: 1.6;
+    color: rgba(255, 255, 255, 0.8);
+    font-weight: 700;
+}
+
+.how-tech-content.technique {
+    font-family: monospace;
+    font-size: 0.9rem;
+    letter-spacing: 0.02em;
+}
+
+@media (max-width: 900px) {
+    .how-tech-box {
+        margin: 40px auto 0;
+        text-align: left;
+    }
+}
+
+/* Tech Link Button */
+.tech-link-btn {
+    display: inline-block;
+    margin-left: 8px;
+    color: #666;
+    text-decoration: none;
+    font-size: 1.2rem;
+    vertical-align: middle;
+    transition: all 0.3s ease;
+    line-height: 1;
+}
+
+.tech-link-btn:hover {
+    color: #fff;
+    transform: scale(1.2) rotate(90deg);
+    text-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+}
+
+
+/* Tech Details Drawer */
+.drawer-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(5px);
+    z-index: 999;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.4s ease;
+}
+
+.drawer-overlay.open {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.tech-drawer {
+    position: fixed;
+    top: 0;
+    right: 0;
+    width: 100%;
+    max-width: 700px;
+    height: 100%;
+    background: #050505;
+    z-index: 1000;
+    transform: translateX(100%);
+    transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+    border-left: 1px solid #333;
+    display: flex;
+    flex-direction: column;
+}
+
+.tech-drawer.open {
+    transform: translateX(0);
+}
+
+.drawer-content,
+.tech-iframe {
+    flex: 1;
+    width: 100%;
+    height: 100%;
+    background: transparent;
+    border: none;
+    -webkit-overflow-scrolling: touch;
+}
+
+.close-drawer-btn {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    background: none;
+    border: none;
+    color: #fff;
+    font-size: 2rem;
+    cursor: pointer;
+    z-index: 1001;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    transition: background 0.2s ease;
+}
+
+.close-drawer-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+/* Actionable / Practice Section Styles */
+.action-section {
+    margin-top: 60px;
+}
+
+.actionable-block {
+    border-color: #fff !important;
+    /* Stand out */
+    background: rgba(255, 255, 255, 0.05) !important;
+}
+
+.prompt-code {
+    text-align: left;
+    width: 100%;
+    padding: 20px;
+    background: #000;
+    border: 1px dashed #666;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.9rem;
+    color: #0f0;
+    /* Terminal green for "code" feel */
+}
+
+.prompt-label {
+    display: block;
+    color: #666;
+    font-size: 0.7rem;
+    margin-bottom: 10px;
+    border-bottom: 1px solid #333;
+    padding-bottom: 5px;
+}
+
+/* Back button in drawer should be hidden or restyled */
+.tech-drawer .back-btn {
+    display: none;
+}

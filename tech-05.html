@@ -1,0 +1,463 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>05 / Retention Engine - Process Visualization</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <style>
+        /* Tech-05 Specific Styles */
+        body {
+            background-color: #050505;
+        }
+
+        .tech-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 80px 20px;
+        }
+
+        .tech-header {
+            text-align: center;
+            margin-bottom: 80px;
+        }
+
+        .tech-title {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 3rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            letter-spacing: -0.05em;
+        }
+
+        .tech-subtitle {
+            font-family: 'Noto Sans TC', sans-serif;
+            color: #888;
+            font-size: 1.2rem;
+            font-weight: 300;
+        }
+
+        .diagram-section {
+            margin-bottom: 100px;
+            position: relative;
+        }
+
+        .diagram-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 20px;
+            display: block;
+            border-left: 2px solid #333;
+            padding-left: 10px;
+        }
+
+        /* CSS Diagrams */
+        .visual-block {
+            border: 1px solid #333;
+            padding: 40px;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 4px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            gap: 30px;
+            min-height: 300px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* 05-A The Decay Curve */
+        .chart-container {
+            width: 300px;
+            height: 200px;
+            position: relative;
+            border-left: 2px solid #555;
+            border-bottom: 2px solid #555;
+        }
+
+        .chart-label {
+            position: absolute;
+            font-family: 'JetBrains Mono';
+            font-size: 0.7rem;
+            color: #888;
+        }
+
+        .label-val {
+            top: -20px;
+            left: 0;
+        }
+
+        .label-time {
+            bottom: -20px;
+            right: 0;
+        }
+
+        .line-fast {
+            /* Spike and crash */
+            position: absolute;
+            bottom: 0;
+            left: 20px;
+            width: 40px;
+            height: 180px;
+            border-left: 2px solid #fff;
+            border-right: 2px solid transparent;
+        }
+
+        /* Using SVG for precise lines is better here */
+        .chart-svg {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            overflow: visible;
+        }
+
+        .path-fast {
+            fill: none;
+            stroke: #fff;
+            stroke-width: 2;
+            stroke-dasharray: 5, 5;
+            /* Dashed line */
+            stroke-dashoffset: 400;
+            opacity: 0.85;
+            /* 85% opacity */
+            animation: draw-fast 5s infinite;
+            /* 5s loop */
+        }
+
+        .path-slow {
+            fill: none;
+            stroke: #fff;
+            stroke-width: 3;
+            stroke-dasharray: 400;
+            stroke-dashoffset: 400;
+            animation: draw-slow 5s infinite;
+            /* 5s loop */
+        }
+
+        /* 05-B The Network */
+        .network-container {
+            display: flex;
+            gap: 50px;
+            align-items: center;
+        }
+
+        .ram-box {
+            width: 80px;
+            height: 80px;
+            border: 1px dashed #666;
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 5px;
+            padding: 5px;
+        }
+
+        .temp-dot {
+            width: 100%;
+            height: 100%;
+            background: #444;
+            border-radius: 50%;
+            animation: fade-out 2s infinite;
+        }
+
+        .deep-network {
+            position: relative;
+            width: 120px;
+            height: 120px;
+        }
+
+        .net-node {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: #fff;
+            border-radius: 50%;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+        }
+
+        .net-link {
+            position: absolute;
+            background: #fff;
+            height: 1px;
+            transform-origin: left center;
+            opacity: 0.5;
+        }
+
+        /* 05-C The Loop */
+        .loop-system {
+            position: relative;
+            width: 200px;
+            height: 200px;
+        }
+
+        .loop-circle {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            right: 20px;
+            bottom: 20px;
+            border: 2px solid #333;
+            border-radius: 50%;
+        }
+
+        .loop-packet {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: #fff;
+            border-radius: 50%;
+            top: 50%;
+            left: 50%;
+            offset-path: path("M0,-80 A80,80 0 1,1 0,80 A80,80 0 1,1 0,-80");
+            offset-distance: 0%;
+            animation: loop-travel 4s linear infinite;
+        }
+
+        .loop-stage {
+            position: absolute;
+            font-family: 'JetBrains Mono';
+            font-size: 0.7rem;
+            color: #666;
+            background: #050505;
+            padding: 2px 5px;
+            white-space: nowrap;
+            /* Prevent line breaks */
+        }
+
+        .stage-1 {
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        .stage-2 {
+            right: 0;
+            top: 50%;
+            transform: translate(50%, -50%);
+        }
+
+        .stage-3 {
+            bottom: -45px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        /* Moved further down */
+
+        .stage-4 {
+            left: 0;
+            top: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .narrative-box {
+            margin-top: 30px;
+            font-family: 'Noto Sans TC', sans-serif;
+            line-height: 1.8;
+            color: #ccc;
+            font-size: 1rem;
+        }
+
+        .narrative-box strong {
+            color: #fff;
+            font-weight: 500;
+        }
+
+        .back-btn {
+            display: inline-block;
+            margin-top: 60px;
+            font-family: 'JetBrains Mono', monospace;
+            color: #666;
+            text-decoration: none;
+            border-bottom: 1px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .back-btn:hover {
+            color: #fff;
+            border-bottom-color: #fff;
+        }
+
+        /* Animations */
+        @keyframes draw-fast {
+            0% {
+                opacity: 0;
+                stroke-dashoffset: 400;
+            }
+
+            10% {
+                opacity: 1;
+                stroke-dashoffset: 350;
+            }
+
+            /* Fast up */
+            15% {
+                stroke-dashoffset: 300;
+            }
+
+            /* Crash down */
+            20% {
+                opacity: 0;
+            }
+
+            100% {
+                opacity: 0;
+            }
+        }
+
+        @keyframes draw-slow {
+            0% {
+                stroke-dashoffset: 400;
+            }
+
+            100% {
+                stroke-dashoffset: 0;
+            }
+        }
+
+        @keyframes fade-out {
+            0% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0;
+            }
+
+            100% {
+                opacity: 1;
+            }
+        }
+
+        @keyframes loop-travel {
+            0% {
+                offset-distance: 0%;
+            }
+
+            100% {
+                offset-distance: 100%;
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <main class="tech-container">
+
+        <header class="tech-header">
+            <div class="tech-title">05 / RETENTION ENGINE</div>
+            <div class="tech-subtitle">Efficiency vs. Longevity</div>
+        </header>
+
+        <!-- 05-A The Decay Curve -->
+        <section class="diagram-section">
+            <span class="diagram-label">PHILOSOPHY: THE RETENTION PARADOX</span>
+            <div class="visual-block">
+                <div class="chart-container">
+                    <div class="chart-label label-val">VALUE</div>
+                    <div class="chart-label label-time">TIME</div>
+                    <svg class="chart-svg">
+                        <!-- Efficiency: Spike and crash -->
+                        <path class="path-fast" d="M20,180 L40,20 L60,180 H280" />
+                        <!-- Longevity: Slow rise and plateau -->
+                        <path class="path-slow" d="M20,180 Q100,100 150,80 H280" />
+                    </svg>
+                </div>
+                <div style="font-family:'JetBrains Mono'; font-size:0.8rem; margin-top:20px; color:#888;">
+                    FADE: FAST INPUT / SOLID: DEEP ANCHOR
+                </div>
+            </div>
+            <div class="narrative-box">
+                <p><strong>速度與留存的辯證：</strong> 快速獲取的簡化資訊（摘要），遺忘得也快；而進入深層網狀連結的知識，雖然當下耗時，但能長期留存。<br>
+                    我們的目標是「Long-term Compounding（長期複利）」。如果不考慮留存，<strong>遺忘就等於將投入的時間直接歸零</strong>。真正的效率不是讀得快，而是忘得慢。</p>
+            </div>
+        </section>
+
+        <!-- 05-B The Networked Memory -->
+        <section class="diagram-section">
+            <span class="diagram-label">TECHNIQUE: NETWORKED DEEP DIVE</span>
+            <div class="visual-block">
+                <div class="network-container">
+                    <div style="text-align:center;">
+                        <div class="ram-box">
+                            <div class="temp-dot"></div>
+                            <div class="temp-dot"></div>
+                            <div class="temp-dot"></div>
+                            <div class="temp-dot"></div>
+                        </div>
+                        <div style="font-family:'JetBrains Mono'; font-size:0.6rem; margin-top:10px; color:#666;">RAM
+                            (TEMP)</div>
+                    </div>
+
+                    <div style="font-size:1.5rem; color:#444;">→</div>
+
+                    <div style="text-align:center;">
+                        <div class="deep-network">
+                            <div class="net-node" style="top:50%; left:50%"></div>
+                            <div class="net-node" style="top:20%; left:20%"></div>
+                            <div class="net-node" style="top:80%; left:80%"></div>
+                            <div class="net-node" style="top:20%; left:80%"></div>
+                            <div class="net-node" style="top:80%; left:20%"></div>
+                            <!-- Links -->
+                            <div class="net-link" style="top:50%; left:50%; width:50px; transform:rotate(-135deg);">
+                            </div>
+                            <div class="net-link" style="top:50%; left:50%; width:50px; transform:rotate(45deg);"></div>
+                            <div class="net-link" style="top:50%; left:50%; width:50px; transform:rotate(-45deg);">
+                            </div>
+                            <div class="net-link" style="top:50%; left:50%; width:50px; transform:rotate(135deg);">
+                            </div>
+                        </div>
+                        <div style="font-family:'JetBrains Mono'; font-size:0.6rem; margin-top:10px; color:#fff;">
+                            LONG-TERM ASSET</div>
+                    </div>
+                </div>
+            </div>
+            <div class="narrative-box">
+                <p><strong>網狀深植：</strong> 資訊厚度不足時，大腦將其存於易逝的暫存區。<br>
+                    當閱讀內容與你的<strong>專業背景</strong>高度連結（如 04 的共鳴），它就不再是孤立的點，而是如植物根系般深植的網。這種連結觸發了「想像延伸」，將單次閱讀轉化為可隨時調用的長期資產。
+                </p>
+            </div>
+        </section>
+
+        <!-- 05-C The I/O Loop -->
+        <section class="diagram-section">
+            <span class="diagram-label">RESULT: I/O LEVERAGE LOOP</span>
+            <div class="visual-block">
+                <div class="loop-system">
+                    <div class="loop-circle"></div>
+                    <div class="loop-packet"></div>
+                    <div class="loop-stage stage-1">INPUT (READ)</div>
+                    <div class="loop-stage stage-2">PROCESS</div>
+                    <div class="loop-stage stage-3">OUTPUT (SHARE)</div>
+                    <div class="loop-stage stage-4">RE-INPUT</div>
+                </div>
+                <div style="font-family:'JetBrains Mono'; font-size:0.8rem; margin-top:20px; color:#888;">
+                    LOW FRICTION = HIGH OUTPUT
+                </div>
+            </div>
+            <div class="narrative-box">
+                <p><strong>一進一出的資訊交換：</strong> 「好讀」是為了節省腦力，將其投資在更高價值的活動上。<br>
+                    因為筆記降低了閱讀阻力（Low Friction），你在閱讀時不會感到疲憊，反而有餘裕進行思考與再輸出。這種<strong>「Input → Output →
+                        Re-input」</strong>的閉環，才是學習效率的極致展現。</p>
+            </div>
+        </section>
+
+        <a href="index.html#section-5" class="back-btn">← BACK TO PHYSICS OF INSIGHT</a>
+
+    </main>
+
+</body>
+
+</html>
