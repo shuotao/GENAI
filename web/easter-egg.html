@@ -31,6 +31,40 @@
             margin-bottom: 60px;
         }
 
+        .header-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 40px;
+        }
+
+        .header-left {
+            flex: 1;
+        }
+
+        .header-qr {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .qr-code {
+            width: 120px;
+            height: 120px;
+            border: 2px solid #fff;
+            padding: 8px;
+            background: #000;
+        }
+
+        .qr-label {
+            font-family: monospace;
+            font-size: 0.7rem;
+            color: #555;
+            letter-spacing: 0.15em;
+            text-transform: uppercase;
+        }
+
         .back-link {
             text-decoration: none;
             color: #666;
@@ -317,8 +351,16 @@
                 </svg>
                 Return to Surface
             </a>
-            <h1>The Laboratory</h1>
-            <p style="color: #666; font-family: monospace;">Behind the "Physics of Insight" system</p>
+            <div class="header-row">
+                <div class="header-left">
+                    <h1>The Laboratory</h1>
+                    <p style="color: #666; font-family: monospace;">Behind the "Physics of Insight" system</p>
+                </div>
+                <div class="header-qr">
+                    <img src="../assets/qr_laboratory.png" alt="Scan to share" class="qr-code">
+                    <span class="qr-label">SCAN TO SHARE</span>
+                </div>
+            </div>
         </header>
 
         <div class="manifesto-box">
