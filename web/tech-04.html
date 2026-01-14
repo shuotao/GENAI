@@ -1,0 +1,401 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>04 / Contextual Amplifier - Process Visualization</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <style>
+        /* Tech-04 Specific Styles */
+        body {
+            background-color: #050505;
+        }
+
+        .tech-container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 80px 20px;
+        }
+
+        .tech-header {
+            text-align: center;
+            margin-bottom: 80px;
+        }
+
+        .tech-title {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 3rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            letter-spacing: -0.05em;
+        }
+
+        .tech-subtitle {
+            font-family: 'Noto Sans TC', sans-serif;
+            color: #888;
+            font-size: 1.2rem;
+            font-weight: 300;
+        }
+
+        .diagram-section {
+            margin-bottom: 100px;
+            position: relative;
+        }
+
+        .diagram-label {
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.9rem;
+            color: #666;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 20px;
+            display: block;
+            border-left: 2px solid #333;
+            padding-left: 10px;
+        }
+
+        /* CSS Diagrams */
+        .visual-block {
+            border: 1px solid #333;
+            padding: 40px;
+            background: rgba(255, 255, 255, 0.02);
+            border-radius: 4px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            flex-direction: column;
+            gap: 30px;
+            min-height: 300px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        /* 04-A Surgical Annotation */
+        .text-flow {
+            width: 300px;
+            height: 2px;
+            background: #333;
+            position: relative;
+            margin-top: 20px;
+        }
+
+        .difficult-concept {
+            position: absolute;
+            left: 40%;
+            top: -4px;
+            width: 40px;
+            height: 10px;
+            background: #fff;
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+        }
+
+        .annotation-beam {
+            position: absolute;
+            left: 50%;
+            bottom: 0px;
+            width: 2px;
+            height: 60px;
+            background: #666;
+            transform-origin: bottom;
+            animation: scan-beam 3s infinite ease-in-out;
+        }
+
+        .injection-box {
+            position: absolute;
+            left: 42%;
+            top: -50px;
+            width: 30px;
+            height: 30px;
+            border: 1px dashed #fff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-size: 0.6rem;
+            color: #fff;
+            opacity: 0;
+            animation: inject 3s infinite ease-in-out;
+        }
+
+        /* 04-B Domain Projection */
+        .domain-bridge {
+            display: flex;
+            align-items: center;
+            gap: 60px;
+        }
+
+        .domain-node {
+            width: 60px;
+            height: 60px;
+            border: 2px solid #fff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem;
+            position: relative;
+            background: #000;
+            z-index: 2;
+        }
+
+        .node-ai {
+            border-radius: 0;
+        }
+
+        .node-arch {
+            border-radius: 50%;
+        }
+
+        .bridge-line {
+            position: absolute;
+            width: 60px;
+            height: 2px;
+            background: #fff;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            z-index: 1;
+        }
+
+        .spark {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background: #fff;
+            border-radius: 50%;
+            box-shadow: 0 0 15px #fff, 0 0 30px #fff;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            animation: spark-flash 2s infinite;
+        }
+
+        /* 04-C Resonance Drive */
+        .resonance-system {
+            position: relative;
+            width: 200px;
+            height: 200px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .core-knowledge {
+            width: 40px;
+            height: 40px;
+            background: #fff;
+            border-radius: 50%;
+            z-index: 2;
+        }
+
+        .orbit-ring {
+            position: absolute;
+            border: 1px dashed #444;
+            border-radius: 50%;
+            width: 100%;
+            height: 100%;
+            animation: rotate-orbit 10s linear infinite;
+        }
+
+        .student-sat {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background: #333;
+            border: 1px solid #666;
+            border-radius: 50%;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            transition: all 0.5s;
+        }
+
+        .student-sat.active {
+            background: #fff;
+            box-shadow: 0 0 20px rgba(255, 255, 255, 0.8);
+            border-color: #fff;
+        }
+
+        .sat-1 {
+            top: 0;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .sat-2 {
+            bottom: 0;
+            left: 50%;
+            transform: translate(-50%, 50%);
+        }
+
+        .sat-3 {
+            left: 0;
+            top: 50%;
+            transform: translate(-50%, -50%);
+        }
+
+        .sat-4 {
+            right: 0;
+            top: 50%;
+            transform: translate(50%, -50%);
+        }
+
+        .narrative-box {
+            margin-top: 30px;
+            font-family: 'Noto Sans TC', sans-serif;
+            line-height: 1.8;
+            color: #ccc;
+            font-size: 1rem;
+        }
+
+        .narrative-box strong {
+            color: #fff;
+            font-weight: 500;
+        }
+
+        .back-btn {
+            display: inline-block;
+            margin-top: 60px;
+            font-family: 'JetBrains Mono', monospace;
+            color: #666;
+            text-decoration: none;
+            border-bottom: 1px solid transparent;
+            transition: all 0.3s ease;
+        }
+
+        .back-btn:hover {
+            color: #fff;
+            border-bottom-color: #fff;
+        }
+
+        /* Animations */
+        @keyframes inject {
+            0% {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+
+            50% {
+                opacity: 1;
+                transform: translateY(0);
+            }
+
+            100% {
+                opacity: 0;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes spark-flash {
+
+            0%,
+            100% {
+                transform: translate(-50%, -50%) scale(0.5);
+                opacity: 0.5;
+            }
+
+            50% {
+                transform: translate(-50%, -50%) scale(1.5);
+                opacity: 1;
+            }
+        }
+
+        @keyframes rotate-orbit {
+            from {
+                transform: rotate(0deg);
+            }
+
+            to {
+                transform: rotate(360deg);
+            }
+        }
+    </style>
+</head>
+
+<body>
+
+    <main class="tech-container">
+
+        <header class="tech-header">
+            <div class="tech-title">04 / AMPLIFIER</div>
+            <div class="tech-subtitle">Context Injection & Peer Resonance</div>
+        </header>
+
+        <!-- 04-A Surgical Annotation -->
+        <section class="diagram-section">
+            <span class="diagram-label">PROCESS: SURGICAL ANNOTATION</span>
+            <div class="visual-block">
+                <div class="text-flow">
+                    <div class="difficult-concept"></div>
+                    <div class="injection-box">+</div>
+                </div>
+                <div style="font-family:'JetBrains Mono'; font-size:0.8rem; margin-top:40px; color:#888;">
+                    TARGETED INJECTION, NOT FLUFF
+                </div>
+            </div>
+            <div class="narrative-box">
+                <p><strong>填補認知缺口：</strong> 常見的補充往往是為了增加篇幅的廢話。我們的做法是「手術式」的。<br>
+                    將 03 降維後仍然難懂的關鍵字（Difficul Concept）獨立出來，精準地<strong>插入 (Inject)</strong>
+                    補充說明。這不是漫無目的的延伸，而是針對讀者認知盲點的精確導航。</p>
+            </div>
+        </section>
+
+        <!-- 04-B Domain Projection -->
+        <section class="diagram-section">
+            <span class="diagram-label">TECHNIQUE: CROSS-DOMAIN BRIDGING</span>
+            <div class="visual-block">
+                <div class="domain-bridge">
+                    <div class="domain-node node-ai">AI</div>
+                    <div style="position:relative; width: 60px; height: 60px;">
+                        <div class="bridge-line"></div>
+                        <div class="spark"></div>
+                    </div>
+                    <div class="domain-node node-arch">ARCH</div>
+                </div>
+                <div style="font-family:'JetBrains Mono'; font-size:0.8rem; margin-top:20px; color:#888;">
+                    TRANSFORMER = PARAMETRIC DESIGN
+                </div>
+            </div>
+            <div class="narrative-box">
+                <p><strong>投影專業領域圖譜：</strong> 這是「好學生筆記」的核心魔法。<br>
+                    我們利用語言模型的高 Temperature (創造性亂數)，尋找不同領域間的<strong>底層邏輯共鳴</strong>。例如：將 AI 的 <code>Transformer</code>
+                    概念，投影到 <code>建築設計</code> 的參數化模組上。雖然用詞不同，但邏輯相同。這種「遠距離聯想」能瞬間勾起讀者的既有經驗，讓知識瞬間落地。</p>
+            </div>
+        </section>
+
+        <!-- 04-C Resonance Drive -->
+        <section class="diagram-section">
+            <span class="diagram-label">RESULT: IMPLICIT DRIVE (THE GOOD STUDENT)</span>
+            <div class="visual-block">
+                <div class="resonance-system">
+                    <div class="core-knowledge"></div>
+                    <div class="orbit-ring">
+                        <div class="student-sat sat-1 active"></div>
+                        <div class="student-sat sat-2 active"></div>
+                        <div class="student-sat sat-3 active"></div>
+                        <div class="student-sat sat-4 active"></div>
+                    </div>
+                </div>
+                <div style="font-family:'JetBrains Mono'; font-size:0.8rem; margin-top:20px; color:#888;">
+                    SYNCHRONIZED LEARNING FREQUENCY
+                </div>
+            </div>
+            <div class="narrative-box">
+                <p><strong>無形的驅動與強化學習：</strong> 為什麼好學生筆記人人想抄？<br>
+                    因為它擴增了符合使用者背景的轉化。當筆記的頻率與你的背景（如建築系同學）一致時，閱讀不再是苦差事，而是一種<strong>被理解的共鳴</strong>。這種共鳴是強大的隱性驅動力，能有效強化學習效果，讓艱澀的知識變得讓人「學得起來」。
+                </p>
+            </div>
+        </section>
+
+        <a href="index.html#section-4" class="back-btn">← BACK TO PHYSICS OF INSIGHT</a>
+
+    </main>
+
+</body>
+
+</html>

@@ -1,0 +1,441 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Laboratory - Physics of Insight Easter Egg</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@300;400&family=Noto+Sans+TC:wght@300;400;700&display=swap"
+        rel="stylesheet">
+    <style>
+        body {
+            background-color: #050505;
+            padding: 60px 20px;
+            scroll-snap-type: none;
+            overflow-y: auto;
+            height: auto;
+        }
+
+        .egg-container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        header {
+            border-bottom: 1px solid #222;
+            padding-bottom: 40px;
+            margin-bottom: 60px;
+        }
+
+        .back-link {
+            text-decoration: none;
+            color: #666;
+            font-family: monospace;
+            font-size: 0.9rem;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 30px;
+            transition: color 0.3s;
+        }
+
+        .back-link:hover {
+            color: #fff;
+        }
+
+        h1 {
+            font-size: 3rem;
+            letter-spacing: -0.03em;
+            margin-bottom: 20px;
+        }
+
+        .manifesto-box {
+            background: #111;
+            border-left: 4px solid #fff;
+            padding: 30px;
+            margin: 40px 0;
+            font-size: 1.1rem;
+            line-height: 1.8;
+            color: #ccc;
+        }
+
+        .section-title {
+            font-family: monospace;
+            color: #555;
+            text-transform: uppercase;
+            letter-spacing: 0.2em;
+            margin: 80px 0 30px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+
+        .section-title::after {
+            content: "";
+            flex: 1;
+            height: 1px;
+            background: #222;
+        }
+
+        /* SRT Terminal Style */
+        .terminal {
+            background: #000;
+            border: 1px solid #333;
+            border-radius: 6px;
+            padding: 25px;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.9rem;
+            color: #aaa;
+            line-height: 1.6;
+            margin-bottom: 40px;
+            position: relative;
+        }
+
+        .terminal-header {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 30px;
+            background: #111;
+            border-bottom: 1px solid #222;
+            display: flex;
+            align-items: center;
+            padding: 0 15px;
+            gap: 6px;
+        }
+
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .red {
+            background: #ff5f56;
+        }
+
+        .yellow {
+            background: #ffbd2e;
+        }
+
+        .green {
+            background: #27c93f;
+        }
+
+        .terminal-content {
+            margin-top: 20px;
+        }
+
+        .code-keyword {
+            color: #fff;
+            font-weight: bold;
+        }
+
+        .code-comment {
+            color: #555;
+        }
+
+        .code-string {
+            color: #888;
+        }
+
+        /* Product Gallery */
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 30px;
+            margin: 40px 0;
+        }
+
+        .card {
+            background: #0a0a0a;
+            border: 1px solid #1a1a1a;
+            padding: 20px;
+            transition: all 0.3s;
+        }
+
+        .card:hover {
+            border-color: #333;
+            transform: translateY(-5px);
+        }
+
+        .card img {
+            width: 100%;
+            height: auto;
+            border: 1px solid #222;
+            margin-bottom: 20px;
+        }
+
+        .card-title {
+            font-size: 1.1rem;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        .card-desc {
+            font-size: 0.9rem;
+            color: #666;
+            line-height: 1.5;
+        }
+
+        .link-button {
+            display: inline-block;
+            margin-top: 40px;
+            padding: 15px 30px;
+            background: #fff;
+            color: #000;
+            text-decoration: none;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+
+        .link-button:hover {
+            background: #ccc;
+            transform: scale(1.02);
+        }
+
+        @media (max-width: 768px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+
+            h1 {
+                font-size: 2rem;
+            }
+        }
+
+        /* Prompt Boxes */
+        .prompt-boxes {
+            margin-top: 40px;
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .prompt-box {
+            background: #0a0a0a;
+            border: 1px dashed #444;
+            padding: 25px;
+            position: relative;
+        }
+
+        .prompt-box-label {
+            font-family: 'Fira Code', monospace;
+            font-size: 0.8rem;
+            color: #0f0;
+            margin-bottom: 15px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+        }
+
+        .prompt-box-content {
+            font-size: 1rem;
+            line-height: 1.8;
+            color: #ccc;
+        }
+
+        .prompt-placeholder {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 2px 8px;
+            border-radius: 3px;
+            color: #888;
+            font-style: italic;
+        }
+
+        .download-btn {
+            display: inline-block;
+            margin-top: 30px;
+            padding: 15px 25px;
+            background: transparent;
+            border: 1px solid #0f0;
+            color: #0f0;
+            text-decoration: none;
+            font-family: 'Fira Code', monospace;
+            font-size: 0.9rem;
+            transition: all 0.3s;
+        }
+
+        .download-btn:hover {
+            background: rgba(0, 255, 0, 0.1);
+            transform: translateY(-2px);
+        }
+
+        /* Lightbox */
+        .lightbox {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 9999;
+            justify-content: center;
+            align-items: center;
+            cursor: zoom-out;
+        }
+
+        .lightbox.active {
+            display: flex;
+        }
+
+        .lightbox-img {
+            max-width: 90%;
+            max-height: 90%;
+            object-fit: contain;
+            border: 1px solid #333;
+        }
+
+        .lightbox-close {
+            position: absolute;
+            top: 30px;
+            right: 40px;
+            font-size: 2.5rem;
+            color: #fff;
+            cursor: pointer;
+            transition: color 0.3s;
+        }
+
+        .lightbox-close:hover {
+            color: #f66;
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="egg-container">
+        <header>
+            <a href="index.html" class="back-link">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M19 12H5M12 19l-7-7 7-7" />
+                </svg>
+                Return to Surface
+            </a>
+            <h1>The Laboratory</h1>
+            <p style="color: #666; font-family: monospace;">Behind the "Physics of Insight" system</p>
+        </header>
+
+        <div class="manifesto-box">
+            剛開始的頁面簡報，談的是邏輯，談的是應用心法。<br><br>
+            但是這一頁面是為了這次的報告而做的幾個產品化的結果。
+            我覺得產品化並不適合要是一個 AI 的使用者要去做的事情，產品化會將本身作業的過程給畫上截止斷點，讓成果為了要品質上的控制而不能夠有幻覺或者是做出來品質不統一的風險。
+        </div>
+
+        <div class="section-title">01. SRT Workflow & Automation</div>
+
+        <div class="terminal">
+            <div class="terminal-header">
+                <div class="dot red"></div>
+                <div class="dot yellow"></div>
+                <div class="dot green"></div>
+                <span style="font-size: 0.7rem; color: #444; margin-left: 10px;">gemini-cli --task merge-srt</span>
+            </div>
+            <div class="terminal-content">
+                <span class="code-comment"># Loading Agent.md rules...</span><br>
+                <span class="code-keyword">SYSTEM:</span> Zero Omission Policy engaged.<br>
+                <span class="code-keyword">INPUT:</span> /Users/shuotaochiang/Desktop/SRT/5-1.srt<br>
+                <span class="code-keyword">INPUT:</span> /Users/shuotaochiang/Desktop/SRT/5-2.srt<br>
+                <span class="code-comment">// Cleaning meta-data, removing timestamps...</span><br>
+                <span class="code-comment">// Paragraphing and inserting professional knowledge
+                    supplements...</span><br>
+                <br>
+                <span class="code-keyword">OUTPUT:</span> [完整的筆記]_LLM分析與可解釋性_第5講.md<br>
+                <span class="code-comment">> Status: Success. No summary, full restoration complete.</span>
+            </div>
+        </div>
+
+        <div class="section-title">02. Productized Artifacts: Good Student Notes</div>
+
+        <!-- Prompt Boxes for Good Student Notes (先讓觀眾練習) -->
+        <div class="prompt-boxes">
+            <div class="prompt-box">
+                <div class="prompt-box-label">PROMPT 1: 生成手寫筆記圖</div>
+                <div class="prompt-box-content">
+                    上面是課文，然後你是好學生，在未知老師的講習內容同時，你能不能夠模擬出筆記，然後用手寫註記的邏輯在上面增加筆記內容呢？<br><br>
+                    把增加的內容連同原來的課文變成一張新的筆記圖
+                </div>
+            </div>
+            <div class="prompt-box">
+                <div class="prompt-box-label">PROMPT 2: 指定角色強化解釋</div>
+                <div class="prompt-box-content">
+                    除了你做的筆記強化以外，把<span class="prompt-placeholder">[xxxx......（你在意的段落文字打上來或者截圖）]</span>也做解釋<br>
+                    並且要是<span class="prompt-placeholder">[角色設定]</span>的解釋輔助<br>
+                    其他都要保留
+                </div>
+            </div>
+        </div>
+
+        <!-- Download Textbook Image -->
+        <a href="../assets/課本.png" download="課本_練習素材.png" class="download-btn">
+            ⬇ 下載課本圖片（練習素材）
+        </a>
+
+        <!-- 說明與成果展示 -->
+        <p style="color: #888; font-size: 1rem; margin-top: 60px; margin-bottom: 30px;">
+            在筆記角色的思考上，我其實反而需要 LLM 的 temperature > 1，增加一些幻覺與彈性，才能夠給予一些概念的對比或者是對照移轉。
+        </p>
+
+        <div class="grid">
+            <div class="card">
+                <img src="../assets/good_student_notes_architect.png" alt="Architect Version">
+                <div class="card-title">建築師視角 (Architect)</div>
+                <div class="card-desc">使用「帷幕牆系統」來對齊 Transformer 的資料流邏輯。將抽象的向量對比為建築構件。</div>
+            </div>
+            <div class="card">
+                <img src="../assets/good_student_notes_medical.png" alt="Medical Version">
+                <div class="card-title">醫學視角 (Medical)</div>
+                <div class="card-desc">將嵌入層、注意力機制類比為神經解剖學中的感受器與丘腦整合。創造跨領域的深度連結。</div>
+            </div>
+        </div>
+
+        <div class="section-title">03. The Real Knowledge Asset</div>
+
+        <p style="color: #ccc; line-height: 1.8;">
+            我真的不是想要做出一個系統，而是我想要拿這個觀念給大家做出自己的學習系統。這份「真實筆記」是我學習歷程的證明，不只是產品，而是思維的延伸。
+        </p>
+
+        <a href="https://www.notion.so/1-27fc45a72dda80489eb8cc6108a968d6?source=copy_link" target="_blank"
+            class="link-button">
+            學習筆記
+        </a>
+
+        <footer
+            style="margin-top: 100px; padding: 40px 0; border-top: 1px solid #222; color: #444; font-family: monospace; font-size: 0.8rem;">
+            &copy; 2026 THE PHYSICS OF INSIGHT / LABORATORY MODULE
+        </footer>
+    </div>
+
+    <!-- Lightbox Overlay -->
+    <div id="lightbox" class="lightbox">
+        <span class="lightbox-close">&times;</span>
+        <img id="lightbox-img" class="lightbox-img" src="" alt="Enlarged view">
+    </div>
+
+    <script>
+        // Lightbox functionality
+        const lightbox = document.getElementById('lightbox');
+        const lightboxImg = document.getElementById('lightbox-img');
+        const cardImages = document.querySelectorAll('.card img');
+
+        cardImages.forEach(img => {
+            img.style.cursor = 'zoom-in';
+            img.addEventListener('click', () => {
+                lightboxImg.src = img.src;
+                lightbox.classList.add('active');
+            });
+        });
+
+        lightbox.addEventListener('click', () => {
+            lightbox.classList.remove('active');
+        });
+    </script>
+
+</body>
+
+</html>

@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>The Physics of Insight - 松尾研 LLM 學習旅程</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&display=swap"
+        rel="stylesheet">
+</head>
+
+<body>
+
+    <!-- Navigation Sidebar -->
+    <nav class="sidebar">
+        <ul class="nav-list">
+            <li class="nav-item active" data-target="section-0">
+                <span class="dot"></span>
+                <span class="label">致敬與緣起</span>
+            </li>
+            <li class="nav-item" data-target="section-1">
+                <span class="dot"></span>
+                <span class="label">我選擇的學習</span>
+            </li>
+            <li class="nav-item" data-target="section-2">
+                <span class="dot"></span>
+                <span class="label">成功譯本的精神</span>
+            </li>
+            <li class="nav-item" data-target="section-3">
+                <span class="dot"></span>
+                <span class="label">知識無損降維</span>
+            </li>
+            <li class="nav-item" data-target="section-4">
+                <span class="dot"></span>
+                <span class="label">填補認知缺口</span>
+            </li>
+            <li class="nav-item" data-target="section-5">
+                <span class="dot"></span>
+                <span class="label">時間投資回報</span>
+            </li>
+            <li class="nav-item" data-target="section-6">
+                <span class="dot"></span>
+                <span class="label">外接大腦策展</span>
+            </li>
+            <li class="nav-item" data-target="section-7">
+                <span class="dot"></span>
+                <span class="label">人機共舞協作</span>
+            </li>
+            <li class="nav-item" data-target="section-8">
+                <span class="dot"></span>
+                <span class="label">磨練 vs. 心流</span>
+            </li>
+            <li class="nav-item" data-target="section-9">
+                <span class="dot"></span>
+                <span class="label">孤島 vs. 連結</span>
+            </li>
+            <li class="nav-item" data-target="section-10">
+                <span class="dot"></span>
+                <span class="label">擁有 vs. 成為</span>
+            </li>
+            <li class="nav-item" data-target="section-11">
+                <span class="dot"></span>
+                <span class="label">連結的橋樑</span>
+            </li>
+            <li class="nav-item" data-target="section-12">
+                <span class="dot"></span>
+                <span class="label">結語：放大的藝術</span>
+            </li>
+        </ul>
+    </nav>
+
+    <!-- Main Content -->
+    <main class="container">
+
+        <!-- 00. Tribute & Intro -->
+        <section id="section-0" class="section">
+            <div class="content-wrapper intro-layout">
+                <div class="intro-left">
+                    <div class="intro-avatar">
+                        <div class="placeholder-art">
+                            <span>VISUALIZE<br>VALUE</span>
+                        </div>
+                    </div>
+                    <div class="intro-info">
+                        <h3 class="intro-title">致敬 Jack Butcher</h3>
+                        <p class="intro-subtitle">Design Inspiration</p>
+                        <div class="social-links">
+                            <a href="https://x.com/jackbutcher" target="_blank" rel="noopener" title="X (Twitter)">
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                                    <path
+                                        d="M18.244 2.25h3.308l-7.227 8.26 8.502 11.24H16.17l-5.214-6.817L4.99 21.75H1.68l7.73-8.835L1.254 2.25H8.08l4.713 6.231zm-1.161 17.52h1.833L7.084 4.126H5.117z" />
+                                </svg>
+                            </a>
+                            <a href="https://instagram.com/visualizevalue" target="_blank" rel="noopener"
+                                title="Instagram">
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                                    <path
+                                        d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zm0-2.163c-3.259 0-3.667.014-4.947.072-4.358.2-6.78 2.618-6.98 6.98-.059 1.281-.073 1.689-.073 4.948 0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98 1.281.058 1.689.072 4.948.072 3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98-1.281-.059-1.69-.073-4.949-.073zm0 5.838c-3.403 0-6.162 2.759-6.162 6.162s2.759 6.163 6.162 6.163 6.162-2.759 6.162-6.163c0-3.403-2.759-6.162-6.162-6.162zm0 10.162c-2.209 0-4-1.79-4-4 0-2.209 1.791-4 4-4s4 1.791 4 4c0 2.21-1.791 4-4 4zm6.406-11.845c-.796 0-1.441.645-1.441 1.44s.645 1.44 1.441 1.44c.795 0 1.439-.645 1.439-1.44s-.644-1.44-1.439-1.44z" />
+                                </svg>
+                            </a>
+                            <a href="https://visualizevalue.com" target="_blank" rel="noopener" title="Website">
+                                <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor">
+                                    <path
+                                        d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 17.93c-3.95-.49-7-3.85-7-7.93 0-.62.08-1.21.21-1.79L9 15v1c0 1.1.9 2 2 2v1.93zm6.9-2.54c-.26-.81-1-1.39-1.9-1.39h-1v-3c0-.55-.45-1-1-1H8v-2h2c.55 0 1-.45 1-1V7h2c1.1 0 2-.9 2-2v-.41c2.93 1.19 5 4.06 5 7.41 0 2.08-.8 3.97-2.1 5.39z" />
+                                </svg>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="intro-divider"></div>
+
+                <div class="intro-right">
+                    <div class="intro-avatar">
+                        <img src="../assets/my_portrait.jpg" alt="Learner Portrait" class="portrait-img">
+                    </div>
+                    <div class="intro-info">
+                        <h3 class="intro-title">學習者的視角</h3>
+                        <p class="intro-subtitle">松尾研 LLM 學習旅程</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 01 -->
+        <section id="section-1" class="section">
+            <div class="content-wrapper">
+                <div class="image-container">
+                    <img src="../assets/physics_of_insight/01_compression_vs_restoration.png"
+                        alt="Compression vs Restoration">
+                </div>
+                <div class="text-container">
+                    <h2>01. 我選擇的學習</h2>
+                    <p class="subtitle">Compression vs. Restoration</p>
+                    <p class="description">大多數人要求 AI 摘要，把牛排打成肉泥。<br>我要求 AI 縫合，還原語氣與靈魂。</p>
+
+                    <div class="how-tech-box">
+                        <div class="how-tech-item">
+                            <span class="how-tech-label">HOW</span>
+                            <span class="how-tech-content">利用 Entropy Control 刻意抑制 LLM
+                                的「過度泛化」天性，強制保留原始語音中的碎形與顆粒感。<a href="tech-01.html" class="tech-link-btn"
+                                    title="View Technical Architecture">⦿</a></span>
+                        </div>
+                        <div class="how-tech-item">
+                            <span class="how-tech-label">Technique</span>
+                            <span class="how-tech-content technique">High-Temperature Sampling & Zero-Edit Verbatim
+                                Constraint</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 02 -->
+        <section id="section-2" class="section">
+            <div class="content-wrapper">
+                <div class="image-container">
+                    <img src="../assets/physics_of_insight/02_translation_vs_localization.png"
+                        alt="Translation vs Localization">
+                </div>
+                <div class="text-container">
+                    <h2>02. 成功譯本的精神</h2>
+                    <p class="subtitle">Translation vs. Localization</p>
+                    <p class="description">直譯是充滿摩擦力的異物。<br>轉譯是為了讓大腦直接處理邏輯，而非語言障礙。</p>
+
+                    <div class="how-tech-box">
+                        <div class="how-tech-item">
+                            <span class="how-tech-label">HOW</span>
+                            校準語言模型的人格權重，避開日文直譯的委婉，映射至台灣文化的直爽性格。<a href="tech-02.html" class="tech-link-btn"
+                                title="View Cultural Decoding Logic">⦿</a></span>
+                        </div>
+                        <div class="how-tech-item">
+                            <span class="how-tech-label">Technique</span>
+                            <span class="how-tech-content technique">Socio-Linguistic Alignment & Persona-Driven
+                                Transcreation</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 03 -->
+        <section id="section-3" class="section">
+            <div class="content-wrapper">
+                <div class="image-container">
+                    <img src="../assets/physics_of_insight/03_density_vs_clarity.png" alt="Complexity vs Distillation">
+                </div>
+                <div class="text-container">
+                    <h2>03. 知識無損降維</h2>
+                    <p class="subtitle">Complexity vs. Distillation</p>
+                    <p class="description">學術的完整表達是複雜的形狀。<br>將其還原到本質的構成關係，知識才能開始流動。</p>
+
+                    <div class="how-tech-box">
+                        <div class="how-tech-item">
+                            <span class="how-tech-label">HOW</span>
+                            <span class="how-tech-content">執行多階層知識蒸餾，將學術論文的複雜表達，還原為構成概念的本質關係。<a href="tech-03.html"
+                                    class="tech-link-btn" title="View Distillation Guardrails">⦿</a></span>
+                        </div>
+                        <div class="how-tech-item">
+                            <span class="how-tech-label">Technique</span>
+                            <span class="how-tech-content technique">Lossless Knowledge Distillation & Volume Integrity
+                                Check</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 04 -->
+        <section id="section-4" class="section">
+            <div class="content-wrapper">
+                <div class="image-container">
+                    <img src="../assets/physics_of_insight/04_fluff_vs_annotation.png" alt="Fluff vs Annotation">
+                </div>
+                <div class="text-container">
+                    <h2>04. 填補認知缺口</h2>
+                    <p class="subtitle">Fluff vs. Annotation</p>
+                    <p class="description">不是為了增加篇幅的廢話。<br>而是針對盲點的精確手術註解。</p>
+
+                    <div class="how-tech-box">
+                        <div class="how-tech-item">
+                            <span class="how-tech-label">HOW</span>
+                            <span class="how-tech-content">投影專業領域圖譜（如建築設計），將抽象代碼邏輯掛載至使用者熟悉的實體 Schema 中。<a
+                                    href="tech-04.html" class="tech-link-btn"
+                                    title="View Context Amplifier">⦿</a></span>
+                        </div>
+                        <div class="how-tech-item">
+                            <span class="how-tech-label">Technique</span>
+                            <span class="how-tech-content technique">Domain-Specific Schema Projection & Cross-Domain
+                                Analogy Synthesis</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 05 -->
+        <section id="section-5" class="section">
+            <div class="content-wrapper">
+                <div class="image-container">
+                    <img src="../assets/physics_of_insight/05_speed_vs_retention.png" alt="Speed vs Retention">
+                </div>
+                <div class="text-container">
+                    <h2>05. 時間投資回報</h2>
+                    <p class="subtitle">Speed vs. Retention</p>
+                    <p class="description">用『好讀』換取速度，用『網狀連結』換取留存。<br>遺忘是對投入時間的最大背叛。</p>
+
+                    <div class="how-tech-box">
+                        <div class="how-tech-item">
+                            <span class="how-tech-label">HOW</span>
+                            <span class="how-tech-content">利用高關聯性的脈絡重組，將單次閱讀的線性速度，轉化為可被長期提取的網狀記憶資產。<a
+                                    href="tech-05.html" class="tech-link-btn" title="View Retention Engine">⦿</a></span>
+                        </div>
+                        <div class="how-tech-item">
+                            <span class="how-tech-label">Technique</span>
+                            <span class="how-tech-content technique">Cognitive Friction Reduction & Networked
+                                Input/Output Loop</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 06 -->
+        <section id="section-6" class="section">
+            <div class="content-wrapper">
+                <div class="image-container">
+                    <img src="../assets/physics_of_insight/06_hoarding_vs_curation.png" alt="Hoarding vs Curation">
+                </div>
+                <div class="text-container">
+                    <h2>06. 外接大腦策展</h2>
+                    <p class="subtitle">Hoarding vs. Curation</p>
+                    <p class="description">收藏是堆積未分類的數位垃圾。<br>策展是用視覺錨點，精準索引大腦的記憶區塊。</p>
+
+                    <div class="how-tech-box">
+                        <div class="how-tech-item">
+                            <span class="how-tech-label">HOW</span>
+                            <span class="how-tech-content">利用多模態 AI 讀取關鍵影格，將前後文逐字稿綁定為圖片描述，實現自動化的圖文對位插入。<a
+                                    href="tech-06.html" class="tech-link-btn" title="View Curator Engine">⦿</a></span>
+                        </div>
+                        <div class="how-tech-item">
+                            <span class="how-tech-label">Technique</span>
+                            <span class="how-tech-content technique">Multimodal Context Binding & Visual Memory
+                                Indexing</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 07 -->
+        <section id="section-7" class="section">
+            <div class="content-wrapper">
+                <div class="image-container">
+                    <img src="../assets/physics_of_insight/07_outsourcing_vs_partnership.png"
+                        alt="Outsourcing vs Partnership">
+                </div>
+                <div class="text-container">
+                    <h2>07. 人機共舞協作</h2>
+                    <p class="subtitle">Outsourcing vs. Partnership</p>
+                    <p class="description">外包是期待奇蹟的懶惰。<br>協作是精準調度專才的將帥之道。</p>
+
+                    <div class="how-tech-box">
+                        <div class="how-tech-item">
+                            <span class="how-tech-label">HOW</span>
+                            <span class="how-tech-content">將 01-06 定義為獨立的 Agent 功能模組，人類轉型為系統架構師
+                                (Architect)，負責流程編排與關鍵節點的品質驗收 (QA/QC)。<a href="tech-07.html" class="tech-link-btn"
+                                    title="View The Conductor">⦿</a></span>
+                        </div>
+                        <div class="how-tech-item">
+                            <span class="how-tech-label">Technique</span>
+                            <span class="how-tech-content technique">Agent Orchestration & Human-in-the-Loop Protocol
+                                (MCP)</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 08 -->
+        <section id="section-8" class="section">
+            <div class="content-wrapper">
+                <div class="image-container">
+                    <img src="../assets/physics_of_insight/08_grind_vs_flow.png" alt="Grind vs Flow">
+                </div>
+                <div class="text-container">
+                    <h2>08. 磨練 vs. 心流</h2>
+                    <p class="subtitle">Grind vs. Flow</p>
+                    <p class="description">磨練是為了生存，心流是為了創造。<br>消除摩擦力，讓大腦在純粹的思考中從滑行到飛翔。</p>
+
+                    <div class="how-tech-box">
+                        <div class="how-tech-item">
+                            <span class="how-tech-label">HOW</span>
+                            <span class="how-tech-content">將重複性勞動（格）交給自動化腳本，將認知頻寬（流）保留給高價值的洞察與連結。<a href="tech-08.html"
+                                    class="tech-link-btn" title="View The Flow State">⦿</a></span>
+                        </div>
+                        <div class="how-tech-item">
+                            <span class="how-tech-label">Technique</span>
+                            <span class="how-tech-content technique">Frictionless Automation & Cognitive
+                                Offloading</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 09 -->
+        <section id="section-9" class="section">
+            <div class="content-wrapper">
+                <div class="image-container">
+                    <img src="../assets/physics_of_insight/09_knowledge_vs_system.png" alt="Isolates vs Networks">
+                </div>
+                <div class="text-container">
+                    <h2>09. 孤島 vs. 連結</h2>
+                    <p class="subtitle">Isolates vs. Networks</p>
+                    <p class="description">孤島是死知識的墳場。<br>連結是新洞察的溫床。</p>
+
+                    <div class="how-tech-box">
+                        <div class="how-tech-item">
+                            <span class="how-tech-label">HOW</span>
+                            <span class="how-tech-content">不再依賴資料夾分類，而是利用 Vector Embeddings 找出知識間的「語義距離」，自動建立跨時空的意外連結。<a
+                                    href="tech-09.html" class="tech-link-btn" title="View The Network">⦿</a></span>
+                        </div>
+                        <div class="how-tech-item">
+                            <span class="how-tech-label">Technique</span>
+                            <span class="how-tech-content technique">Vector Embeddings & Semantic Knowledge
+                                Graph</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 10 -->
+        <section id="section-10" class="section">
+            <div class="content-wrapper">
+                <div class="image-container">
+                    <img src="../assets/physics_of_insight/10_shortcut_vs_leverage.png" alt="Having vs Becoming">
+                </div>
+                <div class="text-container">
+                    <h2>10. 擁有 vs. 成為</h2>
+                    <p class="subtitle">Having vs. Becoming</p>
+                    <p class="description">你擁有的知識會過期。<br>你成為的人格是永恆。</p>
+
+                    <div class="how-tech-box">
+                        <div class="how-tech-item">
+                            <span class="how-tech-label">HOW</span>
+                            <span class="how-tech-content">知識不再是外掛硬碟，而是內化為直覺。通過大量高品質的輸入與輸出迴圈，改寫你的決策模型。<a
+                                    href="tech-10.html" class="tech-link-btn"
+                                    title="View The Transformation">⦿</a></span>
+                        </div>
+                        <div class="how-tech-item">
+                            <span class="how-tech-label">Technique</span>
+                            <span class="how-tech-content technique">Model Fine-Tuning & Identity Integration</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 11 -->
+        <section id="section-11" class="section">
+            <div class="content-wrapper">
+                <div class="image-container">
+                    <img src="../assets/physics_of_insight/11_the_bridge.png" alt="The Bridge">
+                </div>
+                <div class="text-container">
+                    <h2>連結的橋樑</h2>
+                    <p class="subtitle">The Bridge</p>
+                    <p class="description">左岸是東大松尾研，右岸是我的大腦。<br>這套流程，就是連結兩端的橋樑。</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- 12. Closing -->
+        <section id="section-12" class="section closing-section">
+            <div class="closing-content">
+                <h2 class="closing-title">結語：放大的藝術</h2>
+
+                <div class="closing-text">
+                    <p>技術都很難。</p>
+                    <p>知識的海洋廣闊無垠，沒有人能全部學完。</p>
+
+                    <p class="highlight">所以，你要選擇的，是<strong>高品質的教材</strong>。</p>
+
+                    <p>而當你發現高品質的教材——<br>
+                        或者當你遇到真正有料的人在進行分享的時候——</p>
+
+                    <p class="emphasis"><strong>你要不計一切代價做的事情是：<br>把他的字字句句都收藏起來。</strong></p>
+
+                    <p>同時，要把這些字句，<br>
+                        跟你腦袋可以吸收的每個「接面」去做對接。</p>
+
+                    <p>更重要的是——<br>
+                        要有意識地去理解：<br>
+                        <em>省掉的每一個字元，伴隨著怎樣的惋惜。</em>
+                    </p>
+                </div>
+
+                <div class="closing-cta">
+                    <p>讓我們用<span class="accent">「放大」</span><br>
+                        來<span class="accent">放大</span>你學習的機會和潛力。</p>
+                </div>
+
+                <!-- 3 Pitfalls to Avoid -->
+                <div class="pitfalls-box">
+                    <h3 class="pitfalls-title">⚠ 3 個不要踩的雷</h3>
+                    <ul class="pitfalls-list">
+                        <li><strong>不要說「幫我摘要」</strong><br><span class="pitfall-detail">這會觸發模型的偷懶機制，你會失去所有細節。</span></li>
+                        <li><strong>不要期待一次到位</strong><br><span class="pitfall-detail">長內容必須分段處理，超過 30 分鐘的音檔要切片。</span>
+                        </li>
+                        <li><strong>不要忽略字數檢查</strong><br><span class="pitfall-detail">如果輸出比輸入短，就是失敗，立刻重做。</span></li>
+                    </ul>
+                </div>
+
+                <div class="closing-credits">
+                    <p>— The Physics of Insight —</p>
+                    <p>Design inspired by Jack Butcher / Visualize Value</p>
+                </div>
+
+                <!-- Easter Egg Button -->
+                <!-- Easter Egg Button -->
+                <a href="easter-egg.html" class="easter-egg-btn" title="...">
+                    <img src="../assets/jack_diamond_icon.png" alt="Hidden Gem" />
+                </a>
+            </div>
+        </section>
+
+    </main>
+
+    <!-- Tech Detail Drawer -->
+    <div id="tech-drawer-overlay" class="drawer-overlay"></div>
+    <div id="tech-drawer" class="tech-drawer">
+        <button id="close-drawer" class="close-drawer-btn">×</button>
+        <iframe id="tech-iframe" class="tech-iframe" frameborder="0"></iframe>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+
+</html>
