@@ -35,7 +35,7 @@
 ## 📑 頁面重點與設計想法
 
 ### 主頁面 (Main Stream)
-*   **想法**: 模仿 Jack Butcher 的 "The Physics of Value"，用極簡的幾何圖形與強烈的對比（黑/白/灰）來降低認知摩擦。
+*   **想法**: 致敬設計 Jack Butcher 的 "The Physics of Value"，用極簡的幾何圖形與強烈的對比（黑/白/灰）來降低認知摩擦。
 *   **重點**: 強調「壓縮 vs. 還原」、「孤島 vs. 連結」等核心對立概念，呈現學習 LLM 不只是技術累積，更是思維模型的改變。
 
 ### 技術抽屜 (Technical Drawers)
