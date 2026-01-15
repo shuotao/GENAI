@@ -67,6 +67,17 @@ document.addEventListener('DOMContentLoaded', () => {
         techIframe.src = 'about:blank'; // Clear content
     }
 
+    // Expose closeDrawer to window for iframe access
+    window.closeParentDrawer = closeDrawer;
+
+    // Listen for postMessage from iframe
+    window.addEventListener('message', (event) => {
+        // Security: verify origin if needed (for local files, origin is 'null')
+        if (event.data === 'closeDrawer') {
+            closeDrawer();
+        }
+    });
+
     techLinks.forEach(link => {
         link.addEventListener('click', (e) => {
             e.preventDefault();
