@@ -1,15 +1,21 @@
 # CLAUDE.md
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+It is the **single authoritative specification** for all AI-assisted workflows in this project.
+
+- **Gemini CLI** 使用者請參考 `Gemini.md`（指向本文件）。
+- 本文件整合了原 `SRT/Agent.md` 的全部規範（v2.1）。
+
+---
 
 ## Project Overview
 
-**"The Physics of Insight"** is a dual-purpose project combining:
+**"The Physics of Insight"** is a dual-purpose project:
 
-1. **Interactive Web Platform** (`/web`): Static HTML/CSS/JS website inspired by Jack Butcher's design philosophy, presenting LLM learning concepts with visual clarity and interactive technical detail drawers.
-2. **SRT Audio-to-Text Workflow** (`/SRT`): Python-based pipeline for converting audio recordings to SRT subtitles and transcripts, with built-in QA/QC and professional knowledge supplementation.
+1. **Interactive Web Platform** (`/web`): Static HTML/CSS/JS website + 好學生筆記工作室（client-side AI pipeline）
+2. **CLI Workflow** (`.claude/skills/good-student-notes`): Terminal-based transcription + notes generation via Claude Code or Gemini CLI
 
-The project emphasizes "compression vs. expansion" and bridging knowledge silos through visual design and automated content processing.
+The project emphasizes "compression vs. expansion" and bridging knowledge silos.
 
 ---
 
@@ -17,62 +23,35 @@ The project emphasizes "compression vs. expansion" and bridging knowledge silos 
 
 ### Web Component (`/web`)
 
-**Purpose**: Deliver core learning content with minimal cognitive friction
+- **`index.html`**: Main single-page interface with 13 core sections, Intersection Observer, iframe drawer
+- **`studio.html` + `studio.js`**: 好學生筆記工作室 — 4-step client-side AI pipeline
+  - Step 1: Upload audio → Groq Whisper transcription → SRT
+  - Step 2: QAQC cleanup + Gemini polish (editable preview/edit tabs)
+  - Step 3: Keyword-driven knowledge supplement
+  - Step 4: Identity-based Good Student Notes generation
+- **`config.local.js`**: Local API keys (gitignored), auto-loaded on dev
+- **`config.local.example.js`**: Template for other users
 
-- **`index.html`**: Main single-page scrolling interface with 13 core sections
-  - Uses Intersection Observer for scroll detection
-  - Dynamically loads technical detail pages into right-side drawer via iframe
-  - Responsive design with glassmorphism effects
+### CLI Skill (`.claude/skills/good-student-notes`)
 
-- **`script.js`**: Handles UI interactivity
-  - Scroll-based navigation state (navbar visibility)
-  - Drawer open/close logic with dynamic iframe src loading
-  - Responsive breakpoints
-
-- **`style.css`**: Unified visual system
-  - Minimalist black/white/gray palette
-  - Glassmorphism backdrop effects
-  - Smooth drawer animations
-  - System font stack (no external font dependencies for offline viewing)
-
-- **`tech-01.html` through `tech-10.html`**: Detail pages loaded as drawer content
-  - Each contains concrete technical implementation details
-  - Includes Prompt engineering techniques ("HOW" section)
-
-- **`easter-egg.html`**: Hidden page revealing the development workflow automation
+- **`SKILL.md`**: Skill definition, invoked via `/good-student-notes <file> [identity]`
+- **`scripts/groq_transcribe.py`**: Groq Whisper transcription (reads `.env` for API key)
+- Outputs: `.srt`, `_cleaned.md`, `_good_student_notes.md`
 
 ### SRT Component (`/SRT`)
 
-**Purpose**: Standardize audio transcription and transcript generation workflow
-
-- **`transcribe.py`**: Audio-to-SRT converter
-  - Chunks audio into 10-minute segments (prevents Whisper hallucination on long recordings)
-  - Calls Groq Whisper API with custom context from `context.txt` for vocabulary accuracy
-  - Outputs SRT files with proper timecodes (HH:MM:SS,mmm format)
-  - Auto-invokes `qaqc_srt.py` for immediate QA/QC
-
+- **`transcribe.py`**: Standalone Python transcription tool (interactive mode)
 - **`qaqc_srt.py`**: Quality assurance and cleanup
-  - Removes empty subtitle blocks
-  - Filters "Whisper hallucinations" (e.g., prompts injected as content: "內容包含：...")
-  - Applies typo fixes (common sound-alike errors like 剪報→簡報)
-  - Renumbers SRT sequences (handles removed blocks gracefully)
-  - Can be called standalone for batch processing
+- **`context.txt`**: Vocabulary context for Whisper accuracy boost
 
-- **`context.txt`**: Vocabulary context for Whisper
-  - Comma-separated list of domain terms (technical, meeting-specific, brand names)
-  - Injected into Whisper prompt to improve accuracy on specialized vocabulary
-  - Currently tuned for: Claude Code, technical terminology, Chinese traditional terms
+### API Keys
 
-- **`Agent.md`**: Definitive workflow specification (v2.1)
-  - **Zero Omission Principle**: Transcripts must preserve complete original content, no summarization
-  - **Knowledge Supplements**: Professional term explanations must be embedded at first-mention point in text (not appended)
-  - **Merging SRT files**: Strict rules for combining multiple SRT files + cleanup
-  - **QA/QC Standards**: What constitutes proper formatting and filtering
-
-### Assets (`/assets`)
-
-- `physics_of_insight/`: Visualization diagrams for core concepts
-- Portrait photos and UI icons (jack_diamond_icon.png for easter egg)
+- Stored in project root `.env` (gitignored)
+- Format:
+  ```
+  GROQ_API_KEY=<your-key>
+  GEMINI_API_KEY=<your-key>
+  ```
 
 ---
 
@@ -80,124 +59,163 @@ The project emphasizes "compression vs. expansion" and bridging knowledge silos 
 
 ### Web Development
 
-**Offline Testing:**
 ```bash
 # Simply open in browser (no server needed)
 open web/index.html
-# Or drag/drop into browser window
+
+# Or use local server for full feature testing
+cd web && python3 -m http.server 8080
 ```
 
-**Requirements**: Modern browser (Chrome, Edge, Safari) with CSS Grid and Intersection Observer support. Works completely offline once loaded (uses system fonts).
+**Deployment**: GitHub Pages — `https://shuotao.github.io/GENAI/web/index.html`
 
-**Deployment**: Repository configured for GitHub Pages with root `index.html` that auto-redirects to `web/index.html`.
+### CLI Skill Usage
 
-### SRT Audio Processing
+```bash
+# In Claude Code:
+/good-student-notes IMG_8384.MOV
+/good-student-notes IMG_8384.MOV 建築師
 
-**Setup:**
+# In Gemini CLI:
+# Reference this file and follow the workflow rules below
+```
+
+### SRT Standalone Processing
+
 ```bash
 cd SRT
-python3 -m venv .venv
-source .venv/bin/activate
-pip install requests
-# Requires: ffmpeg (system-level), Groq API key
-```
-
-**Transcribe Audio File:**
-```bash
-cd SRT
-python3 transcribe.py
-# Prompts for: Groq API Key, then processes all audio files in current directory
-# Outputs: filename.srt (then auto-runs QAQC)
-```
-
-**Manual QA/QC (if needed):**
-```bash
-python3 qaqc_srt.py <filename.srt>
-# Updates the file in-place with cleaned/renumbered content
-```
-
-**Customize vocabulary context:**
-```bash
-# Edit context.txt with comma-separated domain terms
-# These will be injected into Whisper's prompt for accuracy boost
+python3 transcribe.py          # Interactive mode
+python3 qaqc_srt.py <file.srt> # Manual QA/QC
 ```
 
 ---
 
-## SRT Workflow Standards
+## 核心鐵律 (Critical Rules)
 
-**Critical Rules** (from Agent.md v2.1):
+> **以下規範適用於所有 AI 工具（Claude Code、Gemini CLI、Web Studio）處理逐字稿與筆記的場景。**
 
-1. **Zero Omission Principle**
-   - Never summarize, condense, or paraphrase transcripts
-   - Preserve all original speaker content (except pure filler: 呃, 嗯, 那個 when non-semantic)
-   - Keep first-person voice; never rewrite as third-person narrative
+### 1. 零省略原則 (Zero Omission Policy)
 
-2. **Merging Multiple SRT Files**
-   - Concatenate by filename order
-   - Remove timecodes and sequence numbers
-   - Remove redundant filler words only where non-semantic
-   - Add Markdown headers (`##`, `###`) at section boundaries (not replacing content)
+- **嚴禁**對內容進行摘要、總結或改寫
+- 原始音訊所轉錄的每一個句子（除了純粹的語助詞外）都必須完整保留
+- **禁止**使用「講者介紹了...」、「第一部分提到...」等第三人稱描述性寫法
+- 必須保留第一人稱的原話
 
-3. **Professional Knowledge Supplements**
-   - Extract technical terms and provide explanations
-   - Insert explanations **at first mention point in text**, not in appendix
-   - Use Markdown blockquotes with empty lines before/after:
-     ```markdown
-     [text mentioning Transformer...]
+### 2. 嚴格的「整理」定義
 
-     > **專業知識補充：Transformer**
-     >
-     > [Explanation of concept]
+「整理」僅指：
+- 移除時間軸與序號
+- 移除贅字（呃、嗯、那個——僅作發語詞時）
+- 合併破碎斷行
+- 加入 Markdown 標題
+- 補上標點符號與接續詞
 
-     [continued text...]
-     ```
+「整理」**絕不包含**：刪減句子、濃縮段落、改變語氣
 
-4. **Final QA/QC Checklist**
-   - All content preserved? ✓
-   - Timecodes + sequence numbers removed? ✓
-   - Filler words removed appropriately? ✓
-   - Section headers added? ✓
-   - Knowledge supplements embedded at mention points? ✓
-   - No third-person rewrites? ✓
+### 3. QAQC 標準
+
+#### Phase A：自動清理
+1. **移除 SRT 元數據**：所有序號與時間軸
+2. **移除幻覺段落**：
+   - `內容包含：`、`這是一段關於技術開發`、`這是一段繁體中文`
+   - `请注意`、`Please note`、`Thank you`、`thanks for`
+   - `Subtitles`、`Subscribe`、`字幕由`
+3. **過濾亂碼**：中文字比例 < 25% 的段落
+4. **常見錯字修正**：剪報→簡報、因該→應該、在來→再來
+
+#### Phase B：AI 校稿
+1. 補上標點符號（句號、逗號、問號、驚嘆號、頓號）
+2. 在語意斷裂處補上接續詞（然後、接著、也就是說、所以）
+3. 合併破碎斷行為完整段落
+4. 依語意分段（每 300-500 字或話題轉換時）
+5. 插入 Markdown 標題（## 或 ###），標題是插入在段落之間，不能取代原文
+6. **字數檢查**：輸出字數必須 ≥ 輸入字數的 95%
+
+### 4. 好學生筆記規範
+
+**前提**：使用者必須指定專業身份，否則不生成筆記
+
+生成規則：
+1. **完整保留原文**，每一段都必須出現
+2. 在段落或重要概念之後加入專業視角類比區塊：
+   ```markdown
+   > 🎯 **[身份]視角**
+   >
+   > - **類比**：[用該專業術語重新詮釋]
+   > - **應用**：[在該專業工作中如何應用]
+   > - **連結**：[與已知概念的關聯]
+   ```
+3. 開頭加入學習摘要框（📝）
+4. 結尾加入核心洞察（💡）
+5. 類比必須在邏輯上合理且有意義
+6. 補充區塊上下各保留一個空行
+
+### 5. 錯誤樣態對照表
+
+| 錯誤類型 | ❌ 錯誤 | ✅ 正確 |
+|---------|---------|---------|
+| 摘要化 | "講者介紹了 Transformer 的架構。" | 保留原話全文 |
+| 第三人稱 | "第一部分討論了分析方法。" | 保留第一人稱敘述 |
+| 省略細節 | 刪除講者舉例的細節 | 完整保留所有舉例 |
+| 過度清洗 | 刪除「我覺得」等語氣詞 | 保留適度語氣詞以維持現場感 |
+
+### 6. 最終檢查清單
+
+- [ ] 所有教學內容與細節已保留？
+- [ ] 時間軸與序號已移除？
+- [ ] 贅字已適當移除（不影響語意）？
+- [ ] 加入了適當的 Markdown 標題？
+- [ ] 未將內容轉寫為摘要或文章體裁？
+- [ ] 補上了標點符號與接續詞？
+- [ ] 輸出字數 ≥ 輸入字數的 95%？
+
+---
+
+## SRT QA/QC 技術規範
+
+### 時間軸修正規則
+1. **清理**：提取 `[\d:,]`，過濾髒字符
+2. **正規化**：補齊為 `HH:MM:SS,mmm`（毫秒補足3位）
+3. **邏輯修復**：
+   - `Start Time < End Time`
+   - `Next Start >= Previous End`
+4. **檔案交付**：另存新檔 `filename_fixed.srt`，不得覆寫原始 SRT
+
+---
+
+## 輸出檔案命名規範
+
+| 用途 | CLI 命名 | Web 命名 |
+|------|---------|---------|
+| SRT 逐字稿 | `<filename>.srt` | `transcribe.srt` (下載) |
+| 合併校稿 | `<filename>_cleaned.md` | `transcript.md` (下載) |
+| 知識補充 | N/A (CLI 跳過) | `enhanced.md` (下載) |
+| 好學生筆記 | `<filename>_good_student_notes.md` | `good-student-notes.md` (下載) |
+
+所有檔案統一使用 **UTF-8** 編碼。
 
 ---
 
 ## Key Files & Paths
 
-| Purpose | Path | Notes |
-|---------|------|-------|
-| Main website | `/web/index.html` | Static, offline-ready |
-| Web styling | `/web/style.css` | Single unified stylesheet |
-| Web interactivity | `/web/script.js` | Drawer + scroll detection |
-| Tech detail pages | `/web/tech-0X.html` | Loaded as iframes in drawer |
-| Audio transcription | `/SRT/transcribe.py` | Groq Whisper integration |
-| QA/QC pipeline | `/SRT/qaqc_srt.py` | Cleanup + renumbering |
-| Workflow rules | `/SRT/Agent.md` | Master specification (v2.1) |
-| Vocabulary context | `/SRT/context.txt` | Comma-separated Whisper hints |
-| Learning notes | `/SRT/好學生筆記.md` | AI role definition for note generation |
-| Project philosophy | `/README.md` | Design rationale + setup |
+| Purpose | Path |
+|---------|------|
+| Main website | `/web/index.html` |
+| 好學生筆記工作室 | `/web/studio.html` + `/web/studio.js` |
+| CLI Skill | `/.claude/skills/good-student-notes/SKILL.md` |
+| Groq 轉錄腳本 | `/.claude/skills/good-student-notes/scripts/groq_transcribe.py` |
+| Standalone 轉錄 | `/SRT/transcribe.py` |
+| QA/QC 腳本 | `/SRT/qaqc_srt.py` |
+| 背景詞庫 | `/SRT/context.txt` |
+| API Keys | `/.env` (gitignored) |
+| 本文件 | `/CLAUDE.md` (唯一規範) |
+| Gemini 指引 | `/Gemini.md` (指向本文件) |
 
 ---
 
-## Important Notes
+## Project Structure Decisions
 
-### Security Alert 🔐
-
-**`SRT/Groq.md` contains what appears to be an API key and should NOT be in version control.**
-
-- [ ] TODO: Remove Groq.md from repository (or rotate the key immediately if exposed)
-- [ ] TODO: Use environment variables instead: `export GROQ_API_KEY=<key>` and read via `os.environ.get()`
-- [ ] TODO: Add `.env` to `.gitignore`
-
-### Project Structure Decisions
-
-- **Relative paths throughout**: All web assets use relative paths (`../assets/`, `./style.css`) for flexibility (works on any domain, locally, or offline)
-- **No server required**: Pure static site; no Node build step, no package manager, no database
-- **Single CSS file**: Unifies visual system; avoid separate component stylesheets
-- **iframe drawers**: Technical content loads into right-side drawer without page reload; preserves scroll position on main page
-
-### Git History
-
-Recent work (commit 77c1fe5+) unified development/deployment structure and introduced the SRT workflow. See `git log` for full history.
-
+- **Relative paths throughout**: All web assets use relative paths for flexibility
+- **No server required**: Pure static site for web; CLI uses local Python + API calls
+- **Single source of truth**: This file (CLAUDE.md) is the only specification. Agent.md content has been fully integrated here.
+- **API keys via .env**: Never hardcode keys; `.env` is gitignored
