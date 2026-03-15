@@ -1,0 +1,477 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>好學生筆記工作室 - Good Student Notes Studio</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link
+        href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;700&display=swap"
+        rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            background: #000;
+            color: #fff;
+            font-family: 'Noto Sans TC', -apple-system, sans-serif;
+            min-height: 100vh;
+        }
+
+        /* ── Header ── */
+        .studio-header {
+            padding: 24px 40px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border-bottom: 1px solid #1a1a1a;
+        }
+        .back-link {
+            color: #555;
+            text-decoration: none;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.85rem;
+            transition: color 0.3s;
+        }
+        .back-link:hover { color: #fff; }
+        .header-title {
+            font-size: 0.85rem;
+            font-weight: 300;
+            color: #555;
+            font-family: 'JetBrains Mono', monospace;
+            letter-spacing: 0.1em;
+            text-transform: uppercase;
+        }
+
+        /* ── Step Indicator ── */
+        .step-nav {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 40px 20px 10px;
+            gap: 0;
+        }
+        .step-dot {
+            width: 36px; height: 36px;
+            border-radius: 50%;
+            border: 2px solid #333;
+            display: flex; align-items: center; justify-content: center;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem; color: #555;
+            transition: all 0.3s; cursor: default;
+            flex-shrink: 0;
+        }
+        .step-dot.active  { border-color: #fff; color: #fff; background: rgba(255,255,255,0.08); }
+        .step-dot.done    { border-color: #5a5; color: #5a5; }
+        .step-line { width: 50px; height: 1px; background: #222; flex-shrink: 0; }
+
+        .step-labels {
+            display: flex; justify-content: center;
+            padding: 10px 20px 30px; gap: 30px;
+        }
+        .step-lbl {
+            font-size: 0.7rem; color: #444; text-align: center;
+            width: 56px; font-family: 'JetBrains Mono', monospace;
+        }
+        .step-lbl.active { color: #ccc; }
+
+        /* ── Main ── */
+        .studio-main { max-width: 780px; margin: 0 auto; padding: 0 30px 80px; }
+
+        .step { display: none; animation: fadeUp 0.35s ease; }
+        .step.active { display: block; }
+        @keyframes fadeUp {
+            from { opacity: 0; transform: translateY(12px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        .step-title { font-size: 1.6rem; font-weight: 700; margin-bottom: 6px; }
+        .step-sub {
+            color: #666; font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem; margin-bottom: 28px;
+            text-transform: uppercase; letter-spacing: 0.06em;
+        }
+
+        /* ── Form ── */
+        .field { margin-bottom: 22px; }
+        .field-label {
+            display: block; font-size: 0.8rem; color: #777;
+            margin-bottom: 6px; font-family: 'JetBrains Mono', monospace;
+        }
+
+        input[type="text"], input[type="password"], textarea, select {
+            width: 100%; padding: 12px 14px;
+            background: #0d0d0d; border: 1px solid #2a2a2a; border-radius: 3px;
+            color: #ddd; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;
+            outline: none; transition: border-color 0.3s;
+        }
+        input:focus, textarea:focus, select:focus { border-color: #555; }
+        textarea { min-height: 100px; resize: vertical; line-height: 1.7; }
+        textarea.tall { min-height: 300px; font-family: 'Noto Sans TC', sans-serif; font-size: 0.92rem; }
+
+        /* ── File Upload ── */
+        .upload-zone {
+            border: 2px dashed #2a2a2a; border-radius: 4px;
+            padding: 36px; text-align: center; cursor: pointer;
+            transition: border-color 0.3s, background 0.3s;
+        }
+        .upload-zone:hover { border-color: #555; background: rgba(255,255,255,0.015); }
+        .upload-zone.has-file { border-color: #5a5; border-style: solid; }
+        .upload-icon { font-size: 1.8rem; margin-bottom: 8px; }
+        .upload-hint { color: #555; font-size: 0.85rem; }
+        .upload-name {
+            color: #5a5; font-family: 'JetBrains Mono', monospace;
+            font-size: 0.8rem; margin-top: 8px;
+        }
+        input[type="file"] { display: none; }
+
+        /* ── Buttons ── */
+        .btn {
+            display: inline-flex; align-items: center; gap: 8px;
+            padding: 11px 22px; border: 1px solid #333; background: transparent;
+            color: #fff; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem;
+            cursor: pointer; transition: all 0.3s; border-radius: 3px;
+            text-decoration: none;
+        }
+        .btn:hover { border-color: #fff; background: rgba(255,255,255,0.04); }
+        .btn-go {
+            background: #fff; color: #000; border-color: #fff; font-weight: 700;
+        }
+        .btn-go:hover { background: #e0e0e0; }
+        .btn-go:disabled { background: #333; color: #666; border-color: #333; cursor: not-allowed; }
+        .btn-row { display: flex; gap: 12px; margin-top: 22px; flex-wrap: wrap; }
+
+        /* ── Progress ── */
+        .progress { display: none; margin: 22px 0; padding: 16px; border: 1px solid #1a1a1a; border-radius: 3px; background: #080808; }
+        .progress.show { display: block; }
+        .prog-line {
+            padding: 5px 0; font-size: 0.8rem; color: #555;
+            font-family: 'JetBrains Mono', monospace;
+        }
+        .prog-line.ok   { color: #5a5; }
+        .prog-line.run  { color: #fff; }
+        .prog-line.fail { color: #f55; }
+        .prog-bar-wrap { width: 100%; height: 2px; background: #1a1a1a; margin-top: 14px; border-radius: 1px; }
+        .prog-bar { height: 100%; background: #fff; border-radius: 1px; transition: width 0.4s; width: 0%; }
+
+        /* ── Result ── */
+        .result { display: none; margin-top: 22px; }
+        .result.show { display: block; }
+        .result-hdr {
+            display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;
+        }
+        .result-tag { font-size: 0.8rem; color: #5a5; font-family: 'JetBrains Mono', monospace; }
+        .result-stat { font-size: 0.7rem; color: #555; font-family: 'JetBrains Mono', monospace; }
+
+        /* ── Tabs ── */
+        .tabs { display: flex; border-bottom: 1px solid #222; margin-bottom: 20px; }
+        .tab {
+            padding: 8px 18px; font-size: 0.8rem; color: #555; cursor: pointer;
+            border-bottom: 2px solid transparent;
+            font-family: 'JetBrains Mono', monospace; transition: all 0.3s;
+        }
+        .tab.active { color: #fff; border-bottom-color: #fff; }
+        .tab-pane { display: none; }
+        .tab-pane.active { display: block; }
+
+        /* ── Markdown Rendered Box ── */
+        .md-box {
+            width: 100%; padding: 16px 18px;
+            background: #0d0d0d; border: 1px solid #2a2a2a; border-radius: 3px;
+            color: #ddd; font-family: 'Noto Sans TC', sans-serif; font-size: 0.92rem;
+            line-height: 1.8; max-height: 600px; overflow-y: auto;
+            user-select: text; cursor: text;
+        }
+        .md-box h1, .md-box h2, .md-box h3 {
+            color: #fff; margin: 1.2em 0 0.5em; font-weight: 700;
+        }
+        .md-box h1 { font-size: 1.3rem; border-bottom: 1px solid #222; padding-bottom: 6px; }
+        .md-box h2 { font-size: 1.15rem; }
+        .md-box h3 { font-size: 1rem; }
+        .md-box p { margin: 0.6em 0; }
+        .md-box blockquote {
+            border-left: 3px solid #5a5; margin: 1em 0; padding: 8px 14px;
+            background: rgba(85,170,85,0.06); color: #bbb; border-radius: 0 3px 3px 0;
+        }
+        .md-box blockquote strong { color: #7d7; }
+        .md-box ul, .md-box ol { padding-left: 1.5em; margin: 0.5em 0; }
+        .md-box li { margin: 0.3em 0; }
+        .md-box code {
+            background: #1a1a1a; padding: 1px 5px; border-radius: 3px;
+            font-family: 'JetBrains Mono', monospace; font-size: 0.82rem; color: #e8e8e8;
+        }
+        .md-box pre { background: #111; padding: 12px; border-radius: 3px; overflow-x: auto; margin: 0.8em 0; }
+        .md-box pre code { background: none; padding: 0; }
+        .md-box hr { border: none; border-top: 1px solid #222; margin: 1.2em 0; }
+        .md-box.preview { max-height: 350px; color: #aaa; }
+
+        /* ── Divider ── */
+        .divider { height: 1px; background: #1a1a1a; margin: 30px 0; }
+
+        /* ── Responsive ── */
+        @media (max-width: 600px) {
+            .studio-main { padding: 0 16px 60px; }
+            .step-title { font-size: 1.3rem; }
+            .btn-row { flex-direction: column; }
+            .step-labels { gap: 18px; }
+        }
+    </style>
+</head>
+
+<body>
+
+    <!-- Header -->
+    <header class="studio-header">
+        <a href="index.html" class="back-link">&larr; 返回主頁</a>
+        <span class="header-title">Good Student Notes Studio</span>
+    </header>
+
+    <!-- Step Indicator -->
+    <nav class="step-nav">
+        <div class="step-dot active" id="dot-1">1</div>
+        <div class="step-line"></div>
+        <div class="step-dot" id="dot-2">2</div>
+        <div class="step-line"></div>
+        <div class="step-dot" id="dot-3">3</div>
+        <div class="step-line"></div>
+        <div class="step-dot" id="dot-4">4</div>
+    </nav>
+    <div class="step-labels">
+        <span class="step-lbl active" id="lbl-1">轉錄</span>
+        <span class="step-lbl" id="lbl-2">清理</span>
+        <span class="step-lbl" id="lbl-3">補充</span>
+        <span class="step-lbl" id="lbl-4">筆記</span>
+    </div>
+
+    <!-- Main -->
+    <main class="studio-main">
+
+        <!-- ════════ STEP 1: Transcribe ════════ -->
+        <section class="step active" id="step-1">
+            <h2 class="step-title">上傳媒體並轉錄</h2>
+            <p class="step-sub">Upload &amp; Transcribe with Groq Whisper</p>
+
+            <!-- Tabs: upload audio / paste text -->
+            <div class="tabs">
+                <div class="tab active" data-tab="tab-upload">上傳音檔</div>
+                <div class="tab" data-tab="tab-paste">貼上文字</div>
+            </div>
+
+            <div class="tab-pane active" id="tab-upload">
+                <div class="field">
+                    <div class="upload-zone" id="upload-zone">
+                        <div class="upload-icon">🎵</div>
+                        <div class="upload-hint">點擊或拖曳音訊/影片檔案至此<br>
+                            <small>支援 mp3, wav, m4a, mp4, webm, ogg, flac</small></div>
+                        <div class="upload-name" id="upload-name"></div>
+                    </div>
+                    <input type="file" id="file-input"
+                        accept=".mp3,.wav,.m4a,.mp4,.webm,.ogg,.flac,.mpeg,.mpga,.mov,.mkv">
+                </div>
+
+                <div class="field">
+                    <label class="field-label">Context 背景詞庫 (選填)</label>
+                    <textarea id="context-input" rows="3"
+                        placeholder="貼上活動簡介、講者名稱、專有名詞等，提升辨識準確度。&#10;例如：Claude Code, PicCollage, Zeabur, 繁體中文, 逐字稿..."></textarea>
+                </div>
+
+                <div class="field">
+                    <label class="field-label">Groq API Key</label>
+                    <input type="password" id="groq-key" placeholder="輸入你的 Groq API Key">
+                </div>
+
+                <div class="btn-row">
+                    <button class="btn btn-go" id="btn-transcribe">開始轉錄</button>
+                </div>
+            </div>
+
+            <div class="tab-pane" id="tab-paste">
+                <div class="field">
+                    <label class="field-label">直接貼上 SRT 或純文字逐字稿</label>
+                    <textarea id="paste-input" class="tall"
+                        placeholder="將 SRT 內容或純文字逐字稿貼在這裡..."></textarea>
+                </div>
+                <div class="btn-row">
+                    <button class="btn btn-go" id="btn-paste-next">使用此文字，進入下一步</button>
+                </div>
+            </div>
+
+            <!-- Progress -->
+            <div class="progress" id="prog-1">
+                <div id="prog-1-lines"></div>
+                <div class="prog-bar-wrap"><div class="prog-bar" id="prog-1-bar"></div></div>
+            </div>
+
+            <!-- Result -->
+            <div class="result" id="res-1">
+                <div class="result-hdr">
+                    <span class="result-tag">&#10003; 逐字稿已生成</span>
+                    <span class="result-stat" id="res-1-stat"></span>
+                </div>
+                <textarea class="tall" id="res-1-text" readonly></textarea>
+                <div class="btn-row">
+                    <button class="btn" id="btn-dl-srt">📥 下載 SRT</button>
+                    <button class="btn btn-go" id="btn-to-2">下一步：清理合併 →</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- ════════ STEP 2: QAQC + Gemini Polish ════════ -->
+        <section class="step" id="step-2">
+            <h2 class="step-title">清理、合併與校稿</h2>
+            <p class="step-sub">QAQC &amp; AI-Assisted Polish (Agent.md Rules)</p>
+
+            <p style="color:#888; font-size:0.9rem; margin-bottom:20px; line-height:1.7;">
+                <strong style="color:#ccc;">Phase A</strong>：自動清理（移除時間軸、幻覺段落、亂碼雜訊）<br>
+                <strong style="color:#ccc;">Phase B</strong>：AI 校稿（補上標點符號與接續詞，嚴禁省略任何內容）
+            </p>
+
+            <div class="field">
+                <label class="field-label">Gemini API Key（校稿用）</label>
+                <input type="password" id="gemini-key-2" placeholder="輸入你的 Gemini API Key">
+            </div>
+
+            <div class="btn-row">
+                <button class="btn" id="btn-back-1">← 上一步</button>
+                <button class="btn btn-go" id="btn-qaqc">執行清理 + 校稿</button>
+                <button class="btn" id="btn-qaqc-only">僅清理（不校稿）</button>
+            </div>
+
+            <div class="progress" id="prog-2">
+                <div id="prog-2-lines"></div>
+                <div class="prog-bar-wrap"><div class="prog-bar" id="prog-2-bar"></div></div>
+            </div>
+
+            <div class="result" id="res-2">
+                <div class="result-hdr">
+                    <span class="result-tag">&#10003; 校稿完成</span>
+                    <span class="result-stat" id="res-2-stat"></span>
+                </div>
+
+                <!-- Tabs: preview / edit -->
+                <div class="tabs" id="res-2-tabs">
+                    <div class="tab active" data-res2="res-2-preview-pane">預覽</div>
+                    <div class="tab" data-res2="res-2-edit-pane">編輯原文</div>
+                </div>
+                <div id="res-2-preview-pane" class="res2-pane active">
+                    <div class="md-box" id="res-2-text"></div>
+                </div>
+                <div id="res-2-edit-pane" class="res2-pane" style="display:none;">
+                    <textarea class="tall" id="res-2-edit" style="min-height:350px; line-height:1.7;"></textarea>
+                </div>
+
+                <div class="btn-row">
+                    <button class="btn" id="btn-dl-md1">📥 下載 transcript.md</button>
+                    <button class="btn btn-go" id="btn-to-3">下一步：專業知識補充 →</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- ════════ STEP 3: Knowledge Enhancement ════════ -->
+        <section class="step" id="step-3">
+            <h2 class="step-title">專業知識補充</h2>
+            <p class="step-sub">Knowledge Enhancement with Gemini</p>
+
+            <p style="color:#888; font-size:0.9rem; margin-bottom:20px; line-height:1.7;">
+                從下方的校稿結果中，選取你想深入了解的關鍵字複製貼到關鍵字欄位。<br>
+                AI 會針對這些關鍵字在文中首次出現處插入補充說明。
+            </p>
+
+            <div class="field">
+                <label class="field-label">📄 上一步校稿結果（可選取複製關鍵字）</label>
+                <div class="md-box preview" id="step3-preview"></div>
+            </div>
+
+            <div class="field">
+                <label class="field-label">指定補充的關鍵字（每行一個，或逗號分隔）</label>
+                <textarea id="keywords-input" rows="4"
+                    placeholder="例如：&#10;Claude Code&#10;Skill&#10;Local First&#10;MCP&#10;ZIPR"></textarea>
+            </div>
+
+            <div class="field">
+                <label class="field-label">Gemini Model</label>
+                <select id="gemini-model">
+                    <option value="gemini-2.5-flash" selected>gemini-2.5-flash (快速推薦)</option>
+                    <option value="gemini-2.5-pro">gemini-2.5-pro (高品質)</option>
+                </select>
+            </div>
+
+            <div class="btn-row">
+                <button class="btn" id="btn-back-2">← 上一步</button>
+                <button class="btn btn-go" id="btn-enhance">執行知識補充</button>
+                <button class="btn" id="btn-skip-3">跳過此步驟 →</button>
+            </div>
+
+            <div class="progress" id="prog-3">
+                <div id="prog-3-lines"></div>
+                <div class="prog-bar-wrap"><div class="prog-bar" id="prog-3-bar"></div></div>
+            </div>
+
+            <div class="result" id="res-3">
+                <div class="result-hdr">
+                    <span class="result-tag">&#10003; 知識補充完成</span>
+                    <span class="result-stat" id="res-3-stat"></span>
+                </div>
+                <div class="md-box" id="res-3-text"></div>
+                <div class="btn-row">
+                    <button class="btn" id="btn-dl-md2">📥 下載 enhanced.md</button>
+                    <button class="btn btn-go" id="btn-to-4">下一步：好學生筆記 →</button>
+                </div>
+            </div>
+        </section>
+
+        <!-- ════════ STEP 4: Good Student Notes ════════ -->
+        <section class="step" id="step-4">
+            <h2 class="step-title">好學生筆記</h2>
+            <p class="step-sub">Generate Good Student Notes</p>
+
+            <div class="field">
+                <label class="field-label">輸入你的身份 / 專業背景</label>
+                <input type="text" id="identity-input" placeholder="例如：建築師、軟體工程師、會計師、醫師...">
+            </div>
+
+            <div class="btn-row">
+                <button class="btn" id="btn-back-3">← 上一步</button>
+                <button class="btn btn-go" id="btn-notes">生成好學生筆記</button>
+            </div>
+
+            <div class="progress" id="prog-4">
+                <div id="prog-4-lines"></div>
+                <div class="prog-bar-wrap"><div class="prog-bar" id="prog-4-bar"></div></div>
+            </div>
+
+            <div class="result" id="res-4">
+                <div class="result-hdr">
+                    <span class="result-tag">&#10003; 好學生筆記完成</span>
+                    <span class="result-stat" id="res-4-stat"></span>
+                </div>
+                <div class="md-box" id="res-4-text" style="max-height:800px;"></div>
+                <div class="btn-row">
+                    <button class="btn" id="btn-dl-md3">📥 下載 good-student-notes.md</button>
+                    <button class="btn" onclick="location.reload()">🔄 重新開始</button>
+                </div>
+            </div>
+        </section>
+
+    </main>
+
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="studio.js"></script>
+
+    <!-- Load local config if available (本地開發時自動加載 API Key) -->
+    <script>
+        // 嘗試加載本地配置文件（開發環境）
+        // 如果 404 或不存在，則不加載（生產環境）
+        const script = document.createElement('script');
+        script.src = 'config.local.js';
+        script.onerror = () => {
+            // 本地配置文件不存在，使用默認行為（輸入框保持空白）
+            console.log('💡 未找到 config.local.js，請手動輸入 API Key');
+        };
+        document.head.appendChild(script);
+    </script>
+</body>
+
+</html>

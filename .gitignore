@@ -1,0 +1,5 @@
+
+# Local API keys and config
+.env
+web/config.local.js
+SRT/Groq.md
