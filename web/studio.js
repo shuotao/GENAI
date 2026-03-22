@@ -194,9 +194,15 @@ async function fileToChunks(file) {
 
 async function callGroqWhisper(audioBlob, apiKey, contextPrompt) {
     const basePrompt = '這是一段繁體中文錄音。';
-    const finalPrompt = contextPrompt
-        ? `${basePrompt} 內容包含：${contextPrompt}。`
-        : basePrompt;
+    const maxPromptLen = 896;
+    let finalPrompt = basePrompt;
+    if (contextPrompt) {
+        const prefix = `${basePrompt} 內容包含：`;
+        const suffix = '。';
+        const budget = maxPromptLen - prefix.length - suffix.length;
+        const trimmed = budget > 0 ? contextPrompt.slice(0, budget) : '';
+        finalPrompt = `${prefix}${trimmed}${suffix}`;
+    }
     const fd = new FormData();
     fd.append('file', audioBlob, 'audio.wav');
     fd.append('model', 'whisper-large-v3');
@@ -729,5 +735,59 @@ document.addEventListener('DOMContentLoaded', () => {
     // ── Sync Gemini key between Step 2 and Step 3 ──
     $('gemini-key-2').addEventListener('input', () => {
         // No separate field in Step 3 anymore; all reads from gemini-key-2
+    });
+
+    // ── Help Drawer ──
+    const helpData = {
+        groq: {
+            title: 'Groq API Key',
+            html: `
+                <p>Groq 提供免費的 Whisper 語音轉錄 API。</p>
+                <ol>
+                    <li>前往 <a href="https://console.groq.com/keys" target="_blank" rel="noopener">console.groq.com/keys</a></li>
+                    <li>使用 Google 或 GitHub 帳號登入（免費）</li>
+                    <li>點選 <strong>Create API Key</strong></li>
+                    <li>複製產生的 Key（格式為 <code>gsk_...</code>）</li>
+                    <li>貼回上方輸入欄位即可</li>
+                </ol>
+                <p>免費方案每日有速率限制，一般個人使用完全足夠。</p>
+            `
+        },
+        gemini: {
+            title: 'Gemini API Key',
+            html: `
+                <p>Gemini API 用於 AI 校稿、知識補充與筆記生成。</p>
+                <ol>
+                    <li>前往 <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a></li>
+                    <li>使用 Google 帳號登入</li>
+                    <li>點選 <strong>Create API Key</strong>（建立 API 金鑰）</li>
+                    <li>選擇任一 Google Cloud 專案（或建立新專案）</li>
+                    <li>複製產生的 Key（格式為 <code>AIza...</code>）</li>
+                    <li>貼回上方輸入欄位即可</li>
+                </ol>
+                <p>免費方案提供每分鐘 15 次請求，足夠一般使用。</p>
+            `
+        }
+    };
+
+    document.querySelectorAll('.help-dot').forEach(dot => {
+        dot.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const key = dot.dataset.help;
+            const data = helpData[key];
+            if (!data) return;
+            $('help-content').innerHTML = `<h3>${data.title}</h3>${data.html}`;
+            $('help-overlay').classList.add('show');
+        });
+    });
+
+    $('help-close').addEventListener('click', () => {
+        $('help-overlay').classList.remove('show');
+    });
+    $('help-overlay').addEventListener('click', (e) => {
+        if (e.target === $('help-overlay')) {
+            $('help-overlay').classList.remove('show');
+        }
     });
 });
