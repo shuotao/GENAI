@@ -1,6 +1,115 @@
-# The Physics of Insight - 松尾研 LLM 學習旅程
+# The Physics of Insight
 
-這是一個結合了 **Jack Butcher (Visualize Value)** 視覺設計風格與 **松尾研 LLM 課程** 學習心得的高度互動式網頁專案。本專案旨在透過「知識轉譯」與「視覺錨點」，將複雜的 LLM 技術概念轉化為直覺且可留存的學習資產。
+**兩件事共存的專案**:
+1. **好學生筆記工具** — 音訊/影片 → 逐字稿 → 合併校稿 → 專有名詞補充 → 立場置入的好學生筆記。CLI pipeline + Web Studio 雙軌。**本 README 下半部是工具的執行用法。**
+2. **Physics of Insight 視覺網頁** — 結合 Jack Butcher (Visualize Value) 設計風格與松尾研 LLM 課程學習心得的互動網頁,本專案的「前身作」,保留在 `/web/index.html` 主站。
+
+> 為什麼兩件事在同一個 repo?網頁部分是專案緣起(見 [`docs/origin-story.md`](./docs/origin-story.md) Zeabur 創辦人分享),
+> 啟發了這套好學生筆記工具的誕生 — 也就是現在的主戰場。
+
+---
+
+## 🚀 快速上手(好學生筆記工具)
+
+### 1. 環境需求
+- **Python ≥ 3.10**(scripts 用了 PEP 604 `str | None` 語法)
+- **ffmpeg**:`brew install ffmpeg` / `apt install ffmpeg`
+- **Python packages**:`pip install requests`
+- **API Keys**:
+  - Groq(轉錄):[console.groq.com/keys](https://console.groq.com/keys)(免費)
+  - Gemini(校稿 + 筆記):[aistudio.google.com/apikey](https://aistudio.google.com/apikey)(免費)
+
+### 2. 設定 API Key
+
+CLI 使用者:
+```bash
+# 在專案根建立 .env
+echo "GROQ_API_KEY=你的Groq_key" > .env
+echo "GEMINI_API_KEY=你的Gemini_key" >> .env
+```
+
+Web Studio 使用者:直接在瀏覽器 UI 輸入框貼上(只存在你的瀏覽器,不會上傳)。
+
+### 3. 跑一個音檔
+
+```bash
+# 最常用:產出去時間軸、合併通順的 cleaned.md(大宗使用者終點)
+python3 scripts/session.py new <audio_file> --context "背景關鍵字,人名,專名"
+
+# 範例:處理一支育兒諮詢錄音
+python3 scripts/session.py new "諮詢錄音.m4a" \
+    --context "RIE 教養, 語嫣, 糖果家好好睡, 安全依附關係" \
+    --domain parenting
+```
+
+產物全部落在 `sessions/<YYYY-MM-DD_slug>/`。
+
+---
+
+## 🎯 Scenario-based 使用(依你想要的產物選指令)
+
+本工具有 **4 個步驟**,每一步都是合法終點 — **不要預設每次都跑到底**:
+
+| 你想要什麼 | `--stop-at` | 產物 | 適用情境 |
+|------------|-------------|------|---------|
+| 帶時間軸的 SRT | `transcribe` | `transcript.srt` | 做字幕、影片編輯索引 |
+| 時間軸保留但錯字修正過 | `phase-a` | `cleaned.srt` | 專業字幕稿 |
+| **去時間軸、合併、通順的對話稿** | `phase-b` ⭐(預設) | `cleaned.md` | **大宗使用者的終點** |
+| 加專有名詞百科補充 | `enhance` | `enhanced.md` | 主題陌生的讀者 |
+| 以某立場(身份/角色)置入的好學生筆記 | `notes` | `notes_<立場>.md` | 學習者自用 |
+
+### 典型指令
+
+```bash
+# 只要 SRT 字幕
+python3 scripts/session.py new audio.m4a --stop-at transcribe
+
+# 要 cleaned.md(不需要好學生筆記)— 最常見
+python3 scripts/session.py new audio.m4a --context "專名詞"
+
+# 全套:跑到 Step 4 好學生筆記,以「建築師」立場置入
+python3 scripts/session.py new audio.m4a \
+    --context "專名詞" --domain parenting \
+    --stop-at notes --identity 建築師
+
+# 想自動偵測文中的專業術語做補充
+python3 scripts/session.py new audio.m4a --stop-at enhance --enhance
+
+# 也可以在 Claude Code 裡直接用 slash command
+/good-student-notes audio.m4a 建築師 --context "..." --domain parenting
+```
+
+---
+
+## 🌐 何時用 Web Studio(`web/studio.html`)
+
+Web 與 CLI 做同一件事,但 Web 有獨家優勢:
+
+- **每一步後隨時可匯出 Session ZIP**(解壓縮後結構與 CLI session 目錄同構,可直接塞進 `sessions/`)
+- **即時貼 context** — 對話中臨時補充背景資料,不用重跑整個 pipeline
+- **步驟 Preview/Edit**,每一步的 md 可直接在瀏覽器裡手動微調後再進下一步
+- **未來擴充**:Gemini 圖像生成,為好學生筆記產出圖文並茂版(尚未實作,見 `prompts/qaqc_core_rules.md § R6.3`)
+
+開啟方式:
+```bash
+# 本機 HTTP server(需要 HTTP 才能 fetch dict/ 共用詞典)
+python3 -m http.server 8080
+# 瀏覽器開 http://localhost:8080/web/studio.html
+```
+
+GitHub Pages 部署版:`https://shuotao.github.io/GENAI/web/studio.html`
+
+---
+
+## 🔄 CLI ↔ Web 對齊機制
+
+兩條路徑共用:
+- **同一份錯字詞典**(`dict/typo_dict*.json`,Web 用 dict-loader.js fetch)
+- **同一份 Phase B 規則**(`prompts/qaqc_core_rules.md` SSoT)
+- **同構的 session 產物結構**(Web ZIP 解壓 = CLI 目錄)
+
+使用者累積的錯字校正推進 `dict/typo_dict.<domain>.json` 後 **`git push`**,
+下次 Web 使用者頁面 reload 會自動拿到最新字典(`dict-loader.js` 用版本戳 cache busting)。
 
 ---
 
@@ -57,24 +166,7 @@ CLI 與 Web 使用同一份字典:
 
 ---
 
-## 🛠 好學生筆記工作流程(CLI)
-
-```bash
-# 一行命令跑完整條 pipeline
-python3 scripts/session.py new <audio_file> \
-    --context "領域專名詞,逗號隔開" \
-    --domain parenting \
-    --identity 建築師
-
-# 或在 Claude Code 中用 skill
-/good-student-notes <audio_file> 建築師 --context "..." --domain parenting
-```
-
-所有產物會歸位在 `sessions/<YYYY-MM-DD_slug>/`。詳見 [`CLAUDE.md`](./CLAUDE.md)。
-
----
-
-## 📑 頁面重點與設計想法
+## 📑 頁面重點與設計想法(Physics of Insight 網頁部分)
 
 ### 主頁面 (Main Stream)
 *   **想法**: 致敬設計 Jack Butcher 的 "The Physics of Value"，用極簡的幾何圖形與強烈的對比（黑/白/灰）來降低認知摩擦。
@@ -90,20 +182,31 @@ python3 scripts/session.py new <audio_file> \
 
 ---
 
-## 💻 本機閱覽指南 (Offline Viewing)
+## 💻 本機閱覽指南(Physics of Insight 網頁部分)
 
-本專案完全支持離線閱覽，不需要配置網頁伺服器（Server）即可運作。
+以下內容僅適用於 `/web/index.html` 主站(Physics of Insight 視覺設計網頁),不是好學生筆記工具。
 
-### 1. 直接開啟
-您可以直接進入 `web/` 資料夾，雙擊 **`index.html`** 文件。瀏覽器會以 `file://` 協議開啟。
+Physics of Insight 網頁支持離線閱覽,不需要 server。直接進入 `web/` 雙擊 `index.html` 即可(`file://` 協議)。
+**但** Web Studio(`web/studio.html`)需要 HTTP server 才能 fetch `/dict/` 共用詞典,否則會 fallback 到硬寫的 3 組通用字典。
 
-### 2. 關於路徑的說明
-*   **相對路徑**: 所有的連結、圖片、CSS 與 JS 引用均使用「相對路徑」（如 `../assets/` 或 `./style.css`）。這確保了無論您將整個專案資料夾放在家目錄、桌面或隨身碟，所有資源都能正確載入。
-*   **抽屜顯示**: 抽屜內容是透過 Javascript 動態將相對的 HTML 路徑（如 `tech-01.html`）填入 Iframe 的 `src` 屬性。
+### 字型與瀏覽器
+- 建議 Chrome / Edge / Safari 最新版(毛玻璃效果)
+- 字型優先 Google Fonts「Noto Sans TC」,無網路時 fallback 到系統黑體
 
-### 3. 最佳體驗建議
-*   **瀏覽器**: 建議使用 Chrome, Edge 或 Safari 的最新版本，以獲得最佳的滾動偵測與毛玻璃背景效果。
-*   **字型**: 專案會優先嘗試從 Google Fonts 抓取「Noto Sans TC」，若在無網路環境下，則會回退到系統預設的黑體字，不影響閱讀。
+---
+
+## 🔧 Troubleshooting
+
+| 症狀 | 原因與解法 |
+|------|-----------|
+| `scripts/session.py` 跑到一半出 400 error 且 context 很長 | Groq Whisper prompt 有 **896 bytes UTF-8 上限**(中文 3 bytes/字 ≈ 290 中文字)。縮短 `--context` |
+| Web Studio 的 domain 下拉選單空白 | 用 `file://` 開啟時 fetch 被擋。改用 `python3 -m http.server 8080` |
+| CLI 跑出 `ffmpeg: command not found` | 裝 ffmpeg:`brew install ffmpeg` 或 `apt install ffmpeg` |
+| Python syntax error on `str \| None` | 需要 Python ≥ 3.10。檢查 `python3 --version` |
+| 產出的 `cleaned.md` 字數遠低於原文 | Phase B 違反 95%-105% 量化檢查。檢查 metadata.json 的 `ratio_chinese`,若 < 0.95 建議重跑 |
+| Gemini 圖像生成不能用 | 尚未實作,列為 P3。見 `prompts/qaqc_core_rules.md § R6.3` |
+
+更多規範細節見 [`CLAUDE.md`](./CLAUDE.md) 第 § Common Gotchas 章節。
 
 ---
 
