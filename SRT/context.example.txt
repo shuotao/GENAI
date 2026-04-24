@@ -1,0 +1,42 @@
+# === Context 範例檔 (sample only, NOT auto-loaded) ===
+# 本檔僅作為「context 應該長怎樣」的範例,內容是 2026-02 PicCollage Claude Code meetup 的殘留。
+# 新流程下,每次 session 的 context 綁在 sessions/<id>/context.txt,由 scripts/session.py 寫入。
+# groq_transcribe.py 不再 fallback 到此檔,參閱 CLAUDE.md「Context 生命週期」章節。
+# =======================================================
+
+Claude code, take away, OpenClaw, 繁體中文, 逐字稿, 會議紀錄
+Welcome · 歡迎
+Claude Code
+for Everyone
+歡迎來到 Product & Design 場 ✸ PicCollage
+Hosted by Ling, Tofus & Yuanlin · from Zeabur
+請盡量往裡面坐，把走道留給晚到的朋友 🙏
+Wi-Fi:
+PicCollage Guest (3F)
+· 密碼:
+12345678
+廁所位於電梯旁
+Slides QR
+2026 · Taipei
+
+WE'RE ABOUT TO START
+開場啦！
+我們即將與其他三個場地連線，一起開場 ✸
+🎨 Product & Design
+@ PicCollage
+💼 Business & Ops
+@ Futureward
+💻 Devs
+@ 中研院
+2026
+
+2 / 8
+
+
+Next Speaker
+Yuanlin Lin
+Yuanlin Lin 林沅霖
+Founder of Zeabur
+Zeabur 團隊如何使用 Claude Code 建造 Zeabur
+Taipei · Claude Code for Everyone
+5 / 8

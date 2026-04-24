@@ -1,0 +1,12 @@
+{
+  "_meta": {
+    "scope": "general",
+    "description": "通用繁體中文同音/形近錯字,Whisper 轉錄常見誤判。所有領域都會套用。",
+    "contribution_guide": "新增條目請確認廣泛適用,若只在特定領域適用請改用 typo_dict.<domain>.json"
+  },
+  "corrections": {
+    "剪報": "簡報",
+    "因該": "應該",
+    "在來": "再來"
+  }
+}

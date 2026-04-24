@@ -126,17 +126,17 @@ def main():
             context_prompt = f.read().replace("\n", ", ").strip()
         print(f"[groq] Context loaded: {context_file}")
 
-    # Auto-search for context.txt near the input file
+    # Auto-detect context.txt ONLY in the same directory as the input file.
+    # This is intentional: context is session-scoped (lives in sessions/<id>/context.txt
+    # alongside the audio), never project-scoped. We deliberately do NOT fall back to
+    # SRT/context.txt or any other shared location — that past behavior caused cross-
+    # session contamination (see CLAUDE.md "Context 生命週期").
     if not context_prompt:
-        for candidate in [
-            os.path.join(os.path.dirname(input_file), "context.txt"),
-            os.path.join(os.path.dirname(input_file), "SRT", "context.txt"),
-        ]:
-            if os.path.exists(candidate):
-                with open(candidate, "r", encoding="utf-8") as f:
-                    context_prompt = f.read().replace("\n", ", ").strip()
-                print(f"[groq] Context auto-detected: {candidate}")
-                break
+        candidate = os.path.join(os.path.dirname(input_file), "context.txt")
+        if os.path.exists(candidate):
+            with open(candidate, "r", encoding="utf-8") as f:
+                context_prompt = f.read().replace("\n", ", ").strip()
+            print(f"[groq] Context auto-detected: {candidate}")
 
     # Prepare temp directory
     base_name = Path(input_file).stem

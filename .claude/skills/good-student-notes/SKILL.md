@@ -1,7 +1,7 @@
 ---
 name: good-student-notes
 description: 將音訊/影片檔案轉為逐字稿，經 QAQC 清理與 AI 校稿後，生成好學生筆記。Use when user provides a media file and asks for transcription, notes, or 好學生筆記.
-argument-hint: <media_file> [identity]
+argument-hint: <media_file> [identity] [--context <data-or-file>] [--domain <name>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
 
@@ -17,128 +17,145 @@ allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 
 使用者會以下列方式呼叫：
 ```
-/good-student-notes <media_file> [identity]
+/good-student-notes <media_file> [identity] [--context <data-or-file>] [--domain <name>]
 ```
 
-- `$0` = 媒體檔案路徑（必要）
-- `$1` = 使用者身份/專業背景（選填，例如：建築師、軟體工程師）
-- 如果未提供身份，則跳過好學生筆記生成（步驟三），只產出 SRT 和合併校稿檔
+- `<media_file>`:媒體檔案路徑(必要)
+- `[identity]`:使用者身份/專業背景(選填,例如:建築師、軟體工程師)
+- `--context <data-or-file>`:本次錄音的背景資料(選填)
+  - 可以是一段文字(以引號包起)
+  - 可以是一個 `.txt` 檔路徑
+  - 可以是「剛才使用者貼在對話裡的資料」— 若對話中有補充內容,你應該先把它寫入 `/tmp/context_<session>.txt` 再傳入
+- `--domain <name>`:領域詞典(選填,例如:parenting, tech)— 對應 `dict/typo_dict.<name>.json`
+- 如果未提供 identity,跳過好學生筆記生成(只產 SRT 和合併校稿)
 
 ---
 
-## 步驟一：音訊轉錄（Groq Whisper）
+## 核心架構原則(必須遵循)
 
-執行 Groq 轉錄腳本：
+1. **SRT 不可變**:`transcript.srt` 是原始證據,絕不回寫。
+2. **時間軸保護**:Phase B 的 LLM 校稿永遠**看不到時間戳**(由 `scripts/qaqc_phase_b.py --mode structured` 保證)。
+3. **Context 綁 Session**:使用者提供的 context 綁在 `sessions/<id>/context.txt`,不汙染專案。
+4. **Session 容器**:所有產物歸位在 `sessions/<id>/`。
+
+---
+
+## 執行步驟(一行命令)
+
+整個流程已封裝為 `scripts/session.py`,你只需呼叫:
 
 ```bash
-python3 ${CLAUDE_SKILL_DIR}/scripts/groq_transcribe.py "$0" "$(dirname "$0")"
+python3 scripts/session.py new "<media_file>" \
+  [--context "<data-or-file>"] \
+  [--domain <name>] \
+  [--stop-at {transcribe|phase-a|phase-b|enhance|notes}]  # default: phase-b
+  [--keywords "term1,term2"] \   # 觸發 Step 3
+  [--enhance] \                  # 觸發 Step 3(自動辨識術語)
+  [--identity "<立場>"]          # 觸發 Step 4(需 --stop-at notes)
 ```
 
-- 腳本會自動從 `.env` 讀取 `GROQ_API_KEY`
-- 自動搜尋 `context.txt` 作為背景詞庫
-- 輸出：`<filename>.srt`
+### 停點原則(R6.2)
 
-完成後，讀取產出的 SRT 檔案，確認內容存在。
+**不要預設每次跑完 Step 4**。大宗使用者在 Step 2(cleaned.md)就已滿足。依使用者
+意圖選擇停點:
+
+| 使用者意圖 | `--stop-at` |
+|-----------|-------------|
+| 只要 SRT 字幕檔 | `transcribe` |
+| 要時間軸保留的錯字修正版 | `phase-a`(同 `--skip-phase-b`) |
+| 要去時間軸、合併、通順的稿 | `phase-b`(預設) |
+| 外加專有名詞補充 | `enhance` 並提供 `--keywords` 或 `--enhance` |
+| 一路到好學生筆記 | `notes` 並提供 `--identity` |
+
+### 腳本自動完成
+
+1. 計算 session slug:`YYYY-MM-DD_<sanitized-filename>`,建立 `sessions/<slug>/`
+2. symlink 音檔為 `source.<ext>`,寫入 `context.txt`、`metadata.json` 骨架
+3. 呼叫 Groq Whisper → `transcript.srt`(時間軸保留、以 context.txt 作 prompt)
+4. 呼叫 `SRT/qaqc_srt.py --domain <name>` → Phase A(錯字、幻覺、亂碼過濾)
+5. (若未 `--stop-at` 早於 phase-b)呼叫 `scripts/qaqc_phase_b.py --mode merged` → `cleaned.md`
+6. (若 `--stop-at enhance|notes` 且有 keywords/enhance 旗標)→ `enhanced.md`
+7. (若 `--stop-at notes` 且有 `--identity`)→ `notes_<立場>.md`
+8. 寫入 `metadata.json` 的字數比率、耗時、錯字命中數、stop_at 等
 
 ---
 
-## 步驟二：QAQC 清理 + AI 校稿
+## 你(Claude)的角色
 
-### Phase A：自動清理
+腳本跑完後,你要做的是**檢視與回報**,不要再逐字校稿:
 
-對 SRT 內容執行以下清理（你直接處理，不需外部腳本）：
-
-1. **移除 SRT 元數據**：刪除所有序號（1, 2, 3...）與時間軸（00:00:00,000 --> ...）
-2. **移除幻覺段落**：過濾以下開頭的句子：
-   - `內容包含：`、`這是一段關於技術開發`、`這是一段繁體中文`
-   - `请注意`、`Please note`、`Thank you`、`thanks for`
-   - `Subtitles`、`Subscribe`、`字幕由`
-3. **過濾亂碼**：移除中文字比例 < 25% 的段落（排除純英文專有名詞）
-4. **修正常見錯字**：剪報→簡報、因該→應該、在來→再來
-
-### Phase B：AI 校稿（你自己執行）
-
-用你自身的能力對清理後的文字進行校稿，規則如下：
-
-**必須做的事：**
-1. 補上標點符號（句號、逗號、問號、驚嘆號、頓號）
-2. 在語意斷裂處補上接續詞（然後、接著、也就是說、所以）
-3. 合併破碎斷行為完整段落
-4. 依語意分段（每 300-500 字或話題轉換時）
-5. 插入 Markdown 標題（## 或 ###）
-
-**嚴禁做的事（鐵律）：**
-1. 嚴禁刪減任何句子
-2. 嚴禁濃縮或摘要
-3. 嚴禁改變原意或語氣
-4. 嚴禁使用第三人稱描述（如「講者提到了...」）
-5. 嚴禁省略講者舉例的細節
-
-**字數檢查**：輸出字數必須 ≥ 輸入字數的 95%
-
-### 輸出
-
-將校稿結果儲存為 `<filename>_cleaned.md`，與原始媒體檔案同目錄。
-
----
-
-## 步驟三：好學生筆記生成（僅在指定身份時執行）
-
-**前提條件**：使用者必須在指令中提供身份（$1），否則跳過此步驟。
-
-用你自身的能力，以使用者指定的專業身份視角，對校稿後的文字生成好學生筆記：
-
-### 筆記生成規則
-
-1. **完整保留原文內容**：每一段原文都必須出現在輸出中
-2. 在每個段落或重要概念之後，加入該專業視角的類比區塊：
-
-```markdown
-> 🎯 **[identity]視角**
->
-> - **類比**：[用該專業的術語重新詮釋這個概念]
-> - **應用**：[這個概念在該專業的工作中如何應用]
-> - **連結**：[與該專業已知概念的關聯]
-```
-
-3. 在文件開頭加入學習摘要框：
-
-```markdown
-> 📝 **學習摘要**
-> - 核心主題：[一句話]
-> - [identity]視角的關鍵收穫：[2-3 點]
-```
-
-4. 在文件結尾加入核心洞察：
-
-```markdown
-> 💡 **核心洞察**
-> [用該專業的語言，一段話總結最重要的學習]
-```
-
-5. 類比必須在邏輯上合理且有意義
-6. 補充區塊上下各保留一個空行
-
-### 輸出
-
-將好學生筆記儲存為 `<filename>_good_student_notes.md`，與原始媒體檔案同目錄。
+1. `ls sessions/<slug>/` 確認所有產物齊全:
+   - `source.<ext>`(symlink)
+   - `context.txt`
+   - `transcript.srt`
+   - `cleaned.md`
+   - `metadata.json`
+   - (若有 identity)`notes_<identity>.md`
+2. 讀 `metadata.json`,檢查:
+   - `qaqc.ratio_chinese` 是否在 [0.95, 1.05] 區間
+   - `summary_words_check` 是否為 0
+3. 讀 `cleaned.md`,若發現明顯錯字或專名錯誤,寫入 `sessions/<slug>/corrections.json`:
+   ```json
+   {"_meta": {"session": "<slug>", "domain_candidate": "<name>"},
+    "corrections": {"錯字": "正字", ...}}
+   ```
+   這份 `corrections.json` **不會**自動合進 `dict/typo_dict.<domain>.json`,
+   需要使用者手動審閱後推送(避免單 session 的偶發誤判污染共用詞典)。
+4. 若 Phase B 的字數比率 < 0.95,或 `structured` 長度檢查失敗,**不要**嘗試
+   自己補救;在回報中明確標示,讓使用者決定是否重跑或手動修。
 
 ---
 
 ## 完成報告
 
-所有步驟完成後，輸出摘要：
-
 ```
 ✅ 好學生筆記工作流程完成
 
-📁 輸出檔案：
-  - SRT 逐字稿：<path>.srt
-  - 合併校稿：<path>_cleaned.md
-  - 好學生筆記：<path>_good_student_notes.md（如有指定身份）
+📁 Session:sessions/<slug>/
+  - source.<ext>             (symlink, N MB)
+  - context.txt              (N bytes)
+  - transcript.srt           (N segments)
+  - cleaned.md               (N chars, ratio 0.XX)
+  - notes_<identity>.md      (若有)
+  - metadata.json
 
-📊 統計：
-  - SRT 段落數：N
-  - 校稿字數：N 字
-  - 身份視角：[identity]（或「未指定」）
+📊 統計:
+  - Groq 耗時:N.N 秒
+  - Phase A 命中:M 組錯字、K 個幻覺段
+  - Phase B 字數比率:0.XX (target [0.95, 1.05])
+  - 領域詞典:base + <domain>(N 組)
+
+⚠  待人工確認:(若有)
+  - corrections.json 候選條目:K 組(尚未推送至 dict/)
 ```
+
+---
+
+## 不要做的事
+
+- ❌ 不要自己從 `.srt` 做 Phase B 校稿 — 永遠呼叫 `scripts/qaqc_phase_b.py`
+- ❌ 不要在根目錄寫產出檔 — 一律寫到 `sessions/<slug>/`
+- ❌ 不要用 `SRT/context.example.txt` 當 context — 這是範例檔
+- ❌ 不要自動把 `corrections.json` 合進 `dict/typo_dict.*.json` — 需人工審閱
+- ❌ 不要在輸出中使用第三人稱描述(「講者提到...」「本段討論...」等)
+
+---
+
+## 降級路徑(若腳本不可用)
+
+若 `scripts/session.py` 或 `scripts/qaqc_phase_b.py` 出錯,可手動執行:
+
+```bash
+# Step 1: 轉錄
+python3 .claude/skills/good-student-notes/scripts/groq_transcribe.py \
+  "<audio>" "<output_dir>" "<context_file>"
+
+# Step 2: Phase A 清理
+python3 SRT/qaqc_srt.py "<srt>" --domain <name> -o "<cleaned.srt>"
+
+# Step 3: Phase B 校稿
+python3 scripts/qaqc_phase_b.py --mode merged --context "<ctx>" \
+  "<cleaned_text>" -o "<cleaned.md>"
+```
+
+但正常情況下一律走 `scripts/session.py new`。

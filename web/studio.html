@@ -324,6 +324,14 @@
                 </div>
 
                 <div class="field">
+                    <label class="field-label">領域詞典 (選填,套用至 Phase A 錯字修正)</label>
+                    <select id="domain-select">
+                        <option value="">不套用特定領域（僅通用字典）</option>
+                        <option value="parenting">parenting — 嬰幼兒睡眠 / 親子教養</option>
+                    </select>
+                </div>
+
+                <div class="field">
                     <div style="display:flex;align-items:center;gap:0;margin-bottom:6px;">
                         <label class="field-label" style="margin-bottom:0;">Groq API Key</label>
                         <span class="help-dot" data-help="groq">?</span>
@@ -362,6 +370,7 @@
                 <textarea class="tall" id="res-1-text" readonly></textarea>
                 <div class="btn-row">
                     <button class="btn" id="btn-dl-srt">📥 下載 SRT</button>
+                    <button class="btn" id="btn-dl-zip-1">📦 匯出 Session ZIP</button>
                     <button class="btn btn-go" id="btn-to-2">下一步：清理合併 →</button>
                 </div>
             </div>
@@ -416,6 +425,7 @@
 
                 <div class="btn-row">
                     <button class="btn" id="btn-dl-md1">📥 下載 transcript.md</button>
+                    <button class="btn" id="btn-dl-zip-2">📦 匯出 Session ZIP</button>
                     <button class="btn btn-go" id="btn-to-3">下一步：專業知識補充 →</button>
                 </div>
             </div>
@@ -469,6 +479,7 @@
                 <div class="md-box" id="res-3-text"></div>
                 <div class="btn-row">
                     <button class="btn" id="btn-dl-md2">📥 下載 enhanced.md</button>
+                    <button class="btn" id="btn-dl-zip-3">📦 匯出 Session ZIP</button>
                     <button class="btn btn-go" id="btn-to-4">下一步：好學生筆記 →</button>
                 </div>
             </div>
@@ -502,6 +513,7 @@
                 <div class="md-box" id="res-4-text" style="max-height:800px;"></div>
                 <div class="btn-row">
                     <button class="btn" id="btn-dl-md3">📥 下載 good-student-notes.md</button>
+                    <button class="btn btn-go" id="btn-dl-session-zip">📦 匯出 Session ZIP(含全部產物)</button>
                     <button class="btn" onclick="location.reload()">🔄 重新開始</button>
                 </div>
             </div>
@@ -518,6 +530,7 @@
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
     <script src="studio.js"></script>
 
     <!-- Load local config if available (本地開發時自動加載 API Key) -->

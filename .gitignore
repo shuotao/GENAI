@@ -3,3 +3,34 @@
 .env
 web/config.local.js
 SRT/Groq.md
+
+# Private session data (user recordings, transcripts, notes)
+# All per-session products stay on user's local machine only.
+sessions/
+
+# Audio / video source files (may contain private recordings)
+*.m4a
+*.mp3
+*.wav
+*.mp4
+*.mov
+*.webm
+*.flac
+*.ogg
+*.mpeg
+*.mpga
+*.mkv
+
+# Python bytecode
+__pycache__/
+*.pyc
+*.pyo
+
+# Editor / backup files
+*.bak
+*.swp
+*.swo
+.DS_Store
+
+# Personal Claude Code settings (may contain user-specific paths/prefs)
+.claude/settings.local.json

@@ -1,0 +1,19 @@
+{
+  "_meta": {
+    "description": "Whisper 幻覺段落的起始字串。若 SRT 某段文字以任一前綴開頭,整段丟棄。",
+    "sources": "合併 CLI 原 2 組 + Web 原 12 組為統一版本,Web 版為基準(較完整)"
+  },
+  "prefixes": [
+    "內容包含：",
+    "這是一段關於技術開發",
+    "这是一段繁体中文",
+    "请注意",
+    "Please note",
+    "Thank you",
+    "thanks for",
+    "Subtitles",
+    "Subscribe",
+    "sub",
+    "字幕由"
+  ]
+}

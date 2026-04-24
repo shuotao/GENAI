@@ -21,14 +21,56 @@
 - `physics_of_insight/`: 核心觀念的視覺化圖表。
 - 包含頭像照片與專用的 UI 圖示（如 `jack_diamond_icon.png`）。
 
-### 3. `/SRT` - 原始資料與規格
-包含專案背後的內容支撐：
-- **`好學生筆記.md`**: 定義了 AI 角色設定與筆記生成的 Prompt 規範。
-- 其他可能包含的原始逐字稿或翻譯內容。
+### 3. `/SRT` - 原始工具 & 規格
+- **`qaqc_srt.py`**: Phase A 清理 + `--structured` 結構保留型校稿
+- **`transcribe.py`**: 獨立互動式轉錄工具
+- **`context.example.txt`**: Context 格式範例(不會自動載入)
+- **`好學生筆記.md`**: AI 角色設定與 Prompt 規範參考
+- **`SRT_QA_QC_檢查清單.md`**: QAQC 檢查清單(歷史文件,現況以 CLAUDE.md 為準)
 
-### 4. 根目錄文件
-- **`index.html`**: 專案入口點，會自動引導至 `web/index.html`。
-- **`README.md`**: 本專案說明文件。
+### 4. `/scripts` - 共用腳本層(2026-04 新增)
+- **`session.py`**: Pipeline 統籌器,一行命令跑完 Groq 轉錄 → Phase A → Phase B → 好學生筆記
+- **`qaqc_phase_b.py`**: Gemini-powered Phase B 校稿(CLI/Web 共用)
+- **`lang/`**: 多語系轉錄/清理腳本(目前有 `it/`,未來可擴充日文、英文等)
+
+### 5. `/dict` - 共用詞典(2026-04 新增)
+CLI 與 Web 使用同一份字典:
+- **`typo_dict.json`** + **`typo_dict.<domain>.json`**: 錯字修正(可疊加領域詞典)
+- **`hallucination_prefixes.json`**: Whisper 幻覺前綴
+- **`load.py`**: Python 載入器
+
+### 6. `/sessions` - Session 容器(2026-04 新增)
+每個音檔處理產生一個 `sessions/<YYYY-MM-DD_slug>/` 目錄,裡面有:
+- `source.<ext>` (symlink)、`context.txt`、`transcript.srt`
+- `cleaned.srt`、`cleaned.md`、`notes_<identity>.md`(選)
+- `corrections.json`、`metadata.json`
+
+### 7. `/docs` - 專案敘事
+- **[`docs/origin-story.md`](./docs/origin-story.md)** — 專案緣起。Zeabur 創辦人關於 Claude Code 的深度實踐分享好學生筆記,本工具(好學生筆記工作室 + CLI Skill)的設計藍本。
+
+### 8. 根目錄文件
+- **`CLAUDE.md`**: 所有 AI 工具(Claude Code、Gemini CLI、Web Studio)的唯一規範文件
+- **`GEMINI.md`**: Gemini CLI 入口(10 bytes 純指路檔 → `CLAUDE.md`)
+- **`AGENTS.md`**: OpenAI Codex / 其他 AGENTS.md 相容工具入口(10 bytes 純指路檔 → `CLAUDE.md`)
+- **`index.html`**: 專案入口點,自動引導至 `web/index.html`
+- **`README.md`**: 本專案說明文件
+
+---
+
+## 🛠 好學生筆記工作流程(CLI)
+
+```bash
+# 一行命令跑完整條 pipeline
+python3 scripts/session.py new <audio_file> \
+    --context "領域專名詞,逗號隔開" \
+    --domain parenting \
+    --identity 建築師
+
+# 或在 Claude Code 中用 skill
+/good-student-notes <audio_file> 建築師 --context "..." --domain parenting
+```
+
+所有產物會歸位在 `sessions/<YYYY-MM-DD_slug>/`。詳見 [`CLAUDE.md`](./CLAUDE.md)。
 
 ---
 

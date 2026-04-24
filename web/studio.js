@@ -13,15 +13,69 @@ let notesMd    = '';   // Step 4 output
 const CHUNK_DURATION = 600;
 const GROQ_URL = 'https://api.groq.com/openai/v1/audio/transcriptions';
 
-const TYPO_FIXES = {
+// Typo & hallucination lists are loaded from /dict/*.json at startup
+// (see loadDictionaries() below). Hardcoded fallbacks here keep the app
+// functional if the dict/ fetch fails (file:// access restrictions, etc.).
+let TYPO_FIXES = {
     '剪報': '簡報', '因該': '應該', '在來': '再來',
 };
 
-const HALLUCINATION_PREFIXES = [
+let HALLUCINATION_PREFIXES = [
     '內容包含：', '這是一段關於技術開發', '這是一段繁體中文',
     '请注意', 'Please note', 'Thank you', 'thanks for',
     'Subtitles', 'Subscribe', 'sub', '字幕由',
 ];
+
+let ACTIVE_DOMAIN = null;          // Currently selected domain overlay
+let DICT_LOADED = false;           // Set true once initial fetch completes
+
+// Core rules loaded from prompts/qaqc_core_rules.md — SSoT for Phase B / Step 3 / Step 4.
+// If fetch fails (file://, offline), we fall back to inline minimum rules below.
+let CORE_RULES_TEXT = '';
+const CORE_RULES_PATHS = ['../prompts/qaqc_core_rules.md', '/prompts/qaqc_core_rules.md'];
+
+async function loadCoreRules() {
+    for (const path of CORE_RULES_PATHS) {
+        try {
+            const res = await fetch(path, { cache: 'no-cache' });
+            if (res.ok) {
+                CORE_RULES_TEXT = await res.text();
+                console.log(`[rules] loaded from ${path} (${CORE_RULES_TEXT.length} chars)`);
+                return;
+            }
+        } catch { /* try next */ }
+    }
+    console.warn('[rules] could not fetch prompts/qaqc_core_rules.md — using inline fallbacks');
+}
+
+function rulesSection(startMarker, endMarker) {
+    // Extract a section of CORE_RULES_TEXT between two H2 markers.
+    if (!CORE_RULES_TEXT) return '';
+    const start = CORE_RULES_TEXT.indexOf(startMarker);
+    if (start < 0) return '';
+    const endRel = endMarker ? CORE_RULES_TEXT.indexOf(endMarker, start) : -1;
+    const end = endRel > 0 ? endRel : CORE_RULES_TEXT.length;
+    return CORE_RULES_TEXT.slice(start, end).trim();
+}
+
+async function loadDictionaries(domain) {
+    ACTIVE_DOMAIN = domain || null;
+    try {
+        const mod = await import('./dict-loader.js');
+        const [typo, prefixes] = await Promise.all([
+            mod.loadTypoDict(ACTIVE_DOMAIN),
+            mod.loadHallucinationPrefixes(),
+        ]);
+        TYPO_FIXES = typo;
+        HALLUCINATION_PREFIXES = prefixes;
+        DICT_LOADED = true;
+        console.log(`[dict] loaded: base${ACTIVE_DOMAIN ? ` + ${ACTIVE_DOMAIN}` : ''} `
+                    + `(${Object.keys(TYPO_FIXES).length} typos, `
+                    + `${HALLUCINATION_PREFIXES.length} prefixes)`);
+    } catch (err) {
+        console.warn('[dict] failed to load dict/, using hardcoded fallbacks:', err.message);
+    }
+}
 
 // ─────────────────────────────────────────────────────────
 //  Utility
@@ -38,6 +92,125 @@ function downloadFile(filename, text) {
     a.click();
     document.body.removeChild(a);
     URL.revokeObjectURL(a.href);
+}
+
+// Build a session-shaped ZIP mirroring the CLI `sessions/<slug>/` layout,
+// so the user can unzip it directly into their local sessions/ dir.
+// Requires JSZip (loaded in studio.html via CDN).
+//
+// Callable after ANY step — user can export at Step 1, 2, 3, or 4 end; the
+// metadata.json reflects exactly how far the pipeline has been run (stop_at).
+async function downloadSessionZip(sessionSlug) {
+    if (typeof JSZip === 'undefined') {
+        alert('JSZip 未載入;無法匯出 ZIP。請確認 studio.html 的 CDN 可存取。');
+        return;
+    }
+    const zip = new JSZip();
+    const folder = zip.folder(sessionSlug);
+
+    // Core artifacts (only include files that exist in current state)
+    if (srtContent) folder.file('transcript.srt', srtContent);
+    if (cleanedMd) folder.file('cleaned.md', cleanedMd);
+    if (enhancedMd) folder.file('enhanced.md', enhancedMd);
+    if (notesMd) {
+        const identity = ($('identity-input') && $('identity-input').value.trim()) || 'notes';
+        folder.file(`notes_${identity}.md`, notesMd);
+    }
+
+    // Context (from Step 1 textarea, raw form)
+    const ctx = ($('context-input') ? $('context-input').value : '').trim();
+    if (ctx) folder.file('context.txt', ctx);
+
+    // Determine stop_at based on what artifacts were produced — aligns with CLI
+    // session.py --stop-at semantics so Web-exported sessions re-import cleanly.
+    let stopAt = 'transcribe';
+    if (cleanedMd) stopAt = 'phase-b';
+    if (enhancedMd) stopAt = 'enhance';
+    if (notesMd) stopAt = 'notes';
+
+    // Metadata — schema aligned with scripts/session.py metadata writer.
+    const today = new Date().toISOString().slice(0, 10);
+    const identity = ($('identity-input') && $('identity-input').value.trim()) || null;
+
+    const countChars = (s) => ({
+        no_space: (s || '').replace(/\s+/g, '').length,
+        chinese: ((s || '').match(/[一-鿿]/g) || []).length,
+    });
+    const rawM = countChars(rawCleaned);
+    const cleanedM = countChars(cleanedMd);
+    const enhancedM = countChars(enhancedMd);
+    const notesM = countChars(notesMd);
+
+    const meta = {
+        session_id: sessionSlug,
+        created_at: today,
+        source: 'web-studio',
+        domain_candidate: ACTIVE_DOMAIN,
+        identity,
+        stop_at: stopAt,
+        transcription: {
+            engine: 'Groq Whisper large-v3',
+            context_bytes: new TextEncoder().encode(ctx).length,
+            original_chars_no_space: rawM.no_space,
+            original_chinese_chars: rawM.chinese,
+        },
+        qaqc: {
+            phase_a_chars_no_space: rawM.no_space,
+            phase_a_chinese_chars: rawM.chinese,
+            phase_b: cleanedMd ? {
+                in_chars_no_space: rawM.no_space,
+                out_chars_no_space: cleanedM.no_space,
+                ratio_no_space: rawM.no_space
+                    ? +(cleanedM.no_space / rawM.no_space).toFixed(4) : null,
+                ratio_chinese: rawM.chinese
+                    ? +(cleanedM.chinese / rawM.chinese).toFixed(4) : null,
+            } : null,
+            enhance: enhancedMd ? {
+                in_chars_no_space: cleanedM.no_space,
+                out_chars_no_space: enhancedM.no_space,
+                ratio_no_space: cleanedM.no_space
+                    ? +(enhancedM.no_space / cleanedM.no_space).toFixed(4) : null,
+            } : null,
+            notes: notesMd ? {
+                source: enhancedMd ? 'enhanced.md' : 'cleaned.md',
+                in_chars_no_space: (enhancedMd ? enhancedM : cleanedM).no_space,
+                out_chars_no_space: notesM.no_space,
+                ratio_no_space: (enhancedMd ? enhancedM : cleanedM).no_space
+                    ? +(notesM.no_space / (enhancedMd ? enhancedM : cleanedM).no_space).toFixed(4)
+                    : null,
+            } : null,
+            structured_srt_produced: false,
+        },
+        artifacts: {
+            source: null,   // Web can't symlink; audio stays on user's device
+            context: ctx ? 'context.txt' : null,
+            transcript_srt: srtContent ? 'transcript.srt' : null,
+            cleaned_srt: null,   // Web does not produce Phase A cleaned.srt separately
+            cleaned_md: cleanedMd ? 'cleaned.md' : null,
+            enhanced_md: enhancedMd ? 'enhanced.md' : null,
+            notes_md: notesMd ? `notes_${identity || 'notes'}.md` : null,
+            transcript_cleaned_srt: null,
+        },
+    };
+    folder.file('metadata.json', JSON.stringify(meta, null, 2));
+
+    const blob = await zip.generateAsync({ type: 'blob' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${sessionSlug}.zip`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+}
+
+function makeSessionSlug() {
+    const today = new Date().toISOString().slice(0, 10);
+    const fileName = $('file-input') && $('file-input').files[0]
+        ? $('file-input').files[0].name.replace(/\.[^.]+$/, '')
+        : 'web-session';
+    const slug = fileName.replace(/[^\w.\-]/g, '').replace(/-+/g, '-');
+    return `${today}_${slug || 'web-session'}`;
 }
 
 function formatSrtTime(sec) {
@@ -111,7 +284,10 @@ function goToStep(n) {
 // ─────────────────────────────────────────────────────────
 
 function isGarbled(text) {
-    if (!text || text.length < 2) return true;
+    // Rules: see prompts/qaqc_core_rules.md § R1.2.
+    // Previously `length < 2 → true`, which silently dropped valid single-char
+    // Chinese replies like "對", "嗯". Relaxed to empty-only.
+    if (!text) return true;
     const cjkRe = /[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff\u3000-\u303f\uff00-\uffef，。！？、；：「」『』（）《》〈〉—…·～]/g;
     const cjkCount = (text.match(cjkRe) || []).length;
     const totalNonSpace = text.replace(/\s/g, '').length;
@@ -398,32 +574,30 @@ function runPhaseA(stepN) {
 }
 
 async function runPhaseB(rawText, apiKey, stepN) {
-    // Gemini polish: add punctuation, connective words, paragraphs
+    // Gemini polish: add punctuation, connective words, paragraphs.
+    // Core rules come from prompts/qaqc_core_rules.md § R2 (SSoT).
+    // Web-specific: the user may paste 當下 context in Step 1 textarea; we
+    // pass it through here as a domain hint (preserving Web's interactive edge).
     addProgressLine(stepN, '── Phase B：AI 校稿 ──', 'run');
+
+    const r2Rules = rulesSection('## R2. Phase B 校稿核心鐵律', '## R3.') || `
+### 必須做的事:
+1. 補上標點符號、接續詞、合併破碎斷行、依語意分段、插入 Markdown 標題
+### 嚴禁:
+- 嚴禁刪減、濃縮、摘要、改語氣、第三人稱描述、省略細節
+### 字數檢查:
+- 輸出字數必須落在輸入 95%-105% 之間`;
+
+    const ctxInput = ($('context-input') ? $('context-input').value : '').trim();
+    const ctxBlock = ctxInput
+        ? `\n## 領域背景(使用者當下提供,供專名校正參考)\n${ctxInput}\n`
+        : '';
 
     const prompt = `你是一位逐字稿校稿專家。請對以下語音轉錄的原始文字進行校稿。
 
-## 嚴格校稿規則（違反任何一條即為失敗）
-
-### 必須做的事：
-1. **補上標點符號**：句號、逗號、問號、驚嘆號、頓號等。
-2. **補上接續詞**：在語意斷裂處補上「然後」「接著」「也就是說」「所以」等最少量的連接詞，讓句子通順。
-3. **合併破碎斷行**：將短句合併為完整的段落。
-4. **依語意分段**：每 300-500 字或話題轉換時分段，段落間空一行。
-5. **插入 Markdown 標題**：根據內容邏輯插入 ## 或 ### 標題，標題是插入在段落之間，不能取代原文。
-
-### 嚴禁做的事（鐵律）：
-1. ❌ **嚴禁刪減任何句子**
-2. ❌ **嚴禁濃縮或摘要**
-3. ❌ **嚴禁改變原意或語氣**
-4. ❌ **嚴禁使用第三人稱描述**（如「講者提到了...」）
-5. ❌ **嚴禁省略講者舉例的細節**
-
-### 字數檢查：
-- 輸出字數必須 ≥ 輸入字數的 95%
-- 如果輸出比輸入短，就是失敗
-
-## 原始逐字稿（${rawText.length} 字）
+${r2Rules}
+${ctxBlock}
+## 原始逐字稿(${rawText.length} 字)
 ${rawText}`;
 
     const model = $('gemini-model') ? $('gemini-model').value : 'gemini-2.5-flash';
@@ -519,22 +693,19 @@ async function runEnhance() {
         ? `請**只針對以下指定的關鍵字**進行補充（不要自行增加其他術語）：\n${keywords.map(k => `- ${k}`).join('\n')}`
         : `請自動找出文中的專業術語和關鍵概念進行補充。`;
 
-    const prompt = `你是一位專業知識補充專家。請閱讀以下逐字稿，在文中適當位置插入專業知識補充區塊。
+    const r4Rules = rulesSection('## R4. 專有名詞補充', '## R5.') || `
+1. 完整保留原文,不得修改、刪除、改寫、摘要
+2. 補充插入在首次提及該術語的段落之後,嚴禁統一放在文末
+3. 每個術語只在首次出現時補充一次
+4. 補充區塊上下各保留一個空行
+5. 格式:\`> **專業知識補充:[術語名稱]**\` 區塊`;
+
+    const prompt = `你是一位專業知識補充專家。請閱讀以下逐字稿,在文中適當位置插入專業知識補充區塊。
 
 ## 補充目標
 ${keywordInstruction}
 
-## 嚴格規則
-1. **完整保留原文**：不得修改、刪除、改寫、或摘要任何一句原文。輸出必須包含原文的每一個字。
-2. 補充必須插入在「首次提及該概念的段落之後」，嚴禁統一放在文末。
-3. 使用 Markdown 引用區塊格式：
-
-> **專業知識補充：[術語名稱]**
->
-> [用淺顯易懂的方式說明，約 2-4 句話]
-
-4. 補充區塊的上方與下方必須各保留一個空行。
-5. 每個術語只在首次出現時補充一次。
+${r4Rules}
 
 ## 原始逐字稿
 ${cleanedMd}`;
@@ -580,32 +751,24 @@ async function runNotes() {
     addProgressLine(4, `⏳ 以「${identity}」視角生成好學生筆記...`, 'run');
     setProgressBar(4, 10);
 
-    const prompt = `你是一個「好學生筆記」生成系統。請根據以下逐字稿內容，以一位「${identity}」的專業視角，生成帶有專業類比與應用的學習筆記。
+    const r3Rules = rulesSection('## R3. 好學生筆記生成規則', '## R4.') || `
+1. 完整保留原文(字數 95%-105%)
+2. 在每個段落或重要概念之後,加入立場類比區塊
+3. 開頭加入 📝 學習摘要、結尾加入 💡 核心洞察
+4. 類比必須合理且有意義;區塊上下各空一行`;
 
-## 好學生筆記規則
+    const prompt = `你是一個「好學生筆記」生成系統。請根據以下逐字稿內容,以「${identity}」的立場,生成立場置入的學習筆記。
 
-1. **完整保留原文內容**：每一段原文都必須出現在輸出中，不得省略。
-2. 在每個段落或重要概念之後，加入該專業視角的類比區塊，格式如下：
+## 你的立場
+${identity}
 
-> 🎯 **${identity}視角**
->
-> - **類比**：[用${identity}的術語重新詮釋這個概念]
-> - **應用**：[這個概念在${identity}的工作中如何應用]
-> - **連結**：[與${identity}已知概念的關聯]
+${r3Rules}
 
-3. 在文件開頭加入學習摘要框：
+## 必須出現的結構(依順序)
 
-> 📝 **學習摘要**
-> - 核心主題：[一句話]
-> - ${identity}視角的關鍵收穫：[2-3 點]
-
-4. 在文件結尾加入核心洞察總結：
-
-> 💡 **核心洞察**
-> [用${identity}的語言，一段話總結最重要的學習]
-
-5. 類比必須在邏輯上合理且有意義。
-6. 補充區塊上下各保留一個空行。
+1. 開頭:\`> 📝 **學習摘要**\` 框,含「核心主題」與「${identity}視角的關鍵收穫 2-3 點」
+2. 原文內容(逐段出現),在合適位置插入 \`> 🎯 **${identity}視角**\` 類比區塊(含類比/應用/連結)
+3. 結尾:\`> 💡 **核心洞察**\` 框,用${identity}的語言總結
 
 ## 逐字稿內容
 ${sourceContent}`;
@@ -632,6 +795,17 @@ ${sourceContent}`;
 // ─────────────────────────────────────────────────────────
 
 document.addEventListener('DOMContentLoaded', () => {
+
+    // ── Load shared dictionaries from /dict/ + core rules from /prompts/
+    //    Both are fire-and-forget; hardcoded fallbacks keep the app functional
+    //    if fetches fail (file:// protocol, offline, etc). ──
+    const domainSelect = $('domain-select');
+    const initialDomain = domainSelect ? domainSelect.value || null : null;
+    loadDictionaries(initialDomain);
+    loadCoreRules();  // prompts/qaqc_core_rules.md → CORE_RULES_TEXT
+    if (domainSelect) {
+        domainSelect.addEventListener('change', () => loadDictionaries(domainSelect.value || null));
+    }
 
     // ── Tabs ──
     document.querySelectorAll('.tab').forEach(tab => {
@@ -676,6 +850,15 @@ document.addEventListener('DOMContentLoaded', () => {
         goToStep(2);
     });
     $('btn-dl-srt').addEventListener('click', () => downloadFile('transcribe.srt', srtContent));
+    // Per-step ZIP export — reflects R6.2 "every step is a valid stopping point"
+    async function exportZipAtStep() {
+        syncStep2Edits();
+        await downloadSessionZip(makeSessionSlug());
+    }
+    ['btn-dl-zip-1', 'btn-dl-zip-2', 'btn-dl-zip-3'].forEach(id => {
+        const b = $(id);
+        if (b) b.addEventListener('click', exportZipAtStep);
+    });
     $('btn-to-2').addEventListener('click', () => goToStep(2));
 
     // ── Step 2 ──
@@ -725,6 +908,14 @@ document.addEventListener('DOMContentLoaded', () => {
     $('btn-dl-md3').addEventListener('click', () => {
         downloadFile('good-student-notes.md', notesMd);
     });
+    const zipBtn = $('btn-dl-session-zip');
+    if (zipBtn) {
+        zipBtn.addEventListener('click', async () => {
+            syncStep2Edits();
+            const slug = makeSessionSlug();
+            await downloadSessionZip(slug);
+        });
+    }
 
     // ── Clickable step dots ──
     for (let i = 1; i <= 4; i++) {
