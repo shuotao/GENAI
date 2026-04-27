@@ -80,7 +80,55 @@ sessions/
     notes_<identity>.md     # (選)好學生筆記
     corrections.json        # 本 session 手動校正紀錄(待人工推送至 dict/)
     metadata.json           # 字數比率、耗時、統計
+    .phase_b_pending.json   # (CLI engine 模式)Phase B 待 agent 接手的 marker
+    .step_3_pending.json    # (CLI engine 模式)Step 3 待 agent 接手的 marker
+    .step_4_pending.json    # (CLI engine 模式)Step 4 待 agent 接手的 marker
 ```
+
+### 原則 5 — Engine Routing(誰開的就由誰執行)
+Pipeline 任何需要 LLM 的階段(Phase B 校稿、Step 3 補名詞、Step 4 立場筆記)都
+**先確認 host engine 才決定怎麼執行**,不再無腦打 Gemini API。
+
+`scripts/session.py` 啟動時偵測 host:
+
+| 偵測信號 | engine | 行為 |
+|---|---|---|
+| `$CLAUDECODE` 設定 | `claude` | 寫 marker,**不打任何 API**,等 Claude Code 對話 agent 接手 |
+| `$GEMINI_CLI` 設定 | `gemini` | 寫 marker,**不打任何 API**,等 Gemini CLI 對話 agent 接手 |
+| `$GITHUB_COPILOT_CLI` 設定 | `copilot` | 同上,等 Copilot CLI 接手 |
+| 無信號 + `--engine api` | `api` | 走 `qaqc_phase_b.py` 打 Gemini API(純 shell/cron 用) |
+| 無信號 + 沒指定 | `none` | 跳過 Phase B/Step 3/Step 4,印 warning(防呆) |
+
+**Why:** 2026-04-27 跑 0425.mp4 時,session.py 在 Claude Code 環境下盲目打 Gemini API,
+SSL → 503 → 429 quota 連環掛,1 小時白做。CLI host 用 OAuth login token 計費,
+打 API key 是雙重消費 + 燒錯 quota。詳 memory `feedback_auth_model_split.md`。
+
+**Auth 雙軌總表(本專案的核心 auth 設計):**
+
+| 入口 | LLM Auth | Groq Auth |
+|------|----------|-----------|
+| Claude Code CLI | OAuth login token(免 API key) | API key |
+| Gemini CLI | OAuth login token(免 API key) | API key |
+| GitHub Copilot CLI | OAuth login token(免 API key) | API key |
+| 純 shell / cron | 用 .env 的 `GEMINI_API_KEY` | API key |
+| Web (studio.html) | 使用者貼 user-supplied API key | 使用者貼 user-supplied API key |
+
+Web 為什麼保留 Gemini API key 欄位是 **刻意的普及策略**:Gemini key 取得門檻最低
+(Google AI Studio 一鍵免費發 key),不要因為 CLI 不需要就拿掉 Web 欄位。
+
+**Marker file 契約**(agent 接手協議):
+
+當 agent(Claude/Gemini/Copilot)在 session 目錄看到任一 `.<stage>_pending.json`:
+
+1. 讀 marker 取得 `input_file`、`output_file`、`rules_ref`、字數區間、`instructions`
+2. 套對應規則(Phase B → § QAQC 標準;Step 3 → § Step 3;Step 4 → § 好學生筆記規範)
+3. 中文字數驗證落在 `target_chinese_chars_min`–`max` 之間
+4. 寫回輸出檔
+5. **刪除 marker**(代表已完成)
+6. 更新 `metadata.json` 的對應 stats 區塊,`actor` 改成 agent 自己
+
+Marker file 之間有依賴順序:`phase-b → step-3 → step-4`。處理時依序進行,
+若使用者只跑到 phase-b,不會有後兩個 marker;只跑到 step-3 不會有 step-4。
 
 ---
 

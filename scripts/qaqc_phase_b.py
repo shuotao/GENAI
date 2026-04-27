@@ -48,7 +48,7 @@ import urllib.error
 from pathlib import Path
 
 GEMINI_URL = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent?key={key}"
-DEFAULT_MODELS = ["gemini-2.5-flash", "gemini-2.5-pro"]
+DEFAULT_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-2.5-pro"]
 MAX_OUTPUT_TOKENS = 65536
 
 # SSoT for rules: see prompts/qaqc_core_rules.md
@@ -104,7 +104,8 @@ def call_gemini(prompt: str, api_key: str, model: str,
     req = urllib.request.Request(
         url, data=body, headers={"Content-Type": "application/json"}, method="POST",
     )
-    with urllib.request.urlopen(req, timeout=180) as resp:
+    # Long-form Phase B can produce 30-60K Chinese characters; 180s was too tight.
+    with urllib.request.urlopen(req, timeout=600) as resp:
         data = json.loads(resp.read().decode("utf-8"))
     return data["candidates"][0]["content"]["parts"][0]["text"]
 
@@ -125,13 +126,33 @@ def call_gemini_with_retry(prompt: str, api_key: str,
             except urllib.error.HTTPError as e:
                 body = e.read().decode("utf-8", errors="replace")[:200]
                 last_err = RuntimeError(f"Gemini HTTP {e.code} [{model}]: {body}")
-                if e.code == 429 and attempt == 1:
-                    print("[phase_b] rate-limited, sleeping 20s...", file=sys.stderr)
-                    time.sleep(20)
+                # 429 (rate limit) and 5xx (server overload) are both transient — retry once,
+                # then fall through to next model.
+                transient = (e.code == 429) or (500 <= e.code < 600)
+                if transient and attempt == 1:
+                    # 503 overloads usually clear in 30-60s; 429 quota also benefits from waiting.
+                    wait = 60 if e.code == 503 else 30
+                    print(f"[phase_b] HTTP {e.code} on {model}, sleeping {wait}s...",
+                          file=sys.stderr)
+                    time.sleep(wait)
                     continue
-                if e.code == 429:
+                if transient:
+                    print(f"[phase_b] HTTP {e.code} persisted on {model}, falling back...",
+                          file=sys.stderr)
                     break  # move to next model
                 raise last_err
+            except (TimeoutError, urllib.error.URLError) as e:
+                # Network-layer transient errors: socket timeout, connection refused, etc.
+                # Long-form generation can take >5min; treat first failure as retryable.
+                last_err = RuntimeError(f"Gemini transport error [{model}]: {e}")
+                if attempt == 1:
+                    print(f"[phase_b] transport error on {model} ({type(e).__name__}), "
+                          f"sleeping 15s before retry...", file=sys.stderr)
+                    time.sleep(15)
+                    continue
+                print(f"[phase_b] transport error persisted on {model}, falling back...",
+                      file=sys.stderr)
+                break
             except Exception as e:  # noqa: BLE001
                 last_err = e
                 raise

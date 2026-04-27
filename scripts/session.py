@@ -40,6 +40,46 @@ QAQC_SCRIPT = PROJECT_ROOT / "SRT/qaqc_srt.py"
 PHASE_B_SCRIPT = PROJECT_ROOT / "scripts/qaqc_phase_b.py"
 
 
+# ─── Engine routing(誰在叫我?)──────────────────────────────────────
+# 規則:CLI host(Claude Code、Gemini CLI 等)用 OAuth login token 計費,絕不打
+# LLM API key,Phase B/Step 3/Step 4 由對話 agent 接手。純 shell/cron 才走 API。
+# 詳見 CLAUDE.md「Engine Routing」章節 + memory feedback_auth_model_split.md。
+
+ENGINE_CHOICES = ("auto", "claude", "gemini", "copilot", "api", "none")
+
+# host detection signals → engine。第一個命中就贏。
+ENGINE_ENV_SIGNALS = (
+    ("claude",  ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_EXECPATH")),
+    ("gemini",  ("GEMINI_CLI", "GEMINI_CLI_SESSION", "GOOGLE_GEMINI_CLI")),
+    ("copilot", ("GITHUB_COPILOT_CLI", "GH_COPILOT_AGENT", "COPILOT_AGENT_SESSION")),
+)
+
+
+def detect_engine(explicit: str | None = None) -> tuple[str, str]:
+    """Return (engine, reason). Explicit non-auto value short-circuits detection."""
+    if explicit and explicit != "auto":
+        return explicit, f"--engine={explicit}"
+    for engine, env_keys in ENGINE_ENV_SIGNALS:
+        for k in env_keys:
+            if os.environ.get(k):
+                return engine, f"detected ${k}"
+    return "unknown", "no host signal found"
+
+
+def resolve_engine(args) -> str:
+    """Print the routing decision and return the chosen engine.
+    `unknown` defaults to refusing API calls — the user must opt in via --engine api."""
+    engine, reason = detect_engine(args.engine)
+    if engine == "unknown":
+        print(f"[session] engine=unknown ({reason}); Phase B / Step 3 / Step 4 will be "
+              f"SKIPPED to avoid burning API quotas. Pass --engine api to opt into "
+              f"calling Gemini API explicitly.", file=sys.stderr)
+        return "none"
+    host_label = os.environ.get("AI_AGENT", "agent CLI" if engine != "api" else "Web/cron")
+    print(f"[session] engine={engine} ({reason}, host={host_label})")
+    return engine
+
+
 # ─── Slug ───
 
 def _slugify(name: str) -> str:
@@ -103,6 +143,12 @@ def run(cmd: list[str], cwd: Path | None = None, check: bool = True) -> subproce
 
 
 def new_session(args):
+    # 0. Engine routing — 第一件事:確認誰在叫我,印出 routing 決策
+    engine = resolve_engine(args)
+    if getattr(args, "dry_run", False):
+        print(f"[session] --dry-run: engine={engine}, exiting without doing work.")
+        return
+
     audio = Path(args.audio).resolve()
     if not audio.exists():
         print(f"Audio not found: {audio}", file=sys.stderr)
@@ -203,30 +249,80 @@ def new_session(args):
                   and args.stop_at not in ("transcribe", "phase-a"))
     if do_phase_b:
         plain = _srt_to_plain(cleaned_srt)
-        tmp_in = sdir / ".phase_b_input.txt"
-        tmp_in.write_text(plain, encoding="utf-8")
-        try:
-            cmd = ["python3", str(PHASE_B_SCRIPT), str(tmp_in),
-                   "-o", str(cleaned_md), "--mode", "merged"]
-            if ctx_text:
-                cmd += ["--context", str(ctx_path)]
-            run(cmd)
-            in_m = count_chars(plain)
-            out_m = count_chars(cleaned_md.read_text(encoding="utf-8"))
-            phase_b_stats = {
-                "in_chars_no_space": in_m["no_space"],
-                "out_chars_no_space": out_m["no_space"],
-                "ratio_no_space": round(out_m["no_space"] / max(1, in_m["no_space"]), 4),
-                "ratio_chinese": round(out_m["chinese"] / max(1, in_m["chinese"]), 4),
-            }
-        except subprocess.CalledProcessError as e:
-            print(f"[session] Phase B failed: {e} — falling back to Phase A plaintext",
-                  file=sys.stderr)
+        in_m = count_chars(plain)
+
+        if engine in ("claude", "gemini", "copilot"):
+            # Agent CLI 模式:寫 Phase A 純文字到 cleaned.md + 放 marker,等對話 agent 接手
             cleaned_md.write_text(plain, encoding="utf-8")
-            phase_b_stats = {"fallback": "phase_a_plaintext", "error": str(e)}
-        finally:
-            if tmp_in.exists():
-                tmp_in.unlink()
+            target_lo = int(in_m["chinese"] * 0.95)
+            target_hi = int(in_m["chinese"] * 1.05)
+            marker_path = sdir / ".phase_b_pending.json"
+            marker = {
+                "stage": "phase-b",
+                "engine": engine,
+                "input_file": str(cleaned_md.relative_to(PROJECT_ROOT)),
+                "rules_ref": "CLAUDE.md § 核心鐵律 + § QAQC 標準",
+                "ssot_rules": "prompts/qaqc_core_rules.md",
+                "input_chinese_chars": in_m["chinese"],
+                "target_chinese_chars_min": target_lo,
+                "target_chinese_chars_max": target_hi,
+                "context_file": str(ctx_path.relative_to(PROJECT_ROOT)),
+                "instructions": (
+                    f"Phase B 待 {engine} agent 接手。讀 {cleaned_md.name} 純文字版,套 "
+                    "CLAUDE.md 的 Phase B 規則(零省略、合併斷行、加標點接續詞、加 ## 標題、"
+                    f"中文字數落在 {target_lo}-{target_hi} 區間),寫回 {cleaned_md.name}。"
+                    "完成後刪本 marker。"
+                ),
+                "created_at": dt.datetime.now().isoformat(timespec="seconds"),
+            }
+            marker_path.write_text(
+                json.dumps(marker, ensure_ascii=False, indent=2), encoding="utf-8")
+            print(f"[session] Phase B 待 {engine} agent 接手:")
+            print(f"  marker: {marker_path.relative_to(PROJECT_ROOT)}")
+            print(f"  input:  {cleaned_md.relative_to(PROJECT_ROOT)} "
+                  f"({in_m['chinese']:,} 中文字)")
+            print(f"  target: {target_lo:,}-{target_hi:,} 中文字 (95-105%)")
+            phase_b_stats = {
+                "engine": engine,
+                "status": "pending_agent_handoff",
+                "marker_file": marker_path.name,
+                "in_chinese_chars": in_m["chinese"],
+                "target_min": target_lo,
+                "target_max": target_hi,
+            }
+
+        elif engine == "api":
+            # 純 shell/cron 路徑:打 Gemini API
+            tmp_in = sdir / ".phase_b_input.txt"
+            tmp_in.write_text(plain, encoding="utf-8")
+            try:
+                cmd = ["python3", str(PHASE_B_SCRIPT), str(tmp_in),
+                       "-o", str(cleaned_md), "--mode", "merged"]
+                if ctx_text:
+                    cmd += ["--context", str(ctx_path)]
+                run(cmd)
+                out_m = count_chars(cleaned_md.read_text(encoding="utf-8"))
+                phase_b_stats = {
+                    "engine": "api",
+                    "in_chars_no_space": in_m["no_space"],
+                    "out_chars_no_space": out_m["no_space"],
+                    "ratio_no_space": round(out_m["no_space"] / max(1, in_m["no_space"]), 4),
+                    "ratio_chinese": round(out_m["chinese"] / max(1, in_m["chinese"]), 4),
+                }
+            except subprocess.CalledProcessError as e:
+                print(f"[session] Phase B (API) failed: {e} — falling back to Phase A plaintext",
+                      file=sys.stderr)
+                cleaned_md.write_text(plain, encoding="utf-8")
+                phase_b_stats = {"engine": "api", "fallback": "phase_a_plaintext",
+                                 "error": str(e)}
+            finally:
+                if tmp_in.exists():
+                    tmp_in.unlink()
+
+        else:  # engine == "none"
+            cleaned_md.write_text(plain, encoding="utf-8")
+            print(f"[session] engine=none: Phase B skipped, cleaned.md = Phase A plaintext")
+            phase_b_stats = {"engine": "none", "status": "skipped"}
 
     # 7.5 Step 3: 專有名詞補充 → enhanced.md
     # Runs if --keywords given OR --enhance flag OR stop-at in {enhance, notes}.
@@ -238,25 +334,61 @@ def new_session(args):
                        or (args.identity and args.stop_at == "notes")))
     if do_enhance:
         enhanced_md = sdir / "enhanced.md"
-        try:
-            cmd = ["python3", str(PHASE_B_SCRIPT), str(cleaned_md),
-                   "-o", str(enhanced_md), "--mode", "enhance"]
-            if args.keywords:
-                cmd += ["--keywords", args.keywords]
-            if ctx_text:
-                cmd += ["--context", str(ctx_path)]
-            run(cmd)
-            in_m = count_chars(cleaned_md.read_text(encoding="utf-8"))
-            out_m = count_chars(enhanced_md.read_text(encoding="utf-8"))
-            enhance_stats = {
-                "in_chars_no_space": in_m["no_space"],
-                "out_chars_no_space": out_m["no_space"],
-                "ratio_no_space": round(out_m["no_space"] / max(1, in_m["no_space"]), 4),
-                "keywords_explicit": bool(args.keywords),
+
+        if engine in ("claude", "gemini", "copilot"):
+            # Agent CLI 模式:寫 marker,等對話 agent 接手(在 Phase B 處理完 cleaned.md 之後)
+            marker_path = sdir / ".step_3_pending.json"
+            marker = {
+                "stage": "step-3-enhance",
+                "engine": engine,
+                "input_file": str(cleaned_md.relative_to(PROJECT_ROOT)),
+                "output_file": str(enhanced_md.relative_to(PROJECT_ROOT)),
+                "rules_ref": "CLAUDE.md § Step 3 + prompts/qaqc_core_rules.md",
+                "keywords_explicit": args.keywords or None,
+                "context_file": str(ctx_path.relative_to(PROJECT_ROOT)),
+                "depends_on": "phase-b 完成(cleaned.md 已校稿,不是純文字版)",
+                "instructions": (
+                    f"Step 3 待 {engine} agent 接手。先確認 cleaned.md 已完成 Phase B "
+                    "(如果 .phase_b_pending.json 還在,先處理它)。然後讀 cleaned.md,"
+                    "標出專有名詞並補充說明,輸出 enhanced.md。完成後刪本 marker。"
+                ),
+                "created_at": dt.datetime.now().isoformat(timespec="seconds"),
             }
-        except subprocess.CalledProcessError as e:
-            print(f"[session] Step 3 enhance failed: {e}", file=sys.stderr)
+            marker_path.write_text(
+                json.dumps(marker, ensure_ascii=False, indent=2), encoding="utf-8")
+            print(f"[session] Step 3 待 {engine} agent 接手: "
+                  f"{marker_path.relative_to(PROJECT_ROOT)}")
+            enhance_stats = {"engine": engine, "status": "pending_agent_handoff",
+                             "marker_file": marker_path.name}
+            enhanced_md = None  # 不要把不存在的檔當 source for Step 4
+
+        elif engine == "api":
+            try:
+                cmd = ["python3", str(PHASE_B_SCRIPT), str(cleaned_md),
+                       "-o", str(enhanced_md), "--mode", "enhance"]
+                if args.keywords:
+                    cmd += ["--keywords", args.keywords]
+                if ctx_text:
+                    cmd += ["--context", str(ctx_path)]
+                run(cmd)
+                in_m = count_chars(cleaned_md.read_text(encoding="utf-8"))
+                out_m = count_chars(enhanced_md.read_text(encoding="utf-8"))
+                enhance_stats = {
+                    "engine": "api",
+                    "in_chars_no_space": in_m["no_space"],
+                    "out_chars_no_space": out_m["no_space"],
+                    "ratio_no_space": round(out_m["no_space"] / max(1, in_m["no_space"]), 4),
+                    "keywords_explicit": bool(args.keywords),
+                }
+            except subprocess.CalledProcessError as e:
+                print(f"[session] Step 3 enhance (API) failed: {e}", file=sys.stderr)
+                enhanced_md = None
+                enhance_stats = {"engine": "api", "error": str(e)}
+
+        else:  # none
+            print("[session] engine=none: Step 3 skipped")
             enhanced_md = None
+            enhance_stats = {"engine": "none", "status": "skipped"}
 
     # 7.6 Step 4: 立場置入好學生筆記 → notes_<identity>.md
     notes_md = None
@@ -265,24 +397,59 @@ def new_session(args):
     if do_notes:
         notes_md = sdir / f"notes_{args.identity}.md"
         source_md = enhanced_md if (enhanced_md and enhanced_md.exists()) else cleaned_md
-        try:
-            cmd = ["python3", str(PHASE_B_SCRIPT), str(source_md),
-                   "-o", str(notes_md), "--mode", "notes",
-                   "--identity", args.identity]
-            if ctx_text:
-                cmd += ["--context", str(ctx_path)]
-            run(cmd)
-            in_m = count_chars(source_md.read_text(encoding="utf-8"))
-            out_m = count_chars(notes_md.read_text(encoding="utf-8"))
-            notes_stats = {
-                "source": source_md.name,
-                "in_chars_no_space": in_m["no_space"],
-                "out_chars_no_space": out_m["no_space"],
-                "ratio_no_space": round(out_m["no_space"] / max(1, in_m["no_space"]), 4),
+
+        if engine in ("claude", "gemini", "copilot"):
+            marker_path = sdir / ".step_4_pending.json"
+            marker = {
+                "stage": "step-4-notes",
+                "engine": engine,
+                "identity": args.identity,
+                "input_file": str(source_md.relative_to(PROJECT_ROOT)),
+                "output_file": str(notes_md.relative_to(PROJECT_ROOT)),
+                "rules_ref": "CLAUDE.md § 好學生筆記規範 + prompts/qaqc_core_rules.md",
+                "context_file": str(ctx_path.relative_to(PROJECT_ROOT)),
+                "depends_on": ("step-3-enhance 完成(若有);否則 phase-b 完成"),
+                "instructions": (
+                    f"Step 4 待 {engine} agent 接手。讀 {source_md.name},以「{args.identity}」"
+                    "立場插入專業視角類比區塊(類比/應用/連結),完整保留原文,字數比 95-105%,"
+                    f"輸出 {notes_md.name}。完成後刪本 marker。"
+                ),
+                "created_at": dt.datetime.now().isoformat(timespec="seconds"),
             }
-        except subprocess.CalledProcessError as e:
-            print(f"[session] Step 4 notes failed: {e}", file=sys.stderr)
+            marker_path.write_text(
+                json.dumps(marker, ensure_ascii=False, indent=2), encoding="utf-8")
+            print(f"[session] Step 4 待 {engine} agent 接手: "
+                  f"{marker_path.relative_to(PROJECT_ROOT)}")
+            notes_stats = {"engine": engine, "status": "pending_agent_handoff",
+                           "marker_file": marker_path.name, "identity": args.identity}
             notes_md = None
+
+        elif engine == "api":
+            try:
+                cmd = ["python3", str(PHASE_B_SCRIPT), str(source_md),
+                       "-o", str(notes_md), "--mode", "notes",
+                       "--identity", args.identity]
+                if ctx_text:
+                    cmd += ["--context", str(ctx_path)]
+                run(cmd)
+                in_m = count_chars(source_md.read_text(encoding="utf-8"))
+                out_m = count_chars(notes_md.read_text(encoding="utf-8"))
+                notes_stats = {
+                    "engine": "api",
+                    "source": source_md.name,
+                    "in_chars_no_space": in_m["no_space"],
+                    "out_chars_no_space": out_m["no_space"],
+                    "ratio_no_space": round(out_m["no_space"] / max(1, in_m["no_space"]), 4),
+                }
+            except subprocess.CalledProcessError as e:
+                print(f"[session] Step 4 notes (API) failed: {e}", file=sys.stderr)
+                notes_md = None
+                notes_stats = {"engine": "api", "error": str(e)}
+
+        else:  # none
+            print("[session] engine=none: Step 4 skipped")
+            notes_md = None
+            notes_stats = {"engine": "none", "status": "skipped"}
 
     # 8. Write metadata.json
     meta.update({
@@ -368,6 +535,16 @@ def main():
                      help="(Legacy alias of --stop-at phase-a) Skip Phase B; produce cleaned.srt only")
     new.add_argument("--structured-srt", action="store_true",
                      help="Also produce transcript.cleaned.srt via --structured mode")
+    new.add_argument("--engine",
+                     choices=ENGINE_CHOICES,
+                     default="auto",
+                     help="Phase B / Step 3 / Step 4 routing. "
+                          "auto: detect host via env (CLAUDECODE/GEMINI_CLI/...); "
+                          "claude|gemini|copilot: agent接手, 不打 API; "
+                          "api: 走 Gemini API (純 shell/cron 用); "
+                          "none: 跳過所有 LLM 步驟,只到 Phase A")
+    new.add_argument("--dry-run", action="store_true",
+                     help="Just print engine routing decision and exit (no Groq/no API)")
 
     args = ap.parse_args()
     if args.cmd == "new":
