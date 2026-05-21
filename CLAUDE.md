@@ -130,6 +130,23 @@ Web 為什麼保留 Gemini API key 欄位是 **刻意的普及策略**:Gemini ke
 Marker file 之間有依賴順序:`phase-b → step-3 → step-4`。處理時依序進行,
 若使用者只跑到 phase-b,不會有後兩個 marker;只跑到 step-3 不會有 step-4。
 
+### 原則 6 — 算力分工:確定性工作用工具,LLM 只做判斷(2026-05 引入)
+
+**語言模型是拿來「處理事情(判斷)」的,不是拿來做自動化的。** 凡是確定性、機械性的步驟,
+**一律寫成/呼叫腳本工具**,不要用 LLM 逐字硬幹;LLM(對話 agent)只保留給真正需要判斷的環節。
+
+| 該用工具(確定性) | 該用 LLM(判斷) |
+|---|---|
+| Groq 轉錄、SRT parse、去時間軸、套字典、丟幻覺/空段、合併段落、md→HTML、Firebase 部署、字數 QAQC | 翻譯、語意幻覺(文法通順但內容虛構)的辨識、專名/人名校正、風格決策 |
+
+**Why:** 2026-05 處理 Koshi Cafe 四檔時,使用者明確要求「以省 LLM 算力為目標、善用工具、用完一個再做下一個」。
+照此把轉錄/清理/合併/出版全交給腳本,LLM 只做翻譯與名稱判斷,又快又省。
+
+**做法守則:**
+- 多檔批次**一個做完再做下一個**(sequential),不要平行燒算力。
+- 一個階段 = 一支可重用工具(`scripts/lang/`、`scripts/`),需要重跑時是「一行指令」,不是重新請 LLM 做一遍。
+- 發現自己在「用 LLM 重複做某件機械事」→ 停下來,改寫成腳本。
+
 ---
 
 ## Architecture
@@ -246,7 +263,7 @@ python3 transcribe.py          # Interactive mode(既有互動模式)
 
 ---
 
-## 四步驟產物定位(R6)
+## 五步驟產物定位(R6)
 
 | Step | 產物 | 本質 | 誰需要 |
 |------|------|------|--------|
@@ -254,9 +271,27 @@ python3 transcribe.py          # Interactive mode(既有互動模式)
 | Step 2 | `cleaned.md` | **去時間軸、合併、通順的串接稿** | **大宗使用者的終點** |
 | Step 3 | `enhanced.md` | 專有名詞補充後的稿(非身份置入) | 對內容陌生、需要術語百科 |
 | Step 4 | `notes_<立場>.md` | 立場置入的好學生筆記 | 想用自己視角吸收內容 |
+| Step 5 | `<slug>.html` + 線上網址 | **分頁式 HTML 出版稿,deploy 到 Firebase `goodedunote` 專案** | 要把筆記做成可分享的網頁 |
 
 Web 的差異化定位(未來):Gemini 圖像生成能力(banana pro / gemini-2.5-flash-image)
 產出**圖文並茂**的好學生筆記。目前尚未實作,列為 P3 範圍;實作前 Web/CLI 的 Step 4 輸出應文字面一致。
+
+### 原則 7 — Step 5 出版層與 GENAI Web 端是兩個不同層級(2026-05 引入)
+
+Step 5(把任一 markdown 產物轉 HTML 並上線)是**「筆記出版層」**,它的部署目標是 Firebase 的 **`goodedunote`** 專案
+(`https://goodedunote.web.app/<slug>/`,每篇筆記一個子路徑)。
+
+**它與 `/web` 的 GENAI Web 端是兩件事,不得混為一談:**
+
+| | Step 5 出版層 | GENAI Web 端(`/web`) |
+|---|---|---|
+| 內容 | 每一篇處理過的筆記(逐字稿/翻譯/好學生筆記)的 HTML | Physics of Insight 主站 + 好學生筆記工作室 studio |
+| 部署 | Firebase `goodedunote` 專案,`--only hosting` | GitHub Pages(`shuotao.github.io/GENAI/web/…`) |
+| 工具 | `scripts/lang/en/md_to_html.py`(md→分頁 HTML)+ `scripts/publish_goodedunote.sh`(同步 + deploy) | 既有 `web/` 靜態站 |
+| 觸發 | 處理完一篇筆記、要對外分享時 | 改網站本身時 |
+
+**鐵律:跑 Step 5 出版一篇筆記時,絕不去動 `/web` 或 GENAI 的 GitHub Pages 部署。** 兩者層級不同、生命週期不同。
+Step 5 只在 `goodedunote` 專案的 hosting 上新增/更新該篇 `<slug>/`,不碰其他專案、不碰 firestore/storage 規則。
 
 ---
 
@@ -292,6 +327,28 @@ Web 的差異化定位(未來):Gemini 圖像生成能力(banana pro / gemini-2.5
 2. **過濾亂碼**:中文字比例 < 25% 的段落(Web 端;CLI 待補)
 3. **錯字修正**:套用 `dict/typo_dict.json` + `dict/typo_dict.<domain>.json`(疊加)
 4. **不動時間軸**:僅替換 text,時間戳原樣保留
+
+#### 幻覺清理是「兩層」的(2026-05,跨語系實戰補充)
+
+Whisper 的幻覺集中在**靜音/音樂/掌聲/休息/開場墊場**等非語音段。處理分兩層:
+
+**第 1 層 — 確定性過濾(腳本做,抓大宗)**,常見樣態:
+- **prompt 回放**:Whisper 把我們給的 prompt 吐回來(中文「內容包含…」、英文 `Key terms…`)→ 整句丟。
+- **影片字幕殘留幻覺**:`The END`、`Subtitles by the Amara.org community`、`Thank you for watching`、`END OF TRANSCRIPT`、`Transcription by …`、`CC by …`。
+- **跨語系亂碼**:英文場冒出韓/西里爾/CJK、中文場冒出韓/泰/拉丁重音字 → 多 script 混雜即丟(但 Latin-1 重音如 ä/é/ñ 屬正常人名,勿誤殺)。
+- **低資訊**:純標點/空白、結尾一串全大寫拉丁(如 `MING PAO TORONTO`)、極短雜訊。
+- 工具:中文 `SRT/qaqc_srt.py`(`is_garbled` + 前綴);跨語系/英文用 `scripts/lang/srt_clean_md.py`、`scripts/lang/en/srt_zhtw.py` 的幻覺樣式表。
+
+**第 2 層 — 語意幻覺(LLM/agent 判斷,腳本抓不到)**:
+- 「**文法通順但內容虛構**」的段落(例:技術演講開場音樂處冒出「marine oil / 某某海灘 / coffee shop」這種與主題無關的流暢句),charset/前綴都過不了,只能靠 agent 讀內容、對照議程判斷後**列入 drop 清單**再由腳本剔除。
+- 原則:第 1 層能抓的絕不勞動 LLM(見原則 6);第 2 層只挑「機器判不出」的少數送 agent。
+
+#### 名稱與專名校正(F1,2026-05 引入)
+
+**ASR 對人名/專名錯得最離譜,一律以權威來源為準,不信 ASR、也別只信手寫筆記。**
+- 人名/單位:以**官方報名表、議程、講者官網**為準(實例:`Michi`→**Nicci**、`子榮`↔**芷瑢**、`Ligora`→**Legora**、`Drlib`→**Doctolib**、`Windsor`→**Windsurf**)。
+- 英文技術演講的系統性誤聽:**「Claude」常被聽成「Cloud / quad」**(→ Claude Code / Claude API / Claude Platform);可進英文場校正字典。
+- 能確定的對應就寫進字典/glossary 做**確定性替換**;名單不齊時**先問使用者要官方資料**,不要猜。
 
 #### Phase B:AI 校稿(強化量化校驗,Gemini 2.5 Flash 實作)
 1. 補上標點符號(句號、逗號、問號、驚嘆號、頓號)
@@ -345,7 +402,11 @@ Web 的差異化定位(未來):Gemini 圖像生成能力(banana pro / gemini-2.5
 - [ ] 未將內容轉寫為摘要或文章體裁?
 - [ ] 補上了標點符號與接續詞?
 - [ ] **字數校驗:輸出字數是否落在原始有效字數的 95% - 105% 之間?**
+   - **(E1)同口徑比對**:來源與產物要用「相同方式」算(都去空白、都排除圖片語法 `![..](..)`),否則會出現假性落差。曾因「來源含空格、正文去空格」誤報 95% 虛驚。
 - [ ] **是否排除了所有「講者提到」、「本段討論」等第三人稱摘要詞?**
+   - **(E2)分清「誰在摘要」**:禁的是**我方(整理者)**寫的第三人稱摘要;若是**講者本人原話**裡說「另一個講者提到…」,那是第一人稱原話,**必須保留**,不是違規(掃描禁詞時別誤判)。
+- [ ] **(E3)翻譯類產物:原文段落數 == 譯文段落數(1:1 對齊)** 作為零省略的對齊檢查。
+- [ ] **(E4)字數/cue 校驗要對照「原始全部 cue」,不是「清理後存活的 cue」。** 否則**清理階段的誤刪**永遠抓不到。實例:2026-05 zh 清理器把雙語場的英文句整段當亂碼丟,因為當時只比對「存活集」對「合併稿」(100%),漏看了「原始 SRT → 存活集」這一段的流失。**保留率要從 Step 1 原始 cue 一路追到最終產物。**
 - [ ] 若有新發現的錯字,是否寫入 `sessions/<slug>/corrections.json`(而非直接改 `dict/`)?
 
 ---
@@ -364,18 +425,19 @@ Web 的差異化定位(未來):Gemini 圖像生成能力(banana pro / gemini-2.5
 ## Session 生命週期
 
 1. `python3 scripts/session.py new <audio>` → 建立 `sessions/<slug>/`
-2. 執行:symlink audio → 寫 context → Groq 轉錄 → Phase A → Phase B(選)→ Step 3(選)→ Step 4(選)
-3. 使用 `--stop-at` 控制終止點:`transcribe`、`phase-a`、`phase-b`(預設)、`enhance`、`notes`
+2. 執行:symlink audio → 寫 context → Groq 轉錄 → Phase A → Phase B(選)→ Step 3(選)→ Step 4(選)→ Step 5 出版(選)
+3. 使用 `--stop-at` 控制終止點:`transcribe`、`phase-a`、`phase-b`(預設)、`enhance`、`notes`(Step 1–4)。**Step 5 出版不是 session.py 的 stop-at**,而是獨立指令 `scripts/publish_goodedunote.sh`(見原則 7)
 4. 使用者檢視 `cleaned.md`,若發現錯字,寫入 `corrections.json`(**不直接改 `dict/`**)
 5. 數個 session 累積同樣誤判後,人工審閱把 `corrections.json` 條目 merge 進 `dict/typo_dict.<domain>.json`
 6. Session 完成後不應修改 `transcript.srt`(原則 1);可重跑 `--structured` 產額外的 `transcript.cleaned.srt`
 
 ### 停點原則(R6.2)
 
-四個步驟的產物都是**合法終點**。不要預設每次都要跑到 Step 4 —— 大宗使用者在 Step 2
+五個步驟的產物都是**合法終點**。不要預設每次都要跑到 Step 4/5 —— 大宗使用者在 Step 2
 (cleaned.md,去時間軸、合併、通順)就已滿足。設計上:
 
-- CLI:`--stop-at phase-b` 是預設;指定 `notes` 才會跑完整條 pipeline
+- CLI:`--stop-at phase-b` 是預設;指定 `notes` 才會跑到 Step 4
+- Step 5(出版)是**獨立、可選**的最後一層,以 `scripts/publish_goodedunote.sh` 執行(非 session.py 的 stop-at):把任一 md 產物轉 HTML 並 deploy 到 `goodedunote`(見原則 7),**不會、也不該觸發 GENAI `/web` 的更新**
 - Web:每一步後按「📦 匯出 Session ZIP」即可終止。ZIP 的 `metadata.json.stop_at` 反映實際完成的深度
 
 ---
@@ -477,6 +539,14 @@ Web 使用者 git pull(或瀏覽器下次 reload)
 | Pipeline 統籌器 | `/scripts/session.py` |
 | Gemini Phase B | `/scripts/qaqc_phase_b.py` |
 | 多語系腳本 | `/scripts/lang/` |
+| 英文轉錄(Groq, language=en) | `/scripts/lang/en/groq_transcribe_en.py` |
+| 結構保留型翻譯(EN→zh-TW;原則 2) | `/scripts/lang/en/srt_zhtw.py`(prep/assemble + 時間軸 byte 驗證) |
+| SRT → cleaned.md(翻譯版,讀 zh_parts) | `/scripts/lang/en/srt_to_md.py` |
+| SRT → cleaned.md(直接清理合併,zh/en) | `/scripts/lang/srt_clean_md.py` |
+| **Step 5** md → HTML | `/scripts/lang/en/md_to_html.py`(單頁 SPA 或 `--multipage` 每場一頁;`--cover` 封面 hero + OG 預覽圖;`--base-url` 給 OG 絕對網址;圖片大圖/並排/佔位 alt 抑制;字數 QAQC)。**hash `#fragment` 無法做各章節各自社群預覽 → 多頁模式每場獨立網址 + 各自 `og:image`(該場第一張圖,無圖用封面)** |
+| **Step 5** 圖片壓縮 + EXIF 轉正 | `/scripts/compress_images.py`(出版前壓縮省流量、把手機側拍照轉正) |
+| **Step 5** 出版到 Firebase goodedunote | `/scripts/publish_goodedunote.sh`(多頁 HTML + 壓圖 + `deploy --only hosting`;自動帶 `--base-url`) |
+| **Step 5** goodedunote 部署根(累積所有筆記) | `/scripts/publish/goodedunote/`(每篇 `public/<slug>/`) |
 | Standalone 轉錄 | `/SRT/transcribe.py` |
 | QA/QC 腳本 | `/SRT/qaqc_srt.py` |
 | Context 範例檔 | `/SRT/context.example.txt` |

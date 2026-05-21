@@ -34,3 +34,22 @@ __pycache__/
 
 # Personal Claude Code settings (may contain user-specific paths/prefs)
 .claude/settings.local.json
+
+# ── 製作品/過程/錄音(嚴禁上推,只留本機)──
+# 每篇筆記的處理資料夾(音檔、SRT、cleaned.md、HTML、照片)
+ClaudeDesign/
+# Step 5 部署產物(生成的多頁 HTML + 壓縮圖 + firebase 快取)
+scripts/publish/
+# 根目錄的成品檔(逐字稿/翻譯/HTML 等交付物)
+/claude_*.srt
+/claude_*.md
+/claude_*.html
+/claude_*.txt
+# 一次性/過程腳本與草稿(非可重用工具)
+/process_claude_audio.py
+/temp_srt_to_plain.py
+/fix_cleaned.py
+/speaker*_raw.txt
+# 其他與本專案規範無關的本機資料夾
+/GENAI/
+/claudeCode/

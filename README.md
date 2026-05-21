@@ -48,7 +48,7 @@ python3 scripts/session.py new "諮詢錄音.m4a" \
 
 ## 🎯 Scenario-based 使用(依你想要的產物選指令)
 
-本工具有 **4 個步驟**,每一步都是合法終點 — **不要預設每次都跑到底**:
+本工具有 **5 個步驟**,每一步都是合法終點 — **不要預設每次都跑到底**:
 
 | 你想要什麼 | `--stop-at` | 產物 | 適用情境 |
 |------------|-------------|------|---------|
@@ -57,6 +57,12 @@ python3 scripts/session.py new "諮詢錄音.m4a" \
 | **去時間軸、合併、通順的對話稿** | `phase-b` ⭐(預設) | `cleaned.md` | **大宗使用者的終點** |
 | 加專有名詞百科補充 | `enhance` | `enhanced.md` | 主題陌生的讀者 |
 | 以某立場(身份/角色)置入的好學生筆記 | `notes` | `notes_<立場>.md` | 學習者自用 |
+| 出版成可分享網頁 | (獨立指令 `publish_goodedunote.sh`,非 `--stop-at`) | `<slug>.html` + 線上網址 | 把筆記做成網頁分享(Step 5) |
+
+> **Step 5(出版)是獨立的一層**:把任一 md 產物轉成分頁式 HTML,deploy 到 Firebase 的 **`goodedunote`** 專案
+> (`https://goodedunote.web.app/<slug>/`,每篇一個子路徑)。
+> 工具:`scripts/lang/en/md_to_html.py`(md→HTML)+ `scripts/publish_goodedunote.sh`(同步圖 + `deploy --only hosting`)。
+> **它與 GENAI 的 `/web` 站(GitHub Pages)是不同層級,出版筆記時不會、也不該動到 `/web`**(見 CLAUDE.md 原則 7)。
 
 ### 典型指令
 
@@ -77,6 +83,16 @@ python3 scripts/session.py new audio.m4a --stop-at enhance --enhance
 
 # 也可以在 Claude Code 裡直接用 slash command
 /good-student-notes audio.m4a 建築師 --context "..." --domain parenting
+```
+
+**Step 5 出版(轉 HTML + 部署到 goodedunote):**
+
+```bash
+# 把一篇筆記的 cleaned.md(+ 含 toc.json 的 workdir)轉「多頁」HTML 並上線
+# 多頁 = index(封面 hero + 章節卡片)+ 每場一頁,每頁各自 OG 社群預覽圖(該場第一張圖,無圖用封面)
+# 圖片自動壓縮 + EXIF 轉正後才上傳(省 Firebase 流量)
+scripts/publish_goodedunote.sh <cleaned.md> <workdir> <slug> [圖片來源目錄] [--cover IMG.jpg] [--tagline "…"]
+# → https://goodedunote.web.app/<slug>/(只動 goodedunote 的 hosting,不碰 /web)
 ```
 
 ---
