@@ -53,3 +53,31 @@ scripts/publish/
 # 其他與本專案規範無關的本機資料夾
 /GENAI/
 /claudeCode/
+
+# ── Step 1-6 工作產物 file-level glob(任何位置都不上推)──
+# 不論放在 sessions/、ClaudeDesign/、MCP5/、或未來 MCP6/、koshi-2/... 任何 workdir,
+# 都用 file-level pattern 一網打盡,避免「新建一個工作資料夾忘了加 .gitignore」。
+# Step 1 — Groq 轉錄產物
+**/transcript.srt
+**/source.srt
+# Step 2 — Phase A/B 清理稿
+**/cleaned.md
+**/cleaned.srt
+**/transcript.cleaned.srt
+# Step 3 — 專名詞補充
+**/enhanced.md
+# Step 4 — 立場置入好學生筆記
+**/notes_*.md
+# Build / metadata / 個人校正 / engine 中繼 marker
+**/toc.json
+**/metadata.json
+**/corrections.json
+**/_build/
+**/_kc_build/
+**/_translate/
+**/_workdir/
+**/_local_backup/
+**/.phase_*_pending.json
+**/.step_*_pending.json
+# 個別專案 workdir(對應的截圖/原始照片 raw input;新增 workdir 時請依此格式補一行)
+MCP5/

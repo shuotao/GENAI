@@ -1,8 +1,17 @@
 {
   "_meta": {
-    "description": "Whisper 幻覺段落的起始字串。若 SRT 某段文字以任一前綴開頭,整段丟棄。",
-    "sources": "合併 CLI 原 2 組 + Web 原 12 組為統一版本,Web 版為基準(較完整)"
+    "description": "Whisper 幻覺段落處理。prefixes:以此開頭整段丟。strip_prefixes:以此開頭剝離前綴後保留內文(剝離後若 <3 字才丟)。",
+    "sources": "合併 CLI 原 2 組 + Web 原 12 組為統一版本,Web 版為基準(較完整)。strip_prefixes 引入於 2026-05-23,用於『Whisper 把真實話包進「主題是…」wrapper』的場合"
   },
+  "strip_prefixes": [
+    "主題是,",
+    "主題是",
+    "主題,",
+    "主題曲是",
+    "主題員,",
+    "主題員",
+    "領域內容包含"
+  ],
   "prefixes": [
     "內容包含：",
     "這是一段關於技術開發",
@@ -14,6 +23,11 @@
     "Subtitles",
     "Subscribe",
     "sub",
-    "字幕由"
+    "字幕由",
+    "字幕君",
+    "主題曲",
+    "主題人說",
+    "全片以",
+    "waar"
   ]
 }

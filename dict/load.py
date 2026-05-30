@@ -54,6 +54,14 @@ def load_hallucination_prefixes() -> list[str]:
     return _read_json(DICT_DIR / "hallucination_prefixes.json")["prefixes"]
 
 
+def load_strip_prefixes() -> list[str]:
+    """Wrapper prefixes that should be stripped from segment start without dropping
+    the rest of the content. Used when Whisper wraps real speech in "主題是…" style
+    hallucination prefixes."""
+    data = _read_json(DICT_DIR / "hallucination_prefixes.json")
+    return data.get("strip_prefixes", [])
+
+
 def list_domains() -> list[str]:
     """Discover available domain overlays by scanning dict/ directory."""
     domains = []

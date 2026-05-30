@@ -1,0 +1,47 @@
+# 內容授權 — Creative Commons Attribution 4.0 International (CC BY 4.0)
+
+Copyright (c) 2026 Shuotao Chiang 與各場講者
+
+本檔案規範**本專案的內容部分**(非程式碼)的授權。內容包含:
+
+- 站台原創文案(hero、manifesto、word ocean、書架描述、SectionHead 等,
+  位於 `scripts/publish/goodedunote/public/{app.jsx, data.js}` 與
+  `web/index.html` 等檔內的字串)
+- 已上線的講者逐字稿與好學生筆記(`goodedunote.web.app/<slug>/` 各頁的
+  文章正文)
+- 公開的範例 markdown(`docs/`、CLAUDE.md 中的引文)
+
+## 授權
+
+以上內容採用 [**Creative Commons Attribution 4.0 International (CC BY 4.0)**](https://creativecommons.org/licenses/by/4.0/) 授權。
+
+你可以:
+- **分享** — 以任何媒介或格式重製、散布
+- **修改** — 重混、轉化、依本內容創作衍生作品
+- **商業性使用** — 上述行為包含商業用途
+
+唯一義務:
+- **署名(Attribution)** — 引用時必須:
+  1. 標示原作者(站台 © Shuotao Chiang / 各場講者各自署名)
+  2. 提供本授權連結 https://creativecommons.org/licenses/by/4.0/
+  3. 指出是否曾做修改(若有)
+
+## 講者逐字稿的特別說明
+
+每篇逐字稿的講者話語內容,**著作權同時歸屬於該場講者個人**。逐字稿上線
+前已取得各講者書面/口頭授權,刊載範圍包含:本站永久公開、CC-BY 條款下
+的二次散布。
+
+引用單一場次時,**請優先署名該場講者**,並標明場次名稱與日期。例:
+
+> 摘自 羅嘉祥〈一件事情做三次,從專案管理的角度來開發〉,MCP 五月小聚
+> VOL.05,2026.05.23 · 收錄於 goodedunote.web.app(CC BY 4.0)。
+
+## 不包含
+
+- 講者上傳到平台的**截圖、簡報圖檔**(`IMG_*.JPG`、`截圖 *.png`):若為
+  講者本人的素材(產品畫面、模型截圖),著作權歸該講者所有,不在本 CC-BY
+  授權範圍內。引用前請個別取得講者同意。
+- 第三方素材(Google Fonts、CDN 載入的 React/Tailwind 等):依其各自授權。
+
+完整 CC BY 4.0 法律文本:https://creativecommons.org/licenses/by/4.0/legalcode

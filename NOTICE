@@ -1,0 +1,30 @@
+# 授權總覽 (NOTICE)
+
+本專案採**雙軌授權**,程式碼與內容分開規範。
+
+| 層 | 範圍 | 授權 | 檔 |
+|---|---|---|---|
+| **程式碼** | `scripts/*`、`web/*`、`SRT/*`、`dict/*.py`、`scripts/publish/goodedunote/public/{app.jsx, data.js, style.css, *.html}` | **MIT** | `LICENSE` |
+| **內容** | 站台原創文案(hero / manifesto / 書架描述 / Section Head 等)、講者逐字稿、好學生筆記 | **CC BY 4.0** | `LICENSE-CONTENT` |
+| **講者話語** | 各篇 cleaned.md / 出版頁 article 內的講者原話 | **講者個人著作權保留,經授權於本站刊載與 CC-BY 條款下二次散布** | `LICENSE-CONTENT` § 講者逐字稿的特別說明 |
+| **截圖 / 簡報圖** | `IMG_*.JPG`、`截圖 *.png`、講者上傳的圖片素材 | **歸該講者所有,不在 CC-BY 範圍** | — |
+
+## 引用我們時,請選對「層」
+
+- 拿走某段**程式碼**(例如 `publish_qaqc.py` 改 fork): MIT,保留 copyright notice
+- 引用某句**站台文案**(例如 "演講的份量,藏在那些沒被剪掉的停頓裡"):
+  CC BY 4.0,需標 © Shuotao Chiang + 連結 https://goodedunote.web.app/
+- 引用某段**講者逐字稿**:CC BY 4.0,**優先標講者姓名 + 場次 + 日期**,
+  再加站台連結
+- 拿**截圖/簡報圖**:**先問該場講者**
+
+## 對外署名建議格式
+
+短版(社群引用):
+> ——羅嘉祥《一件事情做三次》,MCP 五月小聚 VOL.05,goodedunote.web.app · CC BY 4.0
+
+長版(學術/出版引用):
+> 羅嘉祥 (2026)。〈一件事情做三次,從專案管理的角度來開發〉。MCP 五月小聚
+> · VOL.05(2026 年 5 月 23 日)。台北:小樹屋。收錄於 Shuotao Chiang
+> (編),好學生筆記 [https://goodedunote.web.app/bim-revit-mcp-2026-05-23/]。
+> 採用 CC BY 4.0 授權。

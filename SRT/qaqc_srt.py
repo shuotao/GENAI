@@ -36,7 +36,7 @@ from pathlib import Path
 # Allow `dict.load` import regardless of CWD
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
-from dict.load import load_typo_dict, load_hallucination_prefixes  # noqa: E402
+from dict.load import load_typo_dict, load_hallucination_prefixes, load_strip_prefixes  # noqa: E402
 
 
 # ─── SRT parsing ───
@@ -102,15 +102,21 @@ def is_garbled(text: str) -> bool:
 
 
 def phase_a_clean(blocks: list[dict], typo_map: dict[str, str],
-                  hallucination_prefixes: list[str]) -> tuple[list[dict], dict]:
+                  hallucination_prefixes: list[str],
+                  strip_prefixes: list[str] | None = None) -> tuple[list[dict], dict]:
     """Apply deterministic cleanup in-place. Returns (surviving_blocks, stats).
 
     Rules are defined in `prompts/qaqc_core_rules.md § R1`. This function is the
     Python implementation; `web/studio.js:runPhaseA` is the JS mirror. Keep them
     aligned — if you add a rule here, add it there too.
+
+    strip_prefixes: wrapper phrases that Whisper prepends to real speech (e.g.
+    "主題是,"). Stripped at segment start; if the remainder is < 3 chars the
+    whole segment is dropped instead.
     """
+    strip_prefixes = strip_prefixes or []
     stats = {"original": len(blocks), "dropped_empty": 0, "dropped_hallucination": 0,
-             "dropped_garbled": 0, "typo_hits": 0}
+             "dropped_garbled": 0, "typo_hits": 0, "wrapper_stripped": 0}
     out = []
     for b in blocks:
         text = b["text"].strip()
@@ -127,6 +133,15 @@ def phase_a_clean(blocks: list[dict], typo_map: dict[str, str],
             continue
         if any(text.startswith(p) for p in hallucination_prefixes):
             stats["dropped_hallucination"] += 1
+            continue
+        # Wrapper-prefix stripping (longest match first to avoid partial strips)
+        for sp in sorted(strip_prefixes, key=len, reverse=True):
+            if text.startswith(sp):
+                text = text[len(sp):].lstrip(" ,,。.")
+                stats["wrapper_stripped"] += 1
+                break
+        if len(text) < 3:
+            stats["dropped_empty"] += 1
             continue
         if is_garbled(text):
             stats["dropped_garbled"] += 1
@@ -206,17 +221,19 @@ def main():
               + f" ({len(typo_map)} entries)")
 
     hallucination_prefixes = load_hallucination_prefixes()
+    strip_prefixes = load_strip_prefixes()
 
     # Read + Phase A
     content = in_path.read_text(encoding="utf-8")
     blocks = parse_srt(content)
-    blocks, stats = phase_a_clean(blocks, typo_map, hallucination_prefixes)
+    blocks, stats = phase_a_clean(blocks, typo_map, hallucination_prefixes, strip_prefixes)
 
     print(f"[qaqc] Phase A: {stats['original']} → {stats['surviving']} blocks "
           f"(dropped {stats['dropped_empty']} empty, "
           f"{stats['dropped_hallucination']} hallucination, "
           f"{stats['dropped_garbled']} garbled; "
-          f"{stats['typo_hits']} typo fixes)")
+          f"{stats['typo_hits']} typo fixes, "
+          f"{stats['wrapper_stripped']} wrappers stripped)")
 
     # Phase B (optional)
     if args.structured:

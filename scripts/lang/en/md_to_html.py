@@ -70,12 +70,18 @@ def head(title, og):
             f'<title>{esc(title)}</title>\n{og}\n<script src="https://cdn.tailwindcss.com"></script>\n{CSS}\n</head>\n')
 
 
+def inline_md(text):
+    """**bold** → <strong>。esc() 之後再呼叫。
+    用 [^*]+ 限制不跨越下一個 *,避免吃進巢狀。"""
+    return re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", text)
+
+
 def render_blocks(lines_iter, first_in_sec_start=True):
     """把段落/圖片 lines 轉成 article 內 HTML;回傳 (blocks_html_list, para_chars, first_img_src)。"""
     blocks, para_chars, first_img, first_in = [], 0, None, first_in_sec_start
     for s in lines_iter:
         if s.startswith("### "):
-            blocks.append(f'      <h3>{esc(s[4:].strip())}</h3>'); continue
+            blocks.append(f'      <h3>{inline_md(esc(s[4:].strip()))}</h3>'); continue
         imgs = IMG_INLINE.findall(s)
         remainder = re.sub(r"[·、,，.\s]+", "", IMG_INLINE.sub("", s))
         if imgs and remainder == "":
@@ -88,9 +94,13 @@ def render_blocks(lines_iter, first_in_sec_start=True):
                 cells = "".join(f'<img src="{src}" alt="{esc(alt)}" loading="lazy">' for alt, src in imgs)
                 blocks.append(f'      <div class="kc-row">{cells}</div>')
             continue
-        cls = ' class="dropcap"' if first_in else ""
+        # 若段落以 **bold** 開頭(speaker label,例如 Q&A 的 **Q(主持人)**:...),
+        # 跳過 dropcap — 否則 ::first-letter 會把 * 也吃進去,放大成怪相
+        use_dropcap = first_in and not s.lstrip().startswith("**")
+        cls = ' class="dropcap"' if use_dropcap else ""
         first_in = False
         txt = IMG_INLINE.sub(lambda m: f'<img class="kc-inline" src="{m.group(2)}" alt="{esc(m.group(1))}" loading="lazy">', esc(s))
+        txt = inline_md(txt)
         blocks.append(f"      <p{cls}>{txt}</p>")
         para_chars += len(re.sub(r"\s", "", IMG_INLINE.sub("", s)))
     return blocks, para_chars, first_img
@@ -118,6 +128,10 @@ def main():
     ap.add_argument("--cover", default="")
     ap.add_argument("--base-url", default="")
     ap.add_argument("--multipage", action="store_true")
+    ap.add_argument("--back-anchor", default="shelves",
+                    help="回到時要 scroll 到的 anchor(預設 shelves);讀書會書用 shelf-reading,公開活動用 shelf-public,研討會用 shelf-seminar")
+    ap.add_argument("--back-label", default="書架",
+                    help="回到按鈕的文字(會帶『← 回到』前綴);例如:讀書會書架、公開活動書架、研討會書架")
     a = ap.parse_args()
 
     h1, subtitle, sessions = parse(a.md)
@@ -171,19 +185,41 @@ def main():
                 f'<h2 class="text-2xl font-bold text-stone-800 mt-3" style="border:0;padding:0;margin-top:.75rem;">{esc(m["talk"])}</h2>'
                 f'<p class="text-sm text-stone-500 mt-1">{esc(m.get("speakers",""))}</p></div>')
 
-    footer = f'  <footer class="ui mt-20 pt-10 border-t border-stone-200 text-center text-stone-400 text-sm"><p>{esc(a.footer)}</p></footer>\n'
+    # 統一授權聲明(雙軌:程式碼 MIT / 內容 CC BY 4.0 / 講者話語講者保留)
+    # 細節見 NOTICE 與 LICENSE-CONTENT
+    license_line = ('<p class="mt-3 text-xs" style="color:#a8a094;letter-spacing:0.04em;">'
+                    '程式碼 MIT · 站台文案與筆記 '
+                    '<a href="https://creativecommons.org/licenses/by/4.0/" target="_blank" rel="noopener noreferrer" '
+                    'style="border-bottom:1px solid currentColor;">CC BY 4.0</a>'
+                    ' · 講者話語著作權歸各場講者個人'
+                    '</p>')
+    footer = (f'  <footer class="ui mt-20 pt-10 border-t border-stone-200 text-center text-stone-400 text-sm">'
+              f'<p>{esc(a.footer)}</p>{license_line}</footer>\n')
+
+    # 回到該書所屬書架那一段(不是 hero,也不是不分書架的整個圖書館)
+    back_href = f"../#{a.back_anchor}" if a.back_anchor else "../"
+    back_text = f"← 回到{a.back_label}"
+    lib_btn = (f'      <a href="{back_href}" class="btn ui inline-flex items-center px-3 py-1 text-xs" '
+               f'style="color:#9a8678;border-color:#d4c0b3;">{esc(back_text)}</a>\n')
+    session_top_bar = ('      <div class="flex items-center gap-3 mb-8">\n'
+                       f'{lib_btn}'
+                       '        <a href="index.html" class="btn ui inline-flex items-center px-4 py-2 text-sm">← 回到選擇</a>\n'
+                       '      </div>\n')
 
     if not a.multipage:
         # ── 單頁 SPA ──
         og = og_block(h1, subtitle, cover_abs, base or "")
         parts = [head(h1, og), '<body>\n<div class="max-w-3xl mx-auto px-6 py-12" id="top">\n']
-        parts.append(f'  <section class="view" id="home">\n{header_html()}{chapters_section(lambda i: f"#session-{i}")}'
+        parts.append(f'  <section class="view" id="home">\n'
+                     f'      <div class="mb-6">{lib_btn}      </div>\n'
+                     f'{header_html()}{chapters_section(lambda i: f"#session-{i}")}'
                      f'    <p class="ui text-xs text-stone-400 mt-6 text-center">點任一章節進入完整逐字內容。</p>\n  </section>\n')
         for i, b in enumerate(built):
             nxt = (f'      <a href="#session-{i+2}" class="btn ui px-4 py-2 text-sm">下一個:{esc(session_meta(i+1)["talk"])} →</a>' if i+1 < n else "")
             parts.append(
                 f'  <section class="view" id="session-{i+1}">\n'
-                f'      <a href="#home" class="btn ui inline-flex items-center px-4 py-2 text-sm mb-8">← 回到選擇</a>\n'
+                f'      <div class="flex items-center gap-3 mb-8">\n{lib_btn}'
+                f'        <a href="#home" class="btn ui inline-flex items-center px-4 py-2 text-sm">← 回到選擇</a>\n      </div>\n'
                 f'{session_head_block(i)}\n    <article class="prose prose-stone mx-auto">\n' + "\n".join(b["blocks"]) +
                 f'\n    </article>\n    <div class="mt-12 pt-8 border-t border-stone-200 flex flex-wrap gap-3 justify-between items-center">\n'
                 f'      <a href="#home" class="btn ui inline-flex items-center px-4 py-2 text-sm">← 回到選擇</a>\n{nxt}\n    </div>\n  </section>\n')
@@ -195,7 +231,9 @@ def main():
         outdir = Path(a.out); outdir.mkdir(parents=True, exist_ok=True)
         # index.html
         og = og_block(h1, subtitle, cover_abs, base or "")
-        idx = [head(h1, og), '<body>\n<div class="max-w-3xl mx-auto px-6 py-12">\n', header_html(),
+        idx = [head(h1, og), '<body>\n<div class="max-w-3xl mx-auto px-6 py-12">\n',
+               f'      <div class="mb-6">{lib_btn}      </div>\n',
+               header_html(),
                chapters_section(lambda i: f"session-{i}.html"),
                '    <p class="ui text-xs text-stone-400 mt-6 text-center">點任一章節進入完整逐字內容。</p>\n', footer, '</div>\n</body>\n</html>\n']
         (outdir / "index.html").write_text("".join(idx), encoding="utf-8")
@@ -206,7 +244,7 @@ def main():
             og = og_block(f'{h1} — {m["talk"]}', m.get("speakers", "") or subtitle, og_img, (base + f"session-{i+1}.html") if base else "")
             nxt = (f'      <a href="session-{i+2}.html" class="btn ui px-4 py-2 text-sm">下一個:{esc(session_meta(i+1)["talk"])} →</a>' if i+1 < n else "")
             page = [head(f'{h1} — {m["talk"]}', og), '<body>\n<div class="max-w-3xl mx-auto px-6 py-12">\n',
-                    '      <a href="index.html" class="btn ui inline-flex items-center px-4 py-2 text-sm mb-8">← 回到選擇</a>\n',
+                    session_top_bar,
                     session_head_block(i), '\n    <article class="prose prose-stone mx-auto">\n', "\n".join(b["blocks"]),
                     '\n    </article>\n    <div class="mt-12 pt-8 border-t border-stone-200 flex flex-wrap gap-3 justify-between items-center">\n'
                     '      <a href="index.html" class="btn ui inline-flex items-center px-4 py-2 text-sm">← 回到選擇</a>\n', nxt, '\n    </div>\n',

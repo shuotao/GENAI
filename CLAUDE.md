@@ -271,7 +271,9 @@ python3 transcribe.py          # Interactive mode(既有互動模式)
 | Step 2 | `cleaned.md` | **去時間軸、合併、通順的串接稿** | **大宗使用者的終點** |
 | Step 3 | `enhanced.md` | 專有名詞補充後的稿(非身份置入) | 對內容陌生、需要術語百科 |
 | Step 4 | `notes_<立場>.md` | 立場置入的好學生筆記 | 想用自己視角吸收內容 |
+| **Step 4.5** | (檢查報告) | **出版前 QAQC**:確認 cleaned.md/toc.json 結構合規(SSoT: [`prompts/publish_qaqc.md § S4.5`](./prompts/publish_qaqc.md)) | 出版前驗收,避免 markdown 不支援的語法、圖檔 `<>` 包覆、漏 toc 等問題 |
 | Step 5 | `<slug>.html` + 線上網址 | **分頁式 HTML 出版稿,deploy 到 Firebase `goodedunote` 專案** | 要把筆記做成可分享的網頁 |
+| **Step 6** | (審查報告) | **出版後 QAQC**:自動 audit 三本書是否一致(`python3 scripts/publish_qaqc.py`) | 統一書架回連、data.js 完整、OG meta、視覺一致性 |
 
 Web 的差異化定位(未來):Gemini 圖像生成能力(banana pro / gemini-2.5-flash-image)
 產出**圖文並茂**的好學生筆記。目前尚未實作,列為 P3 範圍;實作前 Web/CLI 的 Step 4 輸出應文字面一致。
@@ -292,6 +294,34 @@ Step 5(把任一 markdown 產物轉 HTML 並上線)是**「筆記出版層」**,
 
 **鐵律:跑 Step 5 出版一篇筆記時,絕不去動 `/web` 或 GENAI 的 GitHub Pages 部署。** 兩者層級不同、生命週期不同。
 Step 5 只在 `goodedunote` 專案的 hosting 上新增/更新該篇 `<slug>/`,不碰其他專案、不碰 firestore/storage 規則。
+
+### 原則 8 — Step 4.5 + Step 6 出版 QAQC(2026-05-24 引入)
+
+出版流程的「合規關卡」拆成出版前與出版後兩段,規範皆在 SSoT 檔
+**`prompts/publish_qaqc.md`**,跟 `prompts/qaqc_core_rules.md` 同一個 SSoT
+模式。
+
+| | Step 4.5 出版前 | Step 6 出版後 |
+|---|---|---|
+| 觸發 | 跑 `publish_goodedunote.sh` 之前 | deploy 後 |
+| 形式 | 人/agent 對照 checklist 核對 cleaned.md + toc.json | `python3 scripts/publish_qaqc.py` 自動審 |
+| 重點 | Markdown 支援度、圖檔不能用 `<file>` 包覆、slug→shelf 對映表 | 統一書架 back-link、data.js 完整、OG meta、視覺一致性 |
+| 失敗時 | 中斷出版,修檔重試 | 修 data.js / 重出版 / 重 deploy |
+
+**Slug → 書架對映表**(出版時必須一致,見 SSoT § S4.5.7):
+
+| 書架 | shelf id | `--back-anchor` | `--back-label` |
+|---|---|---|---|
+| 公開活動 | `public` | `shelf-public` | `公開活動書架` |
+| 研討會 | `seminar` | `shelf-seminar` | `研討會書架` |
+| 讀書會 | `reading` | `shelf-reading` | `讀書會書架` |
+
+出版指令必須:
+1. 在 `scripts/publish/goodedunote/public/data.js` 的對應 shelf.books 加 entry
+   (book.id 必須等於 slug,book.url 用 `./<slug>/` 相對路徑)
+2. 跑 `publish_goodedunote.sh` / `md_to_html.py` 時帶上對應的 `--back-anchor`
+   + `--back-label`
+3. Deploy 後跑 `python3 scripts/publish_qaqc.py` 驗 audit 全綠
 
 ---
 
@@ -571,3 +601,6 @@ Web 使用者 git pull(或瀏覽器下次 reload)
 - **Single source of truth (規範)**: CLAUDE.md 是唯一規範。Agent.md、SRT_QA_QC_檢查清單.md 等為歷史參考
 - **API keys via .env**: Never hardcode keys; `.env` is gitignored
 - **多語系擴展**:新增語言在 `scripts/lang/<ISO639-1>/`,不需改主線
+- **雙軌授權**:程式碼 MIT(`LICENSE`)+ 內容 CC BY 4.0(`LICENSE-CONTENT`)
+  + 講者話語講者保留(`NOTICE`)。所有出版頁 footer 自動套授權行,
+  root index 也壓在最底。**新增任何引用第三方內容前**,先看 `NOTICE` 確認層級。
