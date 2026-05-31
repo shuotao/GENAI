@@ -12,6 +12,10 @@ let notesMd    = '';   // Step 4 output
 // ── Constants ──
 const CHUNK_DURATION = 600;
 const GROQ_URL = 'https://api.groq.com/openai/v1/audio/transcriptions';
+// Groq 單次請求音檔上限約 25MB。小於此值 → 直送原檔(Groq 原生收 mp3/m4a/mp4/wav…,
+// 一次回傳就有正確全域時間戳)。大於此值 → 走瀏覽器端 decode→16kHz WAV→切段 fallback。
+// 留 1MB margin 避免邊界誤判。
+const GROQ_MAX_DIRECT_BYTES = 24 * 1024 * 1024;
 
 // Typo & hallucination lists are loaded from /dict/*.json at startup
 // (see loadDictionaries() below). Hardcoded fallbacks here keep the app
@@ -28,6 +32,17 @@ let HALLUCINATION_PREFIXES = [
 
 let ACTIVE_DOMAIN = null;          // Currently selected domain overlay
 let DICT_LOADED = false;           // Set true once initial fetch completes
+
+// Phase A garbled-detection thresholds. SSoT is dict/qaqc_config.json (shared with
+// CLI SRT/qaqc_srt.py). Defaults below keep isGarbled() working before the fetch
+// resolves and under file:// where the fetch is blocked.
+let QAQC_CFG = {
+    cjk_ratio_min: 0.25,
+    min_chars_for_ratio_check: 10,
+    noise_char_max: 1,
+    long_latin_cjk_ratio_max: 0.5,
+    noise_chars: '┌┐└┘├┤┬┴┼│─⊇◡◬Ⓓ჏ს⓪①②③④⑤⑥⑦⑧⑨',
+};
 
 // Core rules loaded from prompts/qaqc_core_rules.md — SSoT for Phase B / Step 3 / Step 4.
 // If fetch fails (file://, offline), we fall back to inline minimum rules below.
@@ -62,12 +77,14 @@ async function loadDictionaries(domain) {
     ACTIVE_DOMAIN = domain || null;
     try {
         const mod = await import('./dict-loader.js');
-        const [typo, prefixes] = await Promise.all([
+        const [typo, prefixes, qaqcCfg] = await Promise.all([
             mod.loadTypoDict(ACTIVE_DOMAIN),
             mod.loadHallucinationPrefixes(),
+            mod.loadQaqcConfig(),
         ]);
         TYPO_FIXES = typo;
         HALLUCINATION_PREFIXES = prefixes;
+        if (qaqcCfg && Object.keys(qaqcCfg).length) QAQC_CFG = { ...QAQC_CFG, ...qaqcCfg };
         DICT_LOADED = true;
         console.log(`[dict] loaded: base${ACTIVE_DOMAIN ? ` + ${ACTIVE_DOMAIN}` : ''} `
                     + `(${Object.keys(TYPO_FIXES).length} typos, `
@@ -293,14 +310,15 @@ function isGarbled(text) {
     const totalNonSpace = text.replace(/\s/g, '').length;
     if (totalNonSpace === 0) return true;
     const cjkRatio = cjkCount / totalNonSpace;
-    if (cjkRatio < 0.25 && totalNonSpace > 10) return true;
+    if (cjkRatio < QAQC_CFG.cjk_ratio_min && totalNonSpace > QAQC_CFG.min_chars_for_ratio_check) return true;
     if (/[\ufffd]/.test(text)) return true;
-    const noiseRe = /[┌┐└┘├┤┬┴┼│─⊇◡◬Ⓓ჏ს⓪①②③④⑤⑥⑦⑧⑨]/g;
-    if ((text.match(noiseRe) || []).length > 1) return true;
+    const noiseEsc = (QAQC_CFG.noise_chars || '').replace(/[.*+?^${}()|[\]\\-]/g, '\\$&');
+    const noiseRe = noiseEsc ? new RegExp(`[${noiseEsc}]`, 'g') : null;
+    if (noiseRe && (text.match(noiseRe) || []).length > QAQC_CFG.noise_char_max) return true;
     const exoticRe = /[\u10a0-\u10ff\u0600-\u06ff\u0400-\u04ff\u0e00-\u0e7f\u0900-\u097f]/g;
     if ((text.match(exoticRe) || []).length > 0) return true;
     const longLatinRun = /(?:[a-zA-Z]{2,}\s+){5,}/;
-    if (longLatinRun.test(text) && cjkRatio < 0.5) return true;
+    if (longLatinRun.test(text) && cjkRatio < QAQC_CFG.long_latin_cjk_ratio_max) return true;
     return false;
 }
 
@@ -368,7 +386,7 @@ async function fileToChunks(file) {
 //  Groq Whisper API
 // ─────────────────────────────────────────────────────────
 
-async function callGroqWhisper(audioBlob, apiKey, contextPrompt) {
+async function callGroqWhisper(audioBlob, apiKey, contextPrompt, filename) {
     const basePrompt = '這是一段繁體中文錄音。';
     const maxPromptLen = 896;
     let finalPrompt = basePrompt;
@@ -380,7 +398,9 @@ async function callGroqWhisper(audioBlob, apiKey, contextPrompt) {
         finalPrompt = `${prefix}${trimmed}${suffix}`;
     }
     const fd = new FormData();
-    fd.append('file', audioBlob, 'audio.wav');
+    // Direct-send path passes the real filename so Groq detects the format;
+    // chunk fallback passes WAV blobs as 'audio.wav'.
+    fd.append('file', audioBlob, filename || 'audio.wav');
     fd.append('model', 'whisper-large-v3');
     fd.append('response_format', 'verbose_json');
     fd.append('language', 'zh');
@@ -409,12 +429,19 @@ function getGeminiKey() {
 
 async function callGemini(prompt, apiKey, model) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const generationConfig = { temperature: 0.2, maxOutputTokens: 65536 };
+    // 校稿/補充/筆記都是格式化任務,不需要思考。Gemini 2.5 thinking token 與輸出
+    // 共用 maxOutputTokens,長逐字稿時 thinking 會吃掉額度導致正文被截斷 → 違反零省略。
+    // flash 支援 thinkingBudget:0 完全關閉;pro 不可設 0,故僅對 flash 套用。
+    if (model.includes('flash')) {
+        generationConfig.thinkingConfig = { thinkingBudget: 0 };
+    }
     const resp = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
             contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { temperature: 0.2, maxOutputTokens: 65536 },
+            generationConfig,
         }),
     });
     if (!resp.ok) {
@@ -422,7 +449,18 @@ async function callGemini(prompt, apiKey, model) {
         throw new Error(`Gemini ${resp.status} [${model}]: ${errText.substring(0, 200)}`);
     }
     const data = await resp.json();
-    return data.candidates[0].content.parts[0].text;
+    // 防呆:安全機制攔截、被截斷或無 parts 時給友善訊息,而非 TypeError。
+    const cand = data.candidates && data.candidates[0];
+    if (!cand) {
+        const block = data.promptFeedback && data.promptFeedback.blockReason;
+        throw new Error(`Gemini ${model}: 無回傳內容${block ? ` (prompt 被擋:${block})` : ' (可能被安全機制攔截)'}`);
+    }
+    const parts = cand.content && cand.content.parts;
+    const text = parts ? parts.map(p => p.text || '').join('') : '';
+    if (!text) {
+        throw new Error(`Gemini ${model}: 回傳無文字內容 (finishReason=${cand.finishReason || '?'})`);
+    }
+    return text;
 }
 
 async function callGeminiWithRetry(prompt, apiKey, stepN, preferredModel) {
@@ -471,31 +509,54 @@ async function runTranscribe() {
     showProgress(1);
 
     try {
-        addProgressLine(1, '⏳ 正在解碼音訊...', 'run');
-        const { chunks, duration } = await fileToChunks(file);
-        addProgressLine(1, `✓ 時長 ${Math.round(duration)}秒，${chunks.length} 段`, 'ok');
-        setProgressBar(1, 10);
-
         const allSegments = [];
-        let globalIdx = 1;
-        for (let i = 0; i < chunks.length; i++) {
-            addProgressLine(1, `⏳ 轉錄 ${i+1}/${chunks.length} ...`, 'run');
-            const timeOffset = i * CHUNK_DURATION;
-            const result = await callGroqWhisper(chunks[i], apiKey, context);
-            if (result.segments) {
-                for (const seg of result.segments) {
-                    const text = (seg.text || '').trim();
-                    if (!text) continue;
-                    allSegments.push({
-                        idx: globalIdx++,
-                        start: seg.start + timeOffset,
-                        end: seg.end + timeOffset,
-                        text,
-                    });
-                }
+        const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+        let duration = 0;
+
+        if (file.size <= GROQ_MAX_DIRECT_BYTES) {
+            // ── 小檔直送:Groq 原生收 mp3/m4a/mp4/wav…,一次回傳就有正確全域時間戳。
+            //    不解碼、不重採樣、不手動拼時間軸。 ──
+            addProgressLine(1, `⏳ 直接上傳原檔 (${sizeMB}MB) 至 Groq...`, 'run');
+            setProgressBar(1, 20);
+            const result = await callGroqWhisper(file, apiKey, context, file.name);
+            let idx = 1;
+            for (const seg of (result.segments || [])) {
+                const text = (seg.text || '').trim();
+                if (!text) continue;
+                allSegments.push({ idx: idx++, start: seg.start, end: seg.end, text });
             }
-            addProgressLine(1, `✓ 片段 ${i+1} 完成`, 'ok');
-            setProgressBar(1, 10 + 80 * ((i+1) / chunks.length));
+            duration = allSegments.length ? allSegments[allSegments.length - 1].end : 0;
+            setProgressBar(1, 90);
+        } else {
+            // ── 大檔 fallback:瀏覽器端 decode → 16kHz mono WAV → 切 600 秒分批送,
+            //    再用 chunk offset 拼回全域時間軸。較慢且有重採樣,僅在超過 Groq
+            //    單次上限時才走。超大檔(數百 MB)可能撐爆瀏覽器記憶體,建議改用 CLI。 ──
+            addProgressLine(1, `⏳ 檔案 ${sizeMB}MB 超過 Groq 單次上限,改用切段模式解碼...`, 'run');
+            const chunked = await fileToChunks(file);
+            duration = chunked.duration;
+            addProgressLine(1, `✓ 時長 ${Math.round(duration)}秒，${chunked.chunks.length} 段`, 'ok');
+            setProgressBar(1, 10);
+
+            let globalIdx = 1;
+            for (let i = 0; i < chunked.chunks.length; i++) {
+                addProgressLine(1, `⏳ 轉錄 ${i+1}/${chunked.chunks.length} ...`, 'run');
+                const timeOffset = i * CHUNK_DURATION;
+                const result = await callGroqWhisper(chunked.chunks[i], apiKey, context, 'audio.wav');
+                if (result.segments) {
+                    for (const seg of result.segments) {
+                        const text = (seg.text || '').trim();
+                        if (!text) continue;
+                        allSegments.push({
+                            idx: globalIdx++,
+                            start: seg.start + timeOffset,
+                            end: seg.end + timeOffset,
+                            text,
+                        });
+                    }
+                }
+                addProgressLine(1, `✓ 片段 ${i+1} 完成`, 'ok');
+                setProgressBar(1, 10 + 80 * ((i+1) / chunked.chunks.length));
+            }
         }
 
         srtContent = allSegments.map(s =>
@@ -849,7 +910,7 @@ document.addEventListener('DOMContentLoaded', () => {
         srtContent = text;
         goToStep(2);
     });
-    $('btn-dl-srt').addEventListener('click', () => downloadFile('transcribe.srt', srtContent));
+    $('btn-dl-srt').addEventListener('click', () => downloadFile('transcript.srt', srtContent));
     // Per-step ZIP export — reflects R6.2 "every step is a valid stopping point"
     async function exportZipAtStep() {
         syncStep2Edits();
@@ -865,7 +926,7 @@ document.addEventListener('DOMContentLoaded', () => {
     $('btn-back-1').addEventListener('click', () => goToStep(1));
     $('btn-qaqc').addEventListener('click', () => runStep2(true));       // with Gemini polish
     $('btn-qaqc-only').addEventListener('click', () => runStep2(false)); // QAQC only
-    $('btn-dl-md1').addEventListener('click', () => { syncStep2Edits(); downloadFile('transcript.md', cleanedMd); });
+    $('btn-dl-md1').addEventListener('click', () => { syncStep2Edits(); downloadFile('cleaned.md', cleanedMd); });
     $('btn-to-3').addEventListener('click', () => goToStep(3));
 
     // Step 2 result tabs: preview / edit

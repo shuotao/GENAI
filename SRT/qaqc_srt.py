@@ -36,7 +36,12 @@ from pathlib import Path
 # Allow `dict.load` import regardless of CWD
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
-from dict.load import load_typo_dict, load_hallucination_prefixes, load_strip_prefixes  # noqa: E402
+from dict.load import (  # noqa: E402
+    load_typo_dict,
+    load_hallucination_prefixes,
+    load_strip_prefixes,
+    load_qaqc_config,
+)
 
 
 # ─── SRT parsing ───
@@ -71,6 +76,17 @@ _NOISE_RE = re.compile(r"[┌┐└┘├┤┬┴┼│─⊇◡◬Ⓓ჏ს⓪
 _EXOTIC_RE = re.compile(r"[Ⴀ-ჿ؀-ۿЀ-ӿ฀-๿ऀ-ॿ]")
 _LONG_LATIN_RE = re.compile(r"(?:[a-zA-Z]{2,}\s+){5,}")
 
+# Numeric thresholds + noise-char set come from dict/qaqc_config.json (SSoT shared
+# with web/studio.js). The Unicode-range classes above stay in code because JS/Python
+# regex dialects differ — keep them aligned with Web by hand.
+_QAQC_CFG = load_qaqc_config()
+_CJK_RATIO_MIN = _QAQC_CFG.get("cjk_ratio_min", 0.25)
+_MIN_CHARS_FOR_RATIO = _QAQC_CFG.get("min_chars_for_ratio_check", 10)
+_NOISE_CHAR_MAX = _QAQC_CFG.get("noise_char_max", 1)
+_LONG_LATIN_CJK_RATIO_MAX = _QAQC_CFG.get("long_latin_cjk_ratio_max", 0.5)
+if _QAQC_CFG.get("noise_chars"):
+    _NOISE_RE = re.compile(r"[" + re.escape(_QAQC_CFG["noise_chars"]) + r"]")
+
 
 def is_garbled(text: str) -> bool:
     """Return True if the segment is likely Whisper garbage (see R1.2 in
@@ -88,15 +104,15 @@ def is_garbled(text: str) -> bool:
     if non_space == 0:
         return True
     cjk_ratio = cjk_count / non_space
-    if cjk_ratio < 0.25 and non_space > 10:
+    if cjk_ratio < _CJK_RATIO_MIN and non_space > _MIN_CHARS_FOR_RATIO:
         return True
     if "�" in text:
         return True
-    if len(_NOISE_RE.findall(text)) > 1:
+    if len(_NOISE_RE.findall(text)) > _NOISE_CHAR_MAX:
         return True
     if _EXOTIC_RE.search(text):
         return True
-    if _LONG_LATIN_RE.search(text) and cjk_ratio < 0.5:
+    if _LONG_LATIN_RE.search(text) and cjk_ratio < _LONG_LATIN_CJK_RATIO_MAX:
         return True
     return False
 

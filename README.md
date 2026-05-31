@@ -215,7 +215,7 @@ Physics of Insight 網頁支持離線閱覽,不需要 server。直接進入 `web
 
 | 症狀 | 原因與解法 |
 |------|-----------|
-| `scripts/session.py` 跑到一半出 400 error 且 context 很長 | Groq Whisper prompt 有 **896 bytes UTF-8 上限**(中文 3 bytes/字 ≈ 290 中文字)。縮短 `--context` |
+| `scripts/session.py` 跑到一半出 400 error 且 context 很長 | Groq Whisper prompt 有 **896 字元上限**(characters,非 bytes)。腳本已自動裁切;若仍過長請縮短 `--context` |
 | Web Studio 的 domain 下拉選單空白 | 用 `file://` 開啟時 fetch 被擋。改用 `python3 -m http.server 8080` |
 | CLI 跑出 `ffmpeg: command not found` | 裝 ffmpeg:`brew install ffmpeg` 或 `apt install ffmpeg` |
 | Python syntax error on `str \| None` | 需要 Python ≥ 3.10。檢查 `python3 --version` |

@@ -80,6 +80,21 @@ export async function loadHallucinationPrefixes() {
 }
 
 /**
+ * Load Phase A garbled-detection thresholds (SSoT shared with CLI).
+ * Mirrors dict/load.py:load_qaqc_config(). Returns the "garbled" sub-object,
+ * or {} if the file is absent (caller falls back to hardcoded defaults).
+ * @returns {Promise<Object>}
+ */
+export async function loadQaqcConfig() {
+    try {
+        return (await fetchJson('qaqc_config.json')).garbled || {};
+    } catch (err) {
+        console.warn('[dict] qaqc_config.json not available, using JS defaults:', err.message);
+        return {};
+    }
+}
+
+/**
  * Best-effort domain list. Browsers can't scan the dict/ dir directly,
  * so we probe a hard-coded manifest. When a new domain is added, list it here too.
  * (Optional: project could ship a dict/_manifest.json to centralize this.)

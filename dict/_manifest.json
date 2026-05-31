@@ -2,9 +2,9 @@
   "_meta": {
     "description": "公開域名列表與詞典版本戳。Web 端 fetch 這個檔做 cache busting。新增 typo_dict.<name>.json 後務必 bump version。",
     "canonical_authority": "本檔為 Web 選單與 cache busting 來源。真實字典資料在同目錄 typo_dict*.json",
-    "updated_at": "2026-05-23"
+    "updated_at": "2026-05-31"
   },
-  "version": "2026-05-23.1",
+  "version": "2026-05-31.1",
   "domains": [
     "parenting",
     "bim"

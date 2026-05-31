@@ -64,21 +64,21 @@ def load_api_keys(start_dir):
     return unique
 
 
-def truncate_prompt_utf8(prompt: str, max_bytes: int = 896) -> str:
-    """Groq Whisper prompt 有 896 bytes UTF-8 上限,超過會 400 error。
-    從尾端逐字截斷直到 fit(中文字 3 bytes/字)。"""
-    encoded = prompt.encode("utf-8")
-    if len(encoded) <= max_bytes:
+def truncate_prompt(prompt: str, max_chars: int = 896) -> str:
+    """Groq Whisper prompt 上限為 896 **字元**(characters,非 bytes)。
+
+    2026-05 實測 400 訊息為:
+      "prompt length must be 896 characters or fewer, but provided prompt
+       contains 931 characters"
+    → Groq 數的是字元數,不是 UTF-8 bytes。本函式與 web/studio.js
+    :callGroqWhisper 同口徑(字元裁切)。超過則從尾端截斷。
+
+    歷史更正:本函式原為 truncate_prompt_utf8(max_bytes=896),按 bytes 裁,
+    會把中文 context 砍到只剩 ~290 字(896/3),浪費 ⅔ 容量。byte 上限是字元
+    上限的更嚴格子集,故舊版不會 400,但白白降低送進 Whisper 的領域詞量。"""
+    if len(prompt) <= max_chars:
         return prompt
-    # 二分法找最大可保留的 char 數
-    lo, hi = 0, len(prompt)
-    while lo < hi:
-        mid = (lo + hi + 1) // 2
-        if len(prompt[:mid].encode("utf-8")) <= max_bytes:
-            lo = mid
-        else:
-            hi = mid - 1
-    return prompt[:lo]
+    return prompt[:max_chars]
 
 
 def format_srt_time(seconds):
@@ -121,7 +121,7 @@ def transcribe_chunk(chunk_path, api_keys, key_index, context_prompt):
     """
     base_prompt = "這是一段關於技術開發與會議簡報內容的繁體中文錄音。"
     raw_prompt = f"{base_prompt} 內容包含：{context_prompt}。" if context_prompt else base_prompt
-    final_prompt = truncate_prompt_utf8(raw_prompt, max_bytes=896)
+    final_prompt = truncate_prompt(raw_prompt, max_chars=896)
 
     data = {
         "model": "whisper-large-v3",

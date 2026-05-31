@@ -64,18 +64,12 @@ def load_api_keys(start_dir):
     return unique
 
 
-def truncate_prompt_utf8(prompt: str, max_bytes: int = 896) -> str:
-    encoded = prompt.encode("utf-8")
-    if len(encoded) <= max_bytes:
+def truncate_prompt(prompt: str, max_chars: int = 896) -> str:
+    """Groq Whisper prompt 上限為 896 字元(characters,非 bytes)。
+    與中文版 groq_transcribe.py:truncate_prompt 及 web/studio.js 同口徑。"""
+    if len(prompt) <= max_chars:
         return prompt
-    lo, hi = 0, len(prompt)
-    while lo < hi:
-        mid = (lo + hi + 1) // 2
-        if len(prompt[:mid].encode("utf-8")) <= max_bytes:
-            lo = mid
-        else:
-            hi = mid - 1
-    return prompt[:lo]
+    return prompt[:max_chars]
 
 
 def format_srt_time(seconds):
@@ -108,7 +102,7 @@ def extract_and_split_audio(input_file, temp_dir):
 def transcribe_chunk(chunk_path, api_keys, key_index, context_prompt):
     base_prompt = "This is an English-language recording of a technical talk or meeting."
     raw_prompt = f"{base_prompt} Key terms: {context_prompt}." if context_prompt else base_prompt
-    final_prompt = truncate_prompt_utf8(raw_prompt, max_bytes=896)
+    final_prompt = truncate_prompt(raw_prompt, max_chars=896)
 
     data = {
         "model": "whisper-large-v3",

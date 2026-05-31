@@ -1,0 +1,15 @@
+{
+  "_meta": {
+    "description": "Phase A 亂碼偵測(is_garbled / isGarbled)的門檻值 SSoT。CLI(SRT/qaqc_srt.py)與 Web(web/studio.js)共讀此檔,避免兩端 magic number 漂移。",
+    "canonical_authority": "本檔為 is_garbled 數值門檻與 noise 字元表的唯一來源。Unicode 範圍類(CJK/exotic)因 JS/Python regex 方言不同,仍各自寫在程式碼,並標註 'keep aligned'。",
+    "updated_at": "2026-05-31"
+  },
+  "version": "2026-05-31.1",
+  "garbled": {
+    "cjk_ratio_min": 0.25,
+    "min_chars_for_ratio_check": 10,
+    "noise_char_max": 1,
+    "long_latin_cjk_ratio_max": 0.5,
+    "noise_chars": "┌┐└┘├┤┬┴┼│─⊇◡◬Ⓓ჏ს⓪①②③④⑤⑥⑦⑧⑨"
+  }
+}

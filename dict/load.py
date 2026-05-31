@@ -62,6 +62,19 @@ def load_strip_prefixes() -> list[str]:
     return data.get("strip_prefixes", [])
 
 
+def load_qaqc_config() -> dict:
+    """Load Phase A garbled-detection thresholds (SSoT for CLI + Web).
+
+    See dict/qaqc_config.json. Returns the "garbled" sub-dict, or {} if the file
+    is absent (callers fall back to their hardcoded defaults). Web reads the same
+    file via web/dict-loader.js:loadQaqcConfig().
+    """
+    path = DICT_DIR / "qaqc_config.json"
+    if not path.exists():
+        return {}
+    return _read_json(path).get("garbled", {})
+
+
 def list_domains() -> list[str]:
     """Discover available domain overlays by scanning dict/ directory."""
     domains = []
