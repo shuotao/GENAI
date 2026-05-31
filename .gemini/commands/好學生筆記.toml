@@ -1,0 +1,23 @@
+# Gemini CLI 自訂指令:/好學生筆記 — 生圖(Stage 2)
+# 對 /note 產的底稿 + 身份,逐頁用 nanobanana 疊視角手寫註解。一次一張、各自獨立,無連續/重複問題。
+# 前提:nanobanana extension(gemini extensions install https://github.com/gemini-cli-extensions/nanobanana)。
+# 完整規格見 prompts/image_notes_skill.md;視覺規則見 prompts/image_notes_design.md。
+
+description = "對某份底稿(/note 產的 base_pNN.png)+ 指定身份,逐頁用 nanobanana 把 base_pNN 疊上該身份視角的手寫彩色註解。一次一張、各自獨立 → 流水號正確、每頁都有、不重複"
+
+prompt = """
+你要執行「好學生筆記 · 生圖(Stage 2)」。完整規格見 prompts/image_notes_skill.md,視覺/6 色/視角規則見 prompts/image_notes_design.md。
+前提:已用 /note 產過底稿(沒有先跑 /note);nanobanana extension 可用(否則提示安裝)。
+
+使用者參數(底稿 slug + 身份;若缺請詢問):{{args}}
+
+步驟:
+1. 取得底稿 slug(= /note 印出的,通常日期_檔名)與身份(例:鋼琴老師)。
+2. python3 scripts/image_notes_session.py notes <slug> --identity "<身份>"
+   → 產逐頁提示清單 sessions/<slug>/note/banana_prompts_<身份>.md。
+3. 逐頁生圖(一次一張、各自獨立):對每一頁,
+   用 nanobanana /edit sessions/<slug>/note/base_pNN.png + 該頁提示 →
+   疊「<身份>」視角手寫彩色註解(保留原文一字不改)→ 存成同目錄 pNN.png。
+   🚨 一次只做一頁、各自獨立:每張都是它自己的 base_pNN,流水號正確、不會重複第 1 頁。
+4. 完成後告知使用者成品在 sessions/<slug>/note/pNN.png。換職業:同底稿改 --identity 再跑 2–3。
+"""

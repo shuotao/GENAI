@@ -37,6 +37,23 @@ python3 scripts/session.py new <audio_file> --context "領域專名詞"
 
 ---
 
+## 三軌分工總表(2026-05-31)— 三個獨立作業面,共用 SSoT、分工不互擾
+
+| 軌 | 介面 | 範圍 | 入口 | 產物落點 |
+|---|---|---|---|---|
+| **A. CLI 1–6 步** | 終端機 / Claude Code / Gemini CLI | 音檔→逐字稿→清理→補充→筆記→出版 | `python3 scripts/session.py new <audio>`(+ Step 5 `publish_goodedunote.sh`) | `sessions/<slug>/` 根(transcript.srt / cleaned.md / …) |
+| **B. Web 工作室** | 瀏覽器 `studio.html` | Step 1–4 客戶端管線 + Step 4 圖文版(CSS 疊加) | 開 `web/studio.html`(使用者自帶 key) | 瀏覽器內 + 匯出 Session ZIP(**不寫 repo**) |
+| **C. 圖像版生圖** | Antigravity / Gemini CLI | `/note` 生底稿 → `/好學生筆記` 逐頁 banana 生圖 | `python3 scripts/image_notes_session.py note/notes` | `sessions/<slug>/note/`(base_pNN.png / pNN.png) |
+
+**共用(SSoT,三軌一致):** QAQC 文字鐵律 `prompts/qaqc_core_rules.md`(A、B);圖像視覺規則 6 色/視角 `prompts/image_notes_design.md`(B 圖文版、C);字典 `dict/`(A、B);本檔(全部)。
+
+**分工不互擾(已驗證):**
+- **落點不碰撞**:A 寫 `sessions/<slug>/` 根、C 寫 `sessions/<slug>/note/` 子目錄 → 同源材料可共存、無檔案衝突;B 不寫 repo。
+- **「好學生筆記」三種產物各有其面、不混淆**:A=文字 `notes_<id>.md`;B=瀏覽器 Step 4(文字 + 可選 CSS 圖文版);C=banana 影像 `pNN.png`。
+- **影像 auth 各走各的**(原則 5 + Auth 雙軌表):A 的 CLI 走 login token、**不生圖**;B 用使用者自帶 key 的 CSS 疊加;C 用 Antigravity/Gemini CLI 的影像工具。
+
+---
+
 ## 核心架構原則(2026-04 升級引入)
 
 以下四條原則**優先於**所有其他規範。違反任何一條必須先修正架構,不得靠「叮嚀 LLM」繞過。
@@ -116,12 +133,22 @@ SSL → 503 → 429 quota 連環掛,1 小時白做。CLI host 用 OAuth login to
 Web 為什麼保留 Gemini API key 欄位是 **刻意的普及策略**:Gemini key 取得門檻最低
 (Google AI Studio 一鍵免費發 key),不要因為 CLI 不需要就拿掉 Web 欄位。
 
-**Auth 雙軌的直接後果 — 影像功能的可用性**:**圖像視角好學生筆記**(Step 4 圖像版,P3,
-設計見 [`prompts/image_notes_design.md`](./prompts/image_notes_design.md))需要呼叫**影像生成 API**
-(Gemini `gemini-2.5-flash-image` 或 OpenAI gpt-image),而 CLI host 走 OAuth login token、
-**不打 API key 也不能驅動影像 API**。因此此功能**只有 Web(使用者自帶 key)+ Antigravity
-(IDE 可呼叫 Gemini 影像)能跑**,CLI 三家(Claude/Gemini/Copilot)皆不可。這不是限制而是
-auth 模型的必然結果。
+**Auth 雙軌的直接後果 — 影像功能的可用性**:好學生筆記的**圖像版**(設計見
+[`prompts/image_notes_design.md`](./prompts/image_notes_design.md))需要**影像生成工具**,
+能驅動的 host 取決於它有沒有影像通道:
+
+| Host | 影像可用? | 影像通道 |
+|------|-----------|---------|
+| **Web (studio)** | ✅ | 使用者自帶 Gemini key → `gemini-2.5-flash-image`(Step 4 圖文版,目前走確定性 CSS 疊加;banana 封面 best-effort) |
+| **Antigravity** | ✅ | 內建 Nano Banana Pro via MCP |
+| **Gemini CLI** | ✅(需裝 extension) | `gemini extensions install …/nanobanana`(`/edit` 吃輸入圖、自動存檔) |
+| **Claude Code / Copilot / 純 shell** | ❌ | 走 OAuth login token,無影像工具 |
+
+**好學生筆記圖像版 = 兩階段、無後端自動化**(流程 SSoT
+[`prompts/image_notes_skill.md`](./prompts/image_notes_skill.md))。關鍵事實:**腳本叫不動影像工具**(只有 Antigravity / Gemini CLI 的影像 MCP 能生圖),故不做逐頁自動 banana(實測會重複第 1 頁);改成:
+- **Stage 1 `/note`**(`image_notes_session.py note <md>`):`md_to_a4_png.py` 用 Playwright 把 md 渲染成 A4 白底底稿 `base_pNN.png`(原文真 DOM、零遺漏)。**底稿與身份無關 → 一份可重複給多職業用。**
+- **Stage 2 `/好學生筆記`**(`notes <slug> --identity`):產逐頁提示清單 `banana_prompts_<身份>.md`,然後**逐頁、各自獨立**把 `base_pNN.png` 拖進 Nano Banana 疊視角手寫註解 → `pNN.png`。一次一張 → 流水號正確、不重複(這是避免「多頁都變第 1 頁」的正解)。
+(2026-05-31 教訓:逐頁自動 banana 連兩次失敗;結論=工具只做確定性底稿,生圖由 Antigravity/手動一張張做。)
 
 **Marker file 契約**(agent 接手協議):
 
@@ -609,7 +636,12 @@ Web 使用者 git pull(或瀏覽器下次 reload)
 | 共用字典 | `/dict/typo_dict*.json`、`/dict/hallucination_prefixes.json`、`/dict/_manifest.json` |
 | 字典載入器 | `/dict/load.py`(Python)、`/web/dict-loader.js`(Web,cache busting 版) |
 | **SSoT 規則文件** | `/prompts/qaqc_core_rules.md`(Phase A/B、Step 3/4 的核心鐵律) |
-| **圖像視角筆記設計 SSoT**(P3) | `/prompts/image_notes_design.md`(Step 4 圖像版:兩階段生成、4 視角類比庫、prompt 模板、6 色系統;僅 Web+Antigravity 可驅動) |
+| **圖像視角筆記設計 SSoT**(P3) | `/prompts/image_notes_design.md`(Step 4 圖像版:兩階段生成、4 視角類比庫、prompt 模板、6 色系統) |
+| **連續圖說 skill 流程 SSoT** | `/prompts/image_notes_skill.md`(`/好學生筆記` 多頁連續圖說的 agent 流程:參考圖鎖風格、斷點續存、僅 Antigravity/Gemini CLI) |
+| 圖像版兩階段工具 | `/scripts/image_notes_session.py`(`note` 生底稿 / `notes` 生圖提示;無後端自動化) |
+| 圖像版:md → A4 白底底稿 | `/scripts/md_to_a4_png.py`(Playwright,確定性、原文保真) |
+| Antigravity 入口 | `/.agent/workflows/note.md`(/note 生底稿)、`/.agent/workflows/好學生筆記.md`(/好學生筆記 生圖) |
+| Gemini CLI 入口 | `/.gemini/commands/note.toml`、`/.gemini/commands/好學生筆記.toml`(後者生圖需 nanobanana extension) |
 | Session 容器 | `/sessions/<slug>/` |
 | 專案敘事起源 | `/docs/origin-story.md` |
 | API Keys | `/.env` (gitignored) |
