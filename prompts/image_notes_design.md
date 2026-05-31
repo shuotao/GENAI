@@ -1,6 +1,30 @@
-# 好學生筆記 (Good Student Notes)
+# 好學生筆記 — 圖像視角版設計 (Image-Perspective Good Student Notes)
 
 > 將課程教材轉化為帶有專業視角的手寫風格筆記圖片
+
+---
+
+## 📌 狀態與定位 (2026-05-31 整合)
+
+本檔是「**圖像視角好學生筆記**」(Step 4 圖像版)的**唯一設計 SSoT** —— 把既有筆記內容
+**不破壞地**疊上專業視角的手寫風格註解影像。原 `SRT/好學生筆記.md`(v2.0, 2026-01-08)
+在 2026-04 架構升級時變成孤島,現移入 `prompts/` 並由 `CLAUDE.md`、
+`prompts/qaqc_core_rules.md §R6.3`、`web/easter-egg.html` 交叉引用。
+
+- **實作狀態**:**P3,尚未實作**。`web/studio.js` Step 4 目前只產純文字 Markdown。
+  本檔為日後實作此功能的設計依據。
+- **驅動條件(重要)**:此功能**只能在以下入口驅動** ——
+  | 入口 | 可否驅動 | 原因 |
+  |------|---------|------|
+  | **Web (studio)** | ✅ | 使用者自帶 Gemini(或 OpenAI)API key → 可呼叫影像模型 |
+  | **Antigravity IDE** | ✅ | IDE 本身可呼叫 Gemini(含影像) |
+  | Claude Code / Gemini CLI / Copilot CLI | ❌ | 走 OAuth login token,**不能驅動影像 API**(見 CLAUDE.md 原則 5 + Auth 雙軌表) |
+  純 shell/cron 理論上可用 `.env` 的 key,但非設計入口。
+- **影像引擎(實作時)**:
+  - 主路線 — **Gemini `gemini-2.5-flash-image`**(即「banana pro」),影像疊加、最像手繪。
+  - Web 選配 — **OpenAI/Codex image(gpt-image,使用者自帶 OpenAI key 才出現此選項)**。
+- **已知風險(實作須驗收)**:影像生成模型可能**改寫/糊掉原本的印刷文字**,與本設計
+  「不破壞原內容」的核心主張有張力。實作時須確認原文保真度,必要時退回 HTML/CSS 疊加方案。
 
 ---
 

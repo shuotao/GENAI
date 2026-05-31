@@ -150,8 +150,9 @@ GitHub Pages 部署版:`https://shuotao.github.io/GENAI/web/studio.html`
 - **`qaqc_srt.py`**: Phase A 清理 + `--structured` 結構保留型校稿
 - **`transcribe.py`**: 獨立互動式轉錄工具
 - **`context.example.txt`**: Context 格式範例(不會自動載入)
-- **`好學生筆記.md`**: AI 角色設定與 Prompt 規範參考
 - **`SRT_QA_QC_檢查清單.md`**: QAQC 檢查清單(歷史文件,現況以 CLAUDE.md 為準)
+
+> 「圖像視角好學生筆記」的完整設計已從本目錄移至 **`prompts/image_notes_design.md`**(P3 設計 SSoT;僅 Web+Antigravity 可驅動)。
 
 ### 4. `/scripts` - 共用腳本層(2026-04 新增)
 - **`session.py`**: Pipeline 統籌器,一行命令跑完 Groq 轉錄 → Phase A → Phase B → 好學生筆記

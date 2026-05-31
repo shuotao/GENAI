@@ -115,10 +115,18 @@ cache-bust fetch)。
 - Web:每一步後按「下載」或「匯出 Session ZIP」即可終止;不需要一路跑到 Step 4
 - 不要把「跑完四步驟」當成成功的唯一定義。Step 2 滿足使用者的比例可能最高。
 
-### R6.3 Web 的差異化(未來方向,尚未實作)
-Web Studio 的獨特優勢目標是能驅動 **Gemini 圖像生成**(banana pro / gemini-2.5-flash-image)
-為好學生筆記產出**圖文並茂**的最終版本。這是文字管線之外的附加層,目前尚未實作,
-列為 P3 範圍。在實作前,Web 與 CLI 的 Step 4 輸出應保持文字面一致。
+### R6.3 Web 的差異化:圖像視角好學生筆記(未來方向,P3,尚未實作)
+Web Studio 的獨特優勢目標是「**圖像視角好學生筆記**」—— 把既有筆記內容**不破壞地**疊上
+專業視角(建築師/醫學/會計/工程)的手寫風格註解影像。**完整設計 SSoT 見
+[`image_notes_design.md`](./image_notes_design.md)**(兩階段生成法、4 視角類比庫、prompt
+模板、6 色語義系統)。
+
+這是文字管線之外的附加層,目前尚未實作,列為 P3。在實作前,Web 與 CLI 的 Step 4 輸出應保持
+文字面一致。**驅動條件**:只有 Web(使用者自帶 API key)+ Antigravity(IDE 可呼叫 Gemini 影像)
+能跑;CLI 走 OAuth login token,不能驅動影像 API(見 CLAUDE.md 原則 5 + Auth 雙軌表)。
+**影像引擎**:主走 Gemini `gemini-2.5-flash-image`(banana pro);Web 另規劃 OpenAI/Codex
+image(gpt-image,使用者自帶 OpenAI key 才出現)選項。**已知風險**:影像生成可能改寫/糊掉
+原文,實作時須驗收原文保真度。
 
 ---
 
