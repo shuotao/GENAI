@@ -8,9 +8,25 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;700&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@300;400;500;700&family=JetBrains+Mono:wght@400;700&family=Long+Cang&display=swap"
         rel="stylesheet">
     <style>
+        /* ── 圖文版好學生筆記:確定性 CSS/SVG 註解疊加(內文頁,風格一致) ── */
+        .gsn-host { /* 離屏 A4 容器由 JS 設定尺寸/字體 */ }
+        .hl-yellow { background: linear-gradient(transparent 55%, rgba(255,235,59,0.65) 55%); padding:0 1px; }
+        .kw-blue { color:#1976D2; font-weight:700; border-bottom:2px solid #1976D2; }
+        .mark-red { color:#D32F2F; font-weight:700; font-family:'Long Cang','Noto Sans TC',cursive; margin-left:2px; }
+        .postit-orange, .postit-green {
+            font-family:'Long Cang','Noto Sans TC',cursive; font-size:1.12em; line-height:1.5;
+            padding:8px 12px; margin:8px 0 10px 28px; border-radius:4px; display:block;
+        }
+        .postit-orange { background:#FFF3E0; border-left:4px solid #E65100; color:#E65100; }
+        .postit-green  { background:#E8F5E9; border-left:4px solid #388E3C; color:#2E7D32; }
+        .insight-box {
+            font-family:'Long Cang','Noto Sans TC',cursive; font-size:1.18em; line-height:1.5;
+            margin-top:22px; padding:12px 16px; background:#FFEBEE; border:2px dashed #D32F2F;
+            border-radius:6px; color:#C62828;
+        }
         * { margin: 0; padding: 0; box-sizing: border-box; }
 
         body {
@@ -541,6 +557,35 @@
                     <button class="btn" onclick="location.reload()">🔄 重新開始</button>
                 </div>
             </div>
+
+            <!-- 圖文版好學生筆記(P3,實驗性;僅 Web+Antigravity 可驅動)。設計 SSoT: prompts/image_notes_design.md
+                 底圖 = html2canvas 確定性渲染(文字保真);Gemini 只負責疊視角手寫註解。測試階段只產第一頁。 -->
+            <div class="divider"></div>
+            <div class="field">
+                <h3 class="step-title" style="font-size:1.1rem;margin-bottom:4px;">🖼️ 圖文版好學生筆記
+                    <span style="font-size:0.7rem;color:#888;font-weight:400;">實驗性 · 測試階段只產第一頁</span></h3>
+                <p style="color:#888;font-size:0.85rem;line-height:1.7;margin:6px 0 14px;">
+                    把上一步的內容渲染成 A4 白底頁面(文字保真、不靠 AI 重畫),再用「<span id="img-identity-echo">你的身份</span>視角」疊上彩色手寫風格註解(藍圈關鍵字 / 黃螢光 / 紅 !? / 橘綠便利貼類比 / 💡 核心洞察)。<br>
+                    <small style="color:#666;">內文註解走確定性 CSS 渲染:每頁風格一致、原文一字不差、<b>免費(只用文字模型)</b>。沿用 Step 2 的 Gemini Key。封面 banana hero 之後再加。</small>
+                </p>
+                <div class="btn-row">
+                    <button class="btn btn-go" id="btn-image-notes">🖼️ 生成圖文版(第一頁)</button>
+                </div>
+                <div class="progress" id="prog-img">
+                    <div id="prog-img-lines"></div>
+                    <div class="prog-bar-wrap"><div class="prog-bar" id="prog-img-bar"></div></div>
+                </div>
+                <div class="result" id="res-img">
+                    <div class="result-hdr">
+                        <span class="result-tag">&#10003; 圖文版完成</span>
+                        <span class="result-stat" id="res-img-stat"></span>
+                    </div>
+                    <div id="res-img-gallery" style="display:flex;flex-direction:column;gap:16px;"></div>
+                    <div class="btn-row">
+                        <button class="btn" id="btn-dl-img">📥 下載 PNG</button>
+                    </div>
+                </div>
+            </div>
         </section>
 
     </main>
@@ -555,6 +600,10 @@
 
     <script src="https://cdn.jsdelivr.net/npm/marked@12.0.2/marked.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
+    <!-- lamejs:大檔上傳前壓成 MP3(16kHz mono 64kbps),取代 41MB WAV。載入失敗會自動退回 WAV 切段。 -->
+    <script src="https://cdn.jsdelivr.net/npm/lamejs@1.2.1/lame.min.js"></script>
+    <!-- html2canvas:Step 4 圖文版把筆記文字確定性渲染成 A4 白底 PNG(文字保真)。載入失敗則停用圖文版。 -->
+    <script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
     <script src="studio.js"></script>
 
     <!-- Load local config if available (本地開發時自動加載 API Key) -->

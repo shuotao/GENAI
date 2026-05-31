@@ -8,14 +8,23 @@ let rawCleaned = '';   // Phase A output (client-side QAQC only)
 let cleanedMd  = '';   // Phase B output (after Gemini polish)
 let enhancedMd = '';   // Step 3 output
 let notesMd    = '';   // Step 4 output
+let imageNotesPngs = []; // Step 4 圖文版:[{dataUrl, base64, identity, index}]
 
 // ── Constants ──
-const CHUNK_DURATION = 600;
 const GROQ_URL = 'https://api.groq.com/openai/v1/audio/transcriptions';
 // Groq 單次請求音檔上限約 25MB。小於此值 → 直送原檔(Groq 原生收 mp3/m4a/mp4/wav…,
 // 一次回傳就有正確全域時間戳)。大於此值 → 走瀏覽器端 decode→16kHz WAV→切段 fallback。
 // 留 1MB margin 避免邊界誤判。
 const GROQ_MAX_DIRECT_BYTES = 24 * 1024 * 1024;
+// 切段 fallback:每段轉 16kHz mono 16-bit WAV = 32000 bytes/秒。目標每段 ~8MB,
+// 上傳快又穩、進度更細;取代舊的 600 秒=19MB 大段(在瀏覽器上傳慢、易卡)。
+const WAV_BYTES_PER_SEC = 16000 * 2;
+const GROQ_CHUNK_TARGET_BYTES = 4 * 1024 * 1024;
+const CHUNK_DURATION = Math.floor(GROQ_CHUNK_TARGET_BYTES / WAV_BYTES_PER_SEC); // ≈ 131 秒 ≈ 4MB/段
+// 單段請求逾時:超過即報錯(觸發重試),不讓 stalled 上傳無聲卡死。
+const GROQ_FETCH_TIMEOUT_MS = 120000;
+// 單段上傳逾時/斷線時的自動重試次數(慢/不穩的上傳常一次就過)。
+const GROQ_CHUNK_RETRIES = 3;
 
 // Typo & hallucination lists are loaded from /dict/*.json at startup
 // (see loadDictionaries() below). Hardcoded fallbacks here keep the app
@@ -133,6 +142,13 @@ async function downloadSessionZip(sessionSlug) {
         const identity = ($('identity-input') && $('identity-input').value.trim()) || 'notes';
         folder.file(`notes_${identity}.md`, notesMd);
     }
+    // 圖文版好學生筆記 PNG(若有產出)→ images/
+    if (imageNotesPngs.length) {
+        const idn = ($('identity-input') && $('identity-input').value.trim()) || 'notes';
+        const imgFolder = folder.folder('images');
+        imageNotesPngs.forEach((p, i) =>
+            imgFolder.file(`good_student_notes_${idn}_p${String(i + 1).padStart(2, '0')}.png`, p.base64, { base64: true }));
+    }
 
     // Context (from Step 1 textarea, raw form)
     const ctx = ($('context-input') ? $('context-input').value : '').trim();
@@ -208,6 +224,9 @@ async function downloadSessionZip(sessionSlug) {
             enhanced_md: enhancedMd ? 'enhanced.md' : null,
             notes_md: notesMd ? `notes_${identity || 'notes'}.md` : null,
             transcript_cleaned_srt: null,
+            image_notes: imageNotesPngs.length
+                ? { engine: 'gemini-2.5-flash-image', identity: identity || 'notes', pages: imageNotesPngs.length, dir: 'images/' }
+                : null,
         },
     };
     folder.file('metadata.json', JSON.stringify(meta, null, 2));
@@ -393,6 +412,60 @@ async function fileToChunks(file) {
     return { chunks, duration };
 }
 
+// ── 大檔壓縮路徑:decode → 16kHz mono → MP3(64kbps),取代未壓縮 WAV ──
+// 21 分鐘 WAV ≈ 41MB;同樣音訊 64kbps MP3 ≈ 10MB,可一次直送 Groq、上傳超快。
+// 需要 lamejs(studio.html CDN 載入);不可用時呼叫端會自動退回 fileToChunks(WAV)。
+
+function encodePcmToMp3(int16, sampleRate) {
+    if (typeof lamejs === 'undefined' || !lamejs.Mp3Encoder) {
+        throw new Error('lamejs 未載入');
+    }
+    const enc = new lamejs.Mp3Encoder(1, sampleRate, 64); // mono, 64kbps
+    const block = 1152;
+    const parts = [];
+    for (let i = 0; i < int16.length; i += block) {
+        const buf = enc.encodeBuffer(int16.subarray(i, i + block));
+        if (buf.length > 0) parts.push(new Uint8Array(buf));
+    }
+    const end = enc.flush();
+    if (end.length > 0) parts.push(new Uint8Array(end));
+    return new Blob(parts, { type: 'audio/mpeg' });
+}
+
+async function fileToMp3Segments(file) {
+    if (typeof lamejs === 'undefined' || !lamejs.Mp3Encoder) {
+        throw new Error('lamejs 未載入');
+    }
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const audioBuf = await ctx.decodeAudioData(await file.arrayBuffer());
+    await ctx.close();
+    const SR = 16000;
+    const off = new OfflineAudioContext(1, Math.ceil(audioBuf.duration * SR), SR);
+    const src = off.createBufferSource();
+    src.buffer = audioBuf;
+    src.connect(off.destination);
+    src.start(0);
+    const mono = await off.startRendering();
+    const ch = mono.getChannelData(0);
+    const int16 = new Int16Array(ch.length);
+    for (let i = 0; i < ch.length; i++) {
+        const s = Math.max(-1, Math.min(1, ch[i]));
+        int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    // 每段 MP3 控制在 ~20MB 以下(64kbps mono = 8KB/秒 → ~2400 秒/段)。
+    // ≤ ~40 分鐘的演講會壓成「1 段」→ 單次直送、不需切段。
+    const SEG_SEC = 2400;
+    const segSamples = SEG_SEC * SR;
+    const nSeg = Math.max(1, Math.ceil(int16.length / segSamples));
+    const jobs = [];
+    for (let s = 0; s < nSeg; s++) {
+        const slice = int16.subarray(s * segSamples, Math.min((s + 1) * segSamples, int16.length));
+        const blob = encodePcmToMp3(slice, SR);
+        jobs.push({ blob, timeOffset: s * SEG_SEC, filename: 'audio.mp3', bytes: blob.size });
+    }
+    return { jobs, duration: mono.duration };
+}
+
 // ─────────────────────────────────────────────────────────
 //  Groq Whisper API
 // ─────────────────────────────────────────────────────────
@@ -431,11 +504,24 @@ async function callGroqWhisper(audioBlob, apiKey, contextPrompt, filename, langu
     if (lang !== 'auto') fd.append('language', lang);
     fd.append('temperature', '0.0');
     if (finalPrompt) fd.append('prompt', finalPrompt);
-    const resp = await fetch(GROQ_URL, {
-        method: 'POST',
-        headers: { 'Authorization': `Bearer ${apiKey}` },
-        body: fd,
-    });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), GROQ_FETCH_TIMEOUT_MS);
+    let resp;
+    try {
+        resp = await fetch(GROQ_URL, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${apiKey}` },
+            body: fd,
+            signal: controller.signal,
+        });
+    } catch (err) {
+        if (err.name === 'AbortError') {
+            throw new Error(`Groq 請求逾時(${GROQ_FETCH_TIMEOUT_MS / 1000} 秒未回應),可能網路不穩或該段過大`);
+        }
+        throw err;
+    } finally {
+        clearTimeout(timer);
+    }
     if (!resp.ok) {
         const errText = await resp.text();
         throw new Error(`Groq API ${resp.status}: ${errText}`);
@@ -556,34 +642,62 @@ async function runTranscribe() {
             duration = allSegments.length ? allSegments[allSegments.length - 1].end : 0;
             setProgressBar(1, 90);
         } else {
-            // ── 大檔 fallback:瀏覽器端 decode → 16kHz mono WAV → 切 600 秒分批送,
-            //    再用 chunk offset 拼回全域時間軸。較慢且有重採樣,僅在超過 Groq
-            //    單次上限時才走。超大檔(數百 MB)可能撐爆瀏覽器記憶體,建議改用 CLI。 ──
-            addProgressLine(1, `⏳ 檔案 ${sizeMB}MB 超過 Groq 單次上限,改用切段模式解碼...`, 'run');
-            const chunked = await fileToChunks(file);
-            duration = chunked.duration;
-            addProgressLine(1, `✓ 時長 ${Math.round(duration)}秒，${chunked.chunks.length} 段`, 'ok');
+            // ── 大檔:超過 Groq 單次上限,需切段。優先「壓成 MP3」(64kbps,上傳量小);
+            //    lamejs 不可用時自動退回「WAV 切段」(較大、上傳慢但可用)。
+            //    兩條路都產出統一的 jobs = [{blob, timeOffset, filename}],後面同一個迴圈上傳。 ──
+            let jobs, segLabel;
+            try {
+                addProgressLine(1, `⏳ 檔案 ${sizeMB}MB 超過上限,壓縮成 MP3(16kHz mono 64kbps)...`, 'run');
+                const r = await fileToMp3Segments(file);
+                jobs = r.jobs;
+                duration = r.duration;
+                segLabel = '壓縮+轉錄';
+                const mb = (jobs.reduce((a, j) => a + j.bytes, 0) / 1024 / 1024).toFixed(1);
+                addProgressLine(1, `✓ 已壓成 MP3:${jobs.length} 段,共約 ${mb}MB(原檔 ${sizeMB}MB)`, 'ok');
+            } catch (e) {
+                addProgressLine(1, `⚠ MP3 壓縮不可用(${e.message}),改用 WAV 切段`, 'fail');
+                const c = await fileToChunks(file);
+                duration = c.duration;
+                jobs = c.chunks.map((blob, i) => ({ blob, timeOffset: i * CHUNK_DURATION, filename: 'audio.wav', bytes: blob.size }));
+                segLabel = '轉錄';
+                addProgressLine(1, `✓ 時長 ${Math.round(duration)}秒，${jobs.length} 段(WAV)`, 'ok');
+            }
             setProgressBar(1, 10);
 
             let globalIdx = 1;
-            for (let i = 0; i < chunked.chunks.length; i++) {
-                addProgressLine(1, `⏳ 轉錄 ${i+1}/${chunked.chunks.length} ...`, 'run');
-                const timeOffset = i * CHUNK_DURATION;
-                const result = await callGroqWhisper(chunked.chunks[i], apiKey, context, 'audio.wav', language);
-                if (result.segments) {
+            for (let i = 0; i < jobs.length; i++) {
+                addProgressLine(1, `⏳ ${segLabel} ${i+1}/${jobs.length} ...`, 'run');
+                // 慢/不穩的上傳:逾時或網路中斷時自動重試(最多 GROQ_CHUNK_RETRIES 次)。
+                // 401/4xx 等金鑰/請求錯誤不重試(重試也沒用)→ 直接拋出。
+                let result = null;
+                for (let attempt = 1; attempt <= GROQ_CHUNK_RETRIES; attempt++) {
+                    try {
+                        result = await callGroqWhisper(jobs[i].blob, apiKey, context, jobs[i].filename, language);
+                        break;
+                    } catch (err) {
+                        const retriable = /逾時|Failed to fetch|NetworkError|network|aborted/i.test(err.message);
+                        if (retriable && attempt < GROQ_CHUNK_RETRIES) {
+                            addProgressLine(1, `⚠ 第 ${i+1} 段第 ${attempt} 次逾時/中斷,重試中...`, 'fail');
+                            await sleep(2000);
+                            continue;
+                        }
+                        throw err;
+                    }
+                }
+                if (result && result.segments) {
                     for (const seg of result.segments) {
                         const text = (seg.text || '').trim();
                         if (!text) continue;
                         allSegments.push({
                             idx: globalIdx++,
-                            start: seg.start + timeOffset,
-                            end: seg.end + timeOffset,
+                            start: seg.start + jobs[i].timeOffset,
+                            end: seg.end + jobs[i].timeOffset,
                             text,
                         });
                     }
                 }
                 addProgressLine(1, `✓ 片段 ${i+1} 完成`, 'ok');
-                setProgressBar(1, 10 + 80 * ((i+1) / chunked.chunks.length));
+                setProgressBar(1, 10 + 80 * ((i+1) / jobs.length));
             }
         }
 
@@ -920,6 +1034,278 @@ ${sourceContent}`;
 }
 
 // ─────────────────────────────────────────────────────────
+//  Step 4 圖文版:底圖=html2canvas 確定性渲染(文字保真),Gemini 只疊視角手寫註解。
+//  設計 SSoT: prompts/image_notes_design.md(Stage B 規則 + 6 色語義系統)。
+//  P3,僅 Web+Antigravity 可驅動(影像 API 需 user key,見 CLAUDE.md 原則 5)。
+// ─────────────────────────────────────────────────────────
+
+// 把 md 建成離屏 A4 白底容器(真 DOM,文字零遺漏)。回傳 host 與分頁資訊;用完要 remove。
+function buildA4Host(md) {
+    if (typeof html2canvas === 'undefined') throw new Error('html2canvas 未載入');
+    const A4W = 794, A4H = 1123, PAD = 56;  // 96dpi A4 + 邊距
+    const host = document.createElement('div');
+    host.className = 'gsn-host';
+    host.style.cssText = `position:absolute;left:-99999px;top:0;width:${A4W}px;background:#ffffff;`
+        + `color:#333;padding:${PAD}px;box-sizing:border-box;`
+        + `font-family:'Noto Sans TC',sans-serif;font-size:16px;line-height:1.85;`;
+    host.innerHTML = marked.parse(md || '');
+    host.querySelectorAll('h1,h2,h3').forEach(h => { h.style.color = '#1a1a1a'; });
+    host.querySelectorAll('blockquote').forEach(b => {
+        b.style.cssText = 'border-left:3px solid #5a5;margin:1em 0;padding:6px 12px;background:#f3f8f3;color:#444;';
+    });
+    document.body.appendChild(host);
+    const nPages = Math.max(1, Math.ceil(host.scrollHeight / A4H));
+    const plain = host.innerText || md || '';
+    return { host, A4W, A4H, nPages, plain };
+}
+
+// 擷取 host 的第 index 頁(A4 高)為 PNG。
+async function captureA4Page(host, index, A4W, A4H) {
+    const canvas = await html2canvas(host, {
+        backgroundColor: '#ffffff', scale: 2,
+        width: A4W, height: A4H, x: 0, y: index * A4H,
+        windowWidth: A4W, scrollX: 0, scrollY: 0, useCORS: true,
+    });
+    const dataUrl = canvas.toDataURL('image/png');
+    return { dataUrl, base64: dataUrl.split(',')[1] };
+}
+
+// 註解規劃器:免費文字模型(gemini-2.5-flash)只決定「要標什麼」,回嚴格 JSON。不打付費影像 API。
+async function getPageAnnotations(pageText, identity, apiKey) {
+    const model = 'gemini-2.5-flash';
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const prompt = `你是「好學生筆記」的批註規劃器。針對以下這一頁課程內容,以「${identity}」的視角,決定要在頁面上加哪些手寫批註。
+只輸出 JSON(不要任何其他文字),結構:
+{
+ "highlights": ["要用黃色螢光標的短句(原文一字不差出現)"],
+ "keyterms":   ["要用藍色圈選的關鍵詞(原文一字不差出現)"],
+ "marks":      [{"anchor":"原文片段(一字不差)","kind":"insight 或 question","text":"很短的旁註"}],
+ "sidenotes":  [{"anchor":"原文片段(一字不差,標示便利貼貼在哪段)","color":"orange 或 green","text":"用${identity}視角的生活化類比/連結,一句話"}],
+ "insight":    "底部核心洞察一句,用${identity}的語言總結"
+}
+規則:
+- highlights / keyterms / 各 anchor 必須是原文裡『一字不差』出現的片段(程式要用它定位,不可改寫或翻譯)。
+- highlights 2-4 個、keyterms 2-5 個、marks 1-3 個、sidenotes 2-3 個。
+- sidenotes 用「${identity}」的日常情境做類比(例如買菜媽媽就用挑菜、預算、路線來比喻)。
+
+## 本頁原文
+${(pageText || '').slice(0, 4000)}`;
+    const resp = await fetch(url, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: { temperature: 0.4, maxOutputTokens: 2048, thinkingConfig: { thinkingBudget: 0 }, responseMimeType: 'application/json' },
+        }),
+    });
+    if (!resp.ok) {
+        const t = await resp.text();
+        throw new Error(`註解規劃 ${resp.status}: ${t.slice(0, 160)}`);
+    }
+    const data = await resp.json();
+    const cand = data.candidates && data.candidates[0];
+    const txt = (cand && cand.content && cand.content.parts) ? cand.content.parts.map(p => p.text || '').join('') : '';
+    if (!txt) throw new Error('註解規劃:回傳空白(可能被安全機制攔截)');
+    try { return JSON.parse(txt); }
+    catch {
+        const m = txt.match(/\{[\s\S]*\}/);
+        if (m) { try { return JSON.parse(m[0]); } catch { /* fall through */ } }
+        throw new Error('註解規劃:JSON 解析失敗');
+    }
+}
+
+// 只把「第一個」符合 phrase 的 text node 片段包成 span,只動該片段、其餘原文不碰。
+function _wrapFirstMatch(root, phrase, className) {
+    if (!phrase || phrase.length < 2) return false;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+        if (node.parentElement && node.parentElement.closest('.postit-orange,.postit-green,.insight-box,.kw-blue,.hl-yellow')) continue;
+        const idx = node.textContent.indexOf(phrase);
+        if (idx < 0) continue;
+        const before = node.textContent.slice(0, idx);
+        const after = node.textContent.slice(idx + phrase.length);
+        const span = document.createElement('span');
+        span.className = className;
+        span.textContent = node.textContent.slice(idx, idx + phrase.length);
+        const frag = document.createDocumentFragment();
+        if (before) frag.appendChild(document.createTextNode(before));
+        frag.appendChild(span);
+        if (after) frag.appendChild(document.createTextNode(after));
+        node.parentNode.replaceChild(frag, node);
+        return true;
+    }
+    return false;
+}
+
+function _findBlockWithText(root, phrase) {
+    if (!phrase) return null;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    let node;
+    while ((node = walker.nextNode())) {
+        if (node.textContent.includes(phrase)) {
+            return node.parentElement && (node.parentElement.closest('p,li,h1,h2,h3,blockquote') || node.parentElement);
+        }
+    }
+    return null;
+}
+
+// 把註解 JSON 決定性地疊到 host DOM(純 DOM/CSS,無 AI、無隨機 → 每頁風格一致)。
+// 找不到 anchor 的註解就略過,絕不改動原文。
+function applyAnnotationsToDom(host, ann, identity) {
+    ann = ann || {};
+    (ann.keyterms || []).forEach(t => _wrapFirstMatch(host, String(t).trim(), 'kw-blue'));
+    (ann.highlights || []).forEach(h => _wrapFirstMatch(host, String(h).trim(), 'hl-yellow'));
+    (ann.marks || []).forEach(m => {
+        const blk = _findBlockWithText(host, ((m && m.anchor) || '').trim());
+        if (!blk) return;
+        const span = document.createElement('span');
+        span.className = 'mark-red';
+        span.textContent = ` ${m.kind === 'question' ? '?' : '!'}${m.text ? ' ' + m.text : ''}`;
+        blk.appendChild(span);
+    });
+    (ann.sidenotes || []).forEach(s => {
+        const blk = _findBlockWithText(host, ((s && s.anchor) || '').trim());
+        const note = document.createElement('div');
+        note.className = (s && s.color === 'green') ? 'postit-green' : 'postit-orange';
+        note.textContent = (s && s.text) || '';
+        if (blk && blk.parentNode) blk.parentNode.insertBefore(note, blk.nextSibling);
+        else host.appendChild(note);
+    });
+    if (ann.insight) {
+        const box = document.createElement('div');
+        box.className = 'insight-box';
+        box.textContent = `💡 核心洞察:${ann.insight}`;
+        host.appendChild(box);
+    }
+}
+
+// 依 image_notes_design.md Stage B 規則組 prompt:只疊加、不改寫原文。
+function buildImageNotesPrompt(identity, pageText) {
+    return `這是一張白底的課程筆記頁(印刷文字)。請把它轉成「好學生筆記」:在**保留原始印刷文字完全不變**的前提下,於其上疊加手寫風格的彩色註解。
+
+## 鐵律
+- **絕對不要改寫、重排、翻譯或重新生成原本的印刷文字**;原文必須清晰可辨、位置不動。你只是在它上面「手寫畫記」。
+- 用「${identity}」的專業視角,針對頁面上**實際出現**的內容做類比與補充,不要憑空捏造頁面上沒有的東西。
+
+## 註解規則(手寫風格,見專案 6 色語義系統)
+- 🔵 藍色(#1976D2):圈選關鍵術語、底線重要句子。
+- 🔴 紅色(#D32F2F):「!」標記洞察、「?」標記疑問。
+- 🟠 橘色(#E65100)/🟢 綠色(#388E3C):在邊欄用「${identity}」的術語做專業類比、便利貼(post-it)區塊、簡單箭頭/流程示意。
+- 🟡 黃色半透明:螢光筆標記重點句。
+- 底部加一個「💡 核心洞察」手寫框:用「${identity}」的語言總結並連結到其實際工作。
+
+## 本頁文字(供你理解內容、做精準類比;勿據此重畫文字)
+${(pageText || '').slice(0, 4000)}
+
+輸出:一張在原頁面上疊好手寫註解的圖片。`;
+}
+
+// 呼叫 gemini-2.5-flash-image(banana):輸入底圖 + prompt → 回傳疊註解後的影像 base64。
+async function callGeminiImage(promptText, baseImageBase64, apiKey) {
+    const model = 'gemini-2.5-flash-image';
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            contents: [{ parts: [
+                { text: promptText },
+                { inline_data: { mime_type: 'image/png', data: baseImageBase64 } },
+            ] }],
+            generationConfig: { responseModalities: ['IMAGE'] },
+        }),
+    });
+    if (!resp.ok) {
+        const errText = await resp.text();
+        if (resp.status === 429) {
+            throw new Error('Gemini image 429:此 API key 沒有 gemini-2.5-flash-image(影像/付費模型)的額度。'
+                + '影像生成是付費模型(約 $0.039/張),免費方案通常無額度 → 需在 Google AI Studio/Cloud 為該專案啟用計費,'
+                + '或改用已啟用計費的 key。(文字模型免費可用,影像模型不行,是兩種額度)');
+        }
+        throw new Error(`Gemini image ${resp.status}: ${errText.substring(0, 200)}`);
+    }
+    const data = await resp.json();
+    const cand = data.candidates && data.candidates[0];
+    if (!cand) {
+        const block = data.promptFeedback && data.promptFeedback.blockReason;
+        throw new Error(`Gemini image: 無回傳${block ? ` (prompt 被擋:${block})` : ' (可能被安全機制攔截)'}`);
+    }
+    const parts = (cand.content && cand.content.parts) || [];
+    const imgPart = parts.find(p => p.inlineData || p.inline_data);
+    const inline = imgPart && (imgPart.inlineData || imgPart.inline_data);
+    if (!inline || !inline.data) {
+        const t = parts.map(p => p.text || '').join(' ').slice(0, 200);
+        throw new Error(`Gemini image: 回傳無影像 (finishReason=${cand.finishReason || '?'}${t ? '; ' + t : ''})`);
+    }
+    return inline.data;
+}
+
+async function runImageNotes() {
+    const identity = $('identity-input').value.trim();
+    const apiKey = getGeminiKey();
+    const source = enhancedMd || cleanedMd;
+    if (!identity) return alert('請先輸入你的專業身份(上方欄位)');
+    if (!apiKey) return alert('請先在 Step 2 輸入 Gemini API Key');
+    if (!source) return alert('沒有可用的內容,請先完成 Step 2/3');
+    if (typeof html2canvas === 'undefined') return alert('html2canvas 未載入,無法渲染底圖');
+
+    const btn = $('btn-image-notes');
+    btn.disabled = true;
+    imageNotesPngs = [];
+    $('res-img-gallery').innerHTML = '';
+    showProgress('img');
+
+    let built = null;
+    try {
+        addProgressLine('img', '⏳ 渲染 A4 白底底圖(真文字,零遺漏)...', 'run');
+        setProgressBar('img', 15);
+        built = buildA4Host(source);
+        // 預載手寫字體,確保 html2canvas 擷取到 Long Cang 而非 fallback。
+        if (document.fonts && document.fonts.load) {
+            try { await document.fonts.load("16px 'Long Cang'"); await document.fonts.ready; } catch { /* 略 */ }
+        }
+        addProgressLine('img', `✓ 底圖就緒(原稿約 ${built.nPages} 頁;本輪測試只做第 1 頁)`, 'ok');
+
+        // 測試階段:只做第 1 頁。測通後把 PAGES 改成 built.nPages 即跑全部頁(同一套 CSS → 天然一致)。
+        const PAGES = 1;
+        const per = Math.ceil(built.plain.length / built.nPages);
+        const gallery = $('res-img-gallery');
+        for (let i = 0; i < PAGES; i++) {
+            const pageText = built.plain.slice(i * per, (i + 1) * per);
+            addProgressLine('img', `⏳ 第 ${i + 1}/${PAGES} 頁:免費文字模型規劃「${identity}」視角批註...`, 'run');
+            setProgressBar('img', 20 + 50 * (i / PAGES));
+            let ann = null;
+            try {
+                ann = await getPageAnnotations(pageText, identity, apiKey);
+            } catch (e) {
+                addProgressLine('img', `⚠ 批註規劃失敗(${e.message}),本頁僅出乾淨底圖`, 'fail');
+            }
+            if (ann) {
+                applyAnnotationsToDom(built.host, ann, identity);
+                addProgressLine('img', '✓ 批註已疊上(藍圈 / 黃螢光 / 紅 !? / 便利貼 / 💡 洞察)', 'ok');
+            }
+            addProgressLine('img', `⏳ 第 ${i + 1} 頁:渲染成 PNG...`, 'run');
+            const cap = await captureA4Page(built.host, i, built.A4W, built.A4H);
+            imageNotesPngs.push({ dataUrl: cap.dataUrl, base64: cap.base64, identity, index: i });
+            const img = document.createElement('img');
+            img.src = cap.dataUrl;
+            img.alt = `好學生筆記(${identity}視角)第 ${i + 1} 頁`;
+            img.style.cssText = 'width:100%;border:1px solid #2a2a2a;border-radius:3px;';
+            gallery.appendChild(img);
+            addProgressLine('img', `✓ 第 ${i + 1} 頁完成`, 'ok');
+        }
+        setProgressBar('img', 100);
+        $('res-img-stat').textContent = `${imageNotesPngs.length} 頁 · ${identity}視角 · CSS 一致渲染`;
+        showResult('img');
+    } catch (err) {
+        addProgressLine('img', `✗ ${err.message}`, 'fail');
+    } finally {
+        if (built && built.host && built.host.parentNode) built.host.parentNode.removeChild(built.host);
+        btn.disabled = false;
+    }
+}
+
+// ─────────────────────────────────────────────────────────
 //  Event Listeners
 // ─────────────────────────────────────────────────────────
 
@@ -1036,6 +1422,27 @@ document.addEventListener('DOMContentLoaded', () => {
     $('btn-notes').addEventListener('click', runNotes);
     $('btn-dl-md3').addEventListener('click', () => {
         downloadFile('good-student-notes.md', notesMd);
+    });
+
+    // ── Step 4 圖文版 ──
+    const identityEcho = $('img-identity-echo');
+    if ($('identity-input') && identityEcho) {
+        $('identity-input').addEventListener('input', () => {
+            identityEcho.textContent = ($('identity-input').value.trim() || '你的身份');
+        });
+    }
+    const imgBtn = $('btn-image-notes');
+    if (imgBtn) imgBtn.addEventListener('click', runImageNotes);
+    const dlImgBtn = $('btn-dl-img');
+    if (dlImgBtn) dlImgBtn.addEventListener('click', () => {
+        if (!imageNotesPngs.length) return alert('還沒有圖文版可下載');
+        const idn = ($('identity-input').value.trim() || 'notes');
+        imageNotesPngs.forEach((p, i) => {
+            const a = document.createElement('a');
+            a.href = p.dataUrl;
+            a.download = `good_student_notes_${idn}_p${String(i + 1).padStart(2, '0')}.png`;
+            document.body.appendChild(a); a.click(); document.body.removeChild(a);
+        });
     });
     const zipBtn = $('btn-dl-session-zip');
     if (zipBtn) {
