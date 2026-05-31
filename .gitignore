@@ -81,3 +81,8 @@ scripts/publish/
 **/.step_*_pending.json
 # 個別專案 workdir(對應的截圖/原始照片 raw input;新增 workdir 時請依此格式補一行)
 MCP5/
+
+# ── 過程文件/對外文宣(非專案規範,只留本機)──
+# Newsletter / 能力宣傳稿等交付物,任何位置皆不上推
+# (docs/origin-story.md 等規範文件不受影響)
+**/*newsletter*.md
