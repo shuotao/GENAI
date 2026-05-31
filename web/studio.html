@@ -324,6 +324,18 @@
                 </div>
 
                 <div class="field">
+                    <label class="field-label">音檔語言 (預設自動偵測)</label>
+                    <select id="lang-select">
+                        <option value="auto" selected>自動偵測（推薦，忠實轉出原文）</option>
+                        <option value="zh">中文（強制）</option>
+                        <option value="en">English（強制）</option>
+                    </select>
+                    <p style="color:#555;font-size:0.72rem;margin-top:6px;line-height:1.6;font-family:'JetBrains Mono',monospace;">
+                        翻譯是之後的獨立步驟,轉錄階段只忠實轉出原文。中英交雜場景可手動強制指定。
+                    </p>
+                </div>
+
+                <div class="field">
                     <label class="field-label">領域詞典 (選填,套用至 Phase A 錯字修正)</label>
                     <select id="domain-select">
                         <option value="">不套用特定領域（僅通用字典）</option>

@@ -167,6 +167,7 @@ async function downloadSessionZip(sessionSlug) {
         stop_at: stopAt,
         transcription: {
             engine: 'Groq Whisper large-v3',
+            language_mode: ($('lang-select') ? $('lang-select').value : 'auto'),
             context_bytes: new TextEncoder().encode(ctx).length,
             original_chars_no_space: rawM.no_space,
             original_chinese_chars: rawM.chinese,
@@ -386,26 +387,40 @@ async function fileToChunks(file) {
 //  Groq Whisper API
 // ─────────────────────────────────────────────────────────
 
-async function callGroqWhisper(audioBlob, apiKey, contextPrompt, filename) {
-    const basePrompt = '這是一段繁體中文錄音。';
-    const maxPromptLen = 896;
-    let finalPrompt = basePrompt;
-    if (contextPrompt) {
-        const prefix = `${basePrompt} 內容包含：`;
-        const suffix = '。';
-        const budget = maxPromptLen - prefix.length - suffix.length;
-        const trimmed = budget > 0 ? contextPrompt.slice(0, budget) : '';
-        finalPrompt = `${prefix}${trimmed}${suffix}`;
+// Build the Whisper prompt for a given language mode. Groq prompt 上限 896 字元。
+// - 'auto':中性 —— 不宣稱任何語言(否則會把自動偵測帶偏),只把使用者 context 當提示詞
+// - 'zh' / 'en':宣稱語言 + 對應語系的 context 框架
+function buildGroqPrompt(language, contextPrompt) {
+    const maxLen = 896;
+    if (language === 'auto') {
+        return contextPrompt ? contextPrompt.slice(0, maxLen) : '';
     }
+    const profiles = {
+        zh: { base: '這是一段繁體中文錄音。', pre: ' 內容包含：', suf: '。' },
+        en: { base: 'This is an English-language recording of a talk or meeting.', pre: ' Key terms: ', suf: '.' },
+    };
+    const p = profiles[language] || profiles.zh;
+    if (!contextPrompt) return p.base;
+    const prefix = `${p.base}${p.pre}`;
+    const budget = maxLen - prefix.length - p.suf.length;
+    const trimmed = budget > 0 ? contextPrompt.slice(0, budget) : '';
+    return `${prefix}${trimmed}${p.suf}`;
+}
+
+async function callGroqWhisper(audioBlob, apiKey, contextPrompt, filename, language) {
+    const lang = language || 'auto';
+    const finalPrompt = buildGroqPrompt(lang, contextPrompt);
     const fd = new FormData();
     // Direct-send path passes the real filename so Groq detects the format;
     // chunk fallback passes WAV blobs as 'audio.wav'.
     fd.append('file', audioBlob, filename || 'audio.wav');
     fd.append('model', 'whisper-large-v3');
     fd.append('response_format', 'verbose_json');
-    fd.append('language', 'zh');
+    // 'auto' → 不送 language,讓 Whisper 自動偵測音檔語言、忠實轉出原文。
+    // 翻譯永遠是之後的獨立步驟(原則 2),絕不在轉錄階段讓 Groq 順手翻。
+    if (lang !== 'auto') fd.append('language', lang);
     fd.append('temperature', '0.0');
-    fd.append('prompt', finalPrompt);
+    if (finalPrompt) fd.append('prompt', finalPrompt);
     const resp = await fetch(GROQ_URL, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${apiKey}` },
@@ -501,6 +516,7 @@ async function runTranscribe() {
     const file = $('file-input').files[0];
     const apiKey = $('groq-key').value.trim();
     const context = $('context-input').value.replace(/\n/g, ', ').trim();
+    const language = $('lang-select') ? $('lang-select').value : 'auto';
     if (!file) return alert('請先上傳音訊檔案');
     if (!apiKey) return alert('請輸入 Groq API Key');
 
@@ -511,6 +527,8 @@ async function runTranscribe() {
     try {
         const allSegments = [];
         const sizeMB = (file.size / 1024 / 1024).toFixed(1);
+        const langLabel = { auto: '自動偵測', zh: '中文(強制)', en: 'English(強制)' }[language] || language;
+        addProgressLine(1, `🌐 轉錄語言:${langLabel}`, 'ok');
         let duration = 0;
 
         if (file.size <= GROQ_MAX_DIRECT_BYTES) {
@@ -518,7 +536,7 @@ async function runTranscribe() {
             //    不解碼、不重採樣、不手動拼時間軸。 ──
             addProgressLine(1, `⏳ 直接上傳原檔 (${sizeMB}MB) 至 Groq...`, 'run');
             setProgressBar(1, 20);
-            const result = await callGroqWhisper(file, apiKey, context, file.name);
+            const result = await callGroqWhisper(file, apiKey, context, file.name, language);
             let idx = 1;
             for (const seg of (result.segments || [])) {
                 const text = (seg.text || '').trim();
@@ -541,7 +559,7 @@ async function runTranscribe() {
             for (let i = 0; i < chunked.chunks.length; i++) {
                 addProgressLine(1, `⏳ 轉錄 ${i+1}/${chunked.chunks.length} ...`, 'run');
                 const timeOffset = i * CHUNK_DURATION;
-                const result = await callGroqWhisper(chunked.chunks[i], apiKey, context, 'audio.wav');
+                const result = await callGroqWhisper(chunked.chunks[i], apiKey, context, 'audio.wav', language);
                 if (result.segments) {
                     for (const seg of result.segments) {
                         const text = (seg.text || '').trim();
