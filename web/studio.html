@@ -407,6 +407,17 @@
                 <input type="password" id="gemini-key-2" placeholder="輸入你的 Gemini API Key">
             </div>
 
+            <div class="field">
+                <label class="field-label">輸出語言</label>
+                <select id="out-lang-select">
+                    <option value="source" selected>保留原文語言</option>
+                    <option value="zh-TW">翻譯成繁體中文</option>
+                </select>
+                <p style="color:#555;font-size:0.72rem;margin-top:6px;line-height:1.6;font-family:'JetBrains Mono',monospace;">
+                    非中文逐字稿選「翻譯成繁體中文」,校稿時會一併忠實翻譯(零省略、1:1 段落對齊)。翻譯需 AI 校稿,「僅清理」模式不翻譯。
+                </p>
+            </div>
+
             <div class="btn-row">
                 <button class="btn" id="btn-back-1">← 上一步</button>
                 <button class="btn btn-go" id="btn-qaqc">執行清理 + 校稿</button>

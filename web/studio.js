@@ -301,8 +301,10 @@ function goToStep(n) {
 //  Garbled Text Detection
 // ─────────────────────────────────────────────────────────
 
-function isGarbled(text) {
+function isGarbled(text, mode) {
     // Rules: see prompts/qaqc_core_rules.md § R1.2.
+    // 語言感知:mode='en' 走「拉丁比例過低=亂碼」分支(見下);其餘(zh)維持原 CJK 規則,
+    // 與 CLI qaqc_srt.py 仍互為鏡像。英文場若用原 CJK 規則會把整篇英文當亂碼全砍。
     // Previously `length < 2 → true`, which silently dropped valid single-char
     // Chinese replies like "對", "嗯". Relaxed to empty-only.
     if (!text) return true;
@@ -310,6 +312,14 @@ function isGarbled(text) {
     const cjkCount = (text.match(cjkRe) || []).length;
     const totalNonSpace = text.replace(/\s/g, '').length;
     if (totalNonSpace === 0) return true;
+    if (mode === 'en') {
+        // 英文逐字稿:拉丁字母(含 À-ɏ 重音,屬正常人名)比例過低 → 亂碼。
+        // 混入的整段 CJK/西里爾幻覺會因拉丁比例≈0 一併被涵蓋。不套用下方 CJK 規則。
+        if (/[�]/.test(text)) return true;
+        const latin = (text.match(/[A-Za-zÀ-ɏ]/g) || []).length;
+        return (latin / totalNonSpace) < QAQC_CFG.cjk_ratio_min
+            && totalNonSpace > QAQC_CFG.min_chars_for_ratio_check;
+    }
     const cjkRatio = cjkCount / totalNonSpace;
     if (cjkRatio < QAQC_CFG.cjk_ratio_min && totalNonSpace > QAQC_CFG.min_chars_for_ratio_check) return true;
     if (/[\ufffd]/.test(text)) return true;
@@ -630,10 +640,18 @@ function runPhaseA(stepN) {
     }
     addProgressLine(stepN, `✓ 移除 ${removedH} 個幻覺段落`, 'ok');
 
-    // Filter garbled
+    // Filter garbled — 語言感知。依 Step 1 的語言選擇;'auto' 時用整篇 CJK 比例自動判斷。
+    let mode = $('lang-select') ? $('lang-select').value : 'auto';
+    if (mode === 'auto') {
+        const allText = phase1.join('');
+        const nonSpace = allText.replace(/\s/g, '').length || 1;
+        const cjk = (allText.match(/[一-鿿㐀-䶿]/g) || []).length;
+        mode = (cjk / nonSpace) >= 0.5 ? 'zh' : 'en';
+    }
+    addProgressLine(stepN, `🔍 亂碼判定模式:${mode === 'en' ? '英文(拉丁)' : '中文'}`, 'ok');
     let phase2 = [];
     for (const t of phase1) {
-        if (isGarbled(t)) { removedG++; continue; }
+        if (isGarbled(t, mode)) { removedG++; continue; }
         phase2.push(t);
     }
     addProgressLine(stepN, `✓ 過濾 ${removedG} 個亂碼段落`, 'ok');
@@ -657,38 +675,66 @@ async function runPhaseB(rawText, apiKey, stepN) {
     // Core rules come from prompts/qaqc_core_rules.md § R2 (SSoT).
     // Web-specific: the user may paste 當下 context in Step 1 textarea; we
     // pass it through here as a domain hint (preserving Web's interactive edge).
-    addProgressLine(stepN, '── Phase B：AI 校稿 ──', 'run');
-
-    const r2Rules = rulesSection('## R2. Phase B 校稿核心鐵律', '## R3.') || `
-### 必須做的事:
-1. 補上標點符號、接續詞、合併破碎斷行、依語意分段、插入 Markdown 標題
-### 嚴禁:
-- 嚴禁刪減、濃縮、摘要、改語氣、第三人稱描述、省略細節
-### 字數檢查:
-- 輸出字數必須落在輸入 95%-105% 之間`;
+    // 輸出語言:'source' → 同語言校稿;'zh-TW' → 合併「忠實翻譯 + 校稿」一次完成。
+    // cleaned.md 本就丟時間軸,故翻譯不違反原則 2;零省略改用 1:1 段落對齊驗證(E3)。
+    const outLang = $('out-lang-select') ? $('out-lang-select').value : 'source';
+    const translate = outLang === 'zh-TW';
 
     const ctxInput = ($('context-input') ? $('context-input').value : '').trim();
     const ctxBlock = ctxInput
         ? `\n## 領域背景(使用者當下提供,供專名校正參考)\n${ctxInput}\n`
         : '';
 
-    const prompt = `你是一位逐字稿校稿專家。請對以下語音轉錄的原始文字進行校稿。
+    const srcSegs = rawText.split('\n').filter(l => l.trim()).length;
+    const model = $('gemini-model') ? $('gemini-model').value : 'gemini-2.5-flash';
+
+    let prompt;
+    if (translate) {
+        addProgressLine(stepN, '── Phase B：忠實翻譯成繁體中文 + 校稿 ──', 'run');
+        prompt = `你是一位專業的逐字稿譯者兼校稿員。請將以下逐字稿**忠實翻譯成繁體中文**,同時完成校稿。
+
+## 翻譯 + 校稿鐵律(務必遵守)
+1. **零省略**:原文每一句都必須翻譯,嚴禁摘要、濃縮、刪減,嚴禁改寫成「講者提到…」這類第三人稱描述。保留第一人稱原話與語氣。
+2. **1:1 對齊**:逐段對應翻譯,譯文語意單位數量應與原文一致,不可合併或砍掉原文段落。原文約 ${srcSegs} 個句段。
+3. **專名保留**:人名、產品名、技術名維持原文(如 Claude、Anthropic、MCP、Opus),不要硬翻;其餘忠實譯為自然的繁體中文。
+4. 補上中文標點與接續詞、合併破碎斷行、依語意分段;可在段落之間插入 Markdown 標題(標題另起一行,不可取代原文內容)。
+5. 輸出**只有翻譯後的繁體中文 Markdown**,不要附原文、不要加譯註或說明。
+${ctxBlock}
+## 原始逐字稿(${rawText.length} 字)
+${rawText}`;
+    } else {
+        addProgressLine(stepN, '── Phase B：AI 校稿 ──', 'run');
+        const r2Rules = rulesSection('## R2. Phase B 校稿核心鐵律', '## R3.') || `
+### 必須做的事:
+1. 補上標點符號、接續詞、合併破碎斷行、依語意分段、插入 Markdown 標題
+### 嚴禁:
+- 嚴禁刪減、濃縮、摘要、改語氣、第三人稱描述、省略細節
+### 字數檢查:
+- 輸出字數必須落在輸入 95%-105% 之間`;
+        prompt = `你是一位逐字稿校稿專家。請對以下語音轉錄的原始文字進行校稿。
 
 ${r2Rules}
 ${ctxBlock}
 ## 原始逐字稿(${rawText.length} 字)
 ${rawText}`;
-
-    const model = $('gemini-model') ? $('gemini-model').value : 'gemini-2.5-flash';
-    cleanedMd = await callGeminiWithRetry(prompt, apiKey, stepN, model);
-
-    // Verify output length
-    const ratio = cleanedMd.length / rawText.length;
-    if (ratio < 0.9) {
-        addProgressLine(stepN, `⚠ 警告：輸出 ${cleanedMd.length} 字，僅為原文 ${Math.round(ratio*100)}%，可能有省略`, 'fail');
     }
 
-    addProgressLine(stepN, `✓ Phase B 完成 (${cleanedMd.length} 字)`, 'ok');
+    cleanedMd = await callGeminiWithRetry(prompt, apiKey, stepN, model);
+
+    if (translate) {
+        // 跨語言:字數比失效,改報「原文句段數 vs 譯文段落數」供對齊判斷,並對嚴重落差告警。
+        const outParas = cleanedMd.split('\n').filter(l => l.trim() && !/^#{1,6}\s/.test(l.trim())).length;
+        addProgressLine(stepN, `✓ 翻譯 + 校稿完成 (${cleanedMd.length} 字;原 ${srcSegs} 句段 → 譯 ${outParas} 段)`, 'ok');
+        if (cleanedMd.length < rawText.length * 0.25) {
+            addProgressLine(stepN, `⚠ 譯文明顯偏短,可能有省略,請用「編輯原文」分頁核對`, 'fail');
+        }
+    } else {
+        const ratio = cleanedMd.length / rawText.length;
+        if (ratio < 0.9) {
+            addProgressLine(stepN, `⚠ 警告：輸出 ${cleanedMd.length} 字，僅為原文 ${Math.round(ratio*100)}%，可能有省略`, 'fail');
+        }
+        addProgressLine(stepN, `✓ Phase B 完成 (${cleanedMd.length} 字)`, 'ok');
+    }
     return cleanedMd;
 }
 
@@ -714,7 +760,11 @@ async function runStep2(withGemini) {
                 await runPhaseB(rawText, apiKey, 2);
             }
         } else {
-            // No Gemini, just use raw cleaned text with basic paragraph merge
+            // No Gemini, just use raw cleaned text with basic paragraph merge.
+            // 翻譯需要 LLM,僅清理模式無法翻譯 → 提示使用者。
+            if (($('out-lang-select') ? $('out-lang-select').value : 'source') === 'zh-TW') {
+                addProgressLine(2, '⚠ 「翻譯成繁體中文」需 AI 校稿;僅清理模式維持原文', 'fail');
+            }
             const lines = rawText.split('\n').filter(l => l.trim());
             const paragraphs = [];
             let current = '';
