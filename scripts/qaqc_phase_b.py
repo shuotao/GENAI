@@ -352,6 +352,28 @@ def run_structured(texts: list[str], context: str,
     return polished
 
 
+# ─── Engine guard(CLAUDE.md 原則 5)───
+
+HOST_ENGINE_SIGNALS = ("CLAUDECODE", "GEMINI_CLI", "GITHUB_COPILOT_CLI")
+
+
+def guard_host_engine(force: bool) -> None:
+    """CLI host(Claude Code / Gemini CLI / Copilot CLI)走 OAuth login token 計費,
+    在這些環境下打 Gemini API key 是雙重消費 + 燒錯 quota(原則 5)。
+    偵測到 host 信號就拒絕執行 —— 該由對話 agent 接手 marker file,
+    除非呼叫端明確帶 --force-api 自行承擔。"""
+    if force:
+        return
+    hits = [k for k in HOST_ENGINE_SIGNALS if os.environ.get(k)]
+    if hits:
+        print(f"ERROR: host engine signal ${'/$'.join(hits)} detected.\n"
+              f"  依 CLAUDE.md 原則 5,CLI host 環境不直接打 Gemini API;\n"
+              f"  正確路徑是 scripts/session.py 寫 .<stage>_pending.json marker,由對話 agent 接手。\n"
+              f"  若你確定要在此環境用 API key(雙重消費),請加 --force-api。",
+              file=sys.stderr)
+        sys.exit(2)
+
+
 # ─── main ───
 
 def main():
@@ -368,8 +390,12 @@ def main():
                                         "Omit to let LLM auto-detect.")
     ap.add_argument("--identity", help="Required for --mode notes. 立場(e.g. 建築師)")
     ap.add_argument("--model", help="Preferred Gemini model, e.g. gemini-2.5-flash")
+    ap.add_argument("--force-api", action="store_true",
+                    help="在偵測到 CLI host 信號($CLAUDECODE 等)時仍強制打 Gemini API"
+                         "(原則 5 守門的逃生口,雙重消費自負)")
     args = ap.parse_args()
 
+    guard_host_engine(args.force_api)
     load_env(Path.cwd())
     api_key = os.environ.get("GEMINI_API_KEY", "")
     if not api_key:

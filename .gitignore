@@ -53,6 +53,13 @@ scripts/publish/
 # 其他與本專案規範無關的本機資料夾
 /GENAI/
 /claudeCode/
+# 個人檔案/測試殘渣集中區(2026-06 盤點引入:不屬專案的檔案搬此,不上推)
+/_local/
+# 根目錄測試殘渣
+/test*.py
+/test*.txt
+# 轉錄中間產物(YouTube VTT 字幕,屬 session 產物)
+*.vtt
 
 # ── Step 1-6 工作產物 file-level glob(任何位置都不上推)──
 # 不論放在 sessions/、ClaudeDesign/、MCP5/、或未來 MCP6/、koshi-2/... 任何 workdir,

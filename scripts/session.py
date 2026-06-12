@@ -296,8 +296,9 @@ def new_session(args):
             tmp_in = sdir / ".phase_b_input.txt"
             tmp_in.write_text(plain, encoding="utf-8")
             try:
+                # session.py 已做過 engine routing(原則 5),帶 --force-api 通過守門
                 cmd = ["python3", str(PHASE_B_SCRIPT), str(tmp_in),
-                       "-o", str(cleaned_md), "--mode", "merged"]
+                       "-o", str(cleaned_md), "--mode", "merged", "--force-api"]
                 if ctx_text:
                     cmd += ["--context", str(ctx_path)]
                 run(cmd)
@@ -365,7 +366,7 @@ def new_session(args):
         elif engine == "api":
             try:
                 cmd = ["python3", str(PHASE_B_SCRIPT), str(cleaned_md),
-                       "-o", str(enhanced_md), "--mode", "enhance"]
+                       "-o", str(enhanced_md), "--mode", "enhance", "--force-api"]
                 if args.keywords:
                     cmd += ["--keywords", args.keywords]
                 if ctx_text:
@@ -428,7 +429,7 @@ def new_session(args):
             try:
                 cmd = ["python3", str(PHASE_B_SCRIPT), str(source_md),
                        "-o", str(notes_md), "--mode", "notes",
-                       "--identity", args.identity]
+                       "--identity", args.identity, "--force-api"]
                 if ctx_text:
                     cmd += ["--context", str(ctx_path)]
                 run(cmd)
