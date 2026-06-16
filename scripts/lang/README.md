@@ -15,11 +15,16 @@ scripts/lang/
 ├── en/             # English  (英文)
 ├── srt_clean_md.py # 跨語系:SRT → cleaned.md(直接清理合併,zh/en)
 ├── vtt_to_txt.py   # 跨語系:YouTube VTT → 純文字(去重、去標籤,確定性工具)
+├── dedup_to_srt.py # 跨語系:vtt_to_txt 去滾動文字 → 句子級 SRT(確定性合併,時間軸沿用來源)
 └── README.md
 ```
 
 語言特定工具放 `<ISO639-1>/` 子目錄;**不綁語言的格式轉換/清理工具**(如
-`srt_clean_md.py`、`vtt_to_txt.py`)放本目錄根。
+`srt_clean_md.py`、`vtt_to_txt.py`、`dedup_to_srt.py`)放本目錄根。
+
+字幕翻譯鏈(原則 2,確定性 + agent 親翻):
+`vtt_to_txt.py`(VTT 去滾動)→ `dedup_to_srt.py`(合併成句子級 SRT)→
+`en/srt_zhtw.py prep [--keep-all]`(拆純文字)→ agent 翻譯 → `srt_zhtw.py assemble`(套回原時間軸 + byte 驗證)。
 
 ## 目前內容
 
@@ -45,7 +50,7 @@ scripts/lang/
 | 檔案 | 作用 |
 |------|------|
 | `groq_transcribe_en.py` | Groq Whisper 英文單檔轉錄(language=en) |
-| `srt_zhtw.py` | 結構保留型翻譯 EN→zh-TW(prep/assemble + 時間軸 byte 驗證,原則 2) |
+| `srt_zhtw.py` | 結構保留型翻譯 EN→zh-TW(prep/assemble + 時間軸 byte 驗證,原則 2)。`prep --keep-all` 停用英文幻覺過濾,供已清理的**非英文源**(如日文 SRT)沿用同一條 assemble/驗證鏈 |
 | `srt_to_md.py` | SRT → cleaned.md(翻譯版,讀 zh_parts) |
 | `md_to_html.py` | Step 5 出版:md → 分頁 HTML(見 CLAUDE.md 原則 7) |
 

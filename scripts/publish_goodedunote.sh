@@ -44,5 +44,10 @@ if [ "${#SRCS[@]}" -gt 0 ]; then
 fi
 
 # 3) 部署(只 hosting,只 goodedunote)
-( cd "$DEPLOY" && firebase deploy --only hosting --project goodedunote )
+# 帳號:goodedunote 專案用 codefortaiwan.com@gmail.com 發布(每個專案發布帳號不同)。
+# 可用 FIREBASE_ACCOUNT 環境變數覆寫;空字串則用 firebase 當前預設帳號。
+ACCOUNT="${FIREBASE_ACCOUNT-codefortaiwan.com@gmail.com}"
+ACCT_FLAG=(); [ -n "$ACCOUNT" ] && ACCT_FLAG=(--account "$ACCOUNT")
+echo "[publish] 發布帳號: ${ACCOUNT:-<firebase 預設>}"
+( cd "$DEPLOY" && firebase deploy --only hosting --project goodedunote "${ACCT_FLAG[@]}" )
 echo "✅ Step 5 已上線: $BASE"

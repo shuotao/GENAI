@@ -109,14 +109,19 @@ def render_blocks(lines_iter, first_in_sec_start=True):
 def parse(md_path):
     lines = Path(md_path).read_text(encoding="utf-8").splitlines()
     h1, subtitle, sessions, cur = "完整逐字稿", "", [], None
+    preamble = []
     for ln in lines:
         s = ln.rstrip()
         if not s.strip(): continue
         if s.startswith("# ") and not s.startswith("## "): h1 = s[2:].strip(); continue
         if s.startswith("*") and s.endswith("*") and len(s) > 2 and not subtitle: subtitle = s.strip("*").strip(); continue
         if s.startswith("## "): cur = {"title": s[3:].strip(), "lines": []}; sessions.append(cur); continue
-        if cur is None: cur = {"title": "", "lines": []}; sessions.append(cur)
+        # 第一個 ## 之前的正文(來源/方法前言)= front-matter,不另成章節,
+        # 否則會多生一個空標題 session,讓章節數比 toc 多一頁、index 連結錯位。
+        if cur is None: preamble.append(s); continue
         cur["lines"].append(s)
+    if not sessions and preamble:  # 整份沒有任何 ## → 全文當單一章節(單頁 fallback,行為不變)
+        sessions.append({"title": "", "lines": preamble})
     return h1, subtitle, sessions
 
 

@@ -110,13 +110,16 @@ def is_hallucination(text: str) -> bool:
 
 # ─── prep ───
 
-def cmd_prep(in_srt: str, workdir: str):
+def cmd_prep(in_srt: str, workdir: str, keep_all: bool = False):
     content = Path(in_srt).read_text(encoding="utf-8")
     blocks = parse_srt(content)
     survivors = []
     dropped = []
     for b in blocks:
-        if is_hallucination(b["text"]):
+        # --keep-all:source 已是「乾淨且非英文」的 SRT(例:已過 qaqc_srt_ja.py 的日文)。
+        # 英文版 is_hallucination 會把任何 CJK 當幻覺整段丟掉,對日文/中文源會全刪,
+        # 故這類來源需停用幻覺過濾,只做結構保留 prep。
+        if (not keep_all) and is_hallucination(b["text"]):
             dropped.append(b)
         else:
             survivors.append(b)
@@ -228,6 +231,8 @@ def main():
     p = sub.add_parser("prep")
     p.add_argument("in_srt")
     p.add_argument("workdir")
+    p.add_argument("--keep-all", action="store_true",
+                   help="停用英文幻覺過濾(供已清理的非英文源,如日文 SRT;否則 CJK 會被全刪)")
     a = sub.add_parser("assemble")
     a.add_argument("workdir")
     a.add_argument("out_srt")
@@ -235,7 +240,7 @@ def main():
     args = ap.parse_args()
 
     if args.mode == "prep":
-        cmd_prep(args.in_srt, args.workdir)
+        cmd_prep(args.in_srt, args.workdir, keep_all=args.keep_all)
     elif args.mode == "assemble":
         cmd_assemble(args.workdir, args.out_srt, args.orig)
 
