@@ -94,7 +94,7 @@
         .step-lbl.active { color: #ccc; }
 
         /* ── Main ── */
-        .studio-main { max-width: 780px; margin: 0 auto; padding: 0 30px 80px; }
+        .studio-main { max-width: 780px; margin: 0 auto; padding: 0 30px 100px; }
 
         .step { display: none; animation: fadeUp 0.35s ease; }
         .step.active { display: block; }
@@ -274,10 +274,78 @@
 
         /* ── Responsive ── */
         @media (max-width: 600px) {
-            .studio-main { padding: 0 16px 60px; }
+            .studio-main { padding: 0 16px 120px; }
             .step-title { font-size: 1.3rem; }
             .btn-row { flex-direction: column; }
             .step-labels { gap: 18px; }
+        }
+
+        /* ── Status Bar ── */
+        .status-bar {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            height: 48px;
+            background: rgba(8, 8, 8, 0.85);
+            backdrop-filter: blur(12px);
+            -webkit-backdrop-filter: blur(12px);
+            border-top: 1px solid #1a1a1a;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0 24px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 0.72rem;
+            color: #666;
+            z-index: 900;
+        }
+        .status-section {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .status-sep {
+            color: #222;
+        }
+        .status-indicator {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #444;
+            display: inline-block;
+            transition: background-color 0.3s, box-shadow 0.3s;
+        }
+        .status-indicator.ready {
+            background: #5a5;
+            box-shadow: 0 0 8px rgba(85, 170, 85, 0.5);
+        }
+        .status-bar-highlight {
+            color: #aaa;
+        }
+        .status-bar-val {
+            color: #fff;
+            font-weight: 500;
+        }
+        .proj-label {
+            color: #555;
+        }
+        
+        @media (max-width: 768px) {
+            .status-bar {
+                height: auto;
+                flex-direction: column;
+                padding: 10px 16px;
+                gap: 6px;
+                align-items: flex-start;
+            }
+            .status-sep {
+                display: none;
+            }
+            .status-section {
+                width: 100%;
+                justify-content: space-between;
+            }
         }
     </style>
 </head>
@@ -589,6 +657,26 @@
         </section>
 
     </main>
+
+    <!-- Status Bar -->
+    <div class="status-bar" id="status-bar">
+        <div class="status-section">
+            <span class="status-indicator" id="api-status-dot"></span>
+            <span class="status-bar-highlight" id="api-status-text">API 未就緒</span>
+            <span class="status-sep">|</span>
+            <span id="active-model-text">Model: gemini-2.5-flash</span>
+        </div>
+        <div class="status-section">
+            <span class="status-bar-highlight">會話用量:</span>
+            <span id="session-tokens-text" class="status-bar-val">0 in / 0 out <span style="color: #666;">(Total: 0, $0.00000)</span></span>
+        </div>
+        <div class="status-section">
+            <span class="proj-label">預估用量:</span>
+            <span class="status-bar-highlight">5h <strong id="proj-5h-text" class="status-bar-val">0K ($0.00)</strong></span>
+            <span class="status-sep">|</span>
+            <span class="status-bar-highlight">7h <strong id="proj-7h-text" class="status-bar-val">0K ($0.00)</strong></span>
+        </div>
+    </div>
 
     <!-- Help Drawer -->
     <div class="help-drawer-overlay" id="help-overlay">

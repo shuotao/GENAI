@@ -10,6 +10,88 @@ let enhancedMd = '';   // Step 3 output
 let notesMd    = '';   // Step 4 output
 let imageNotesPngs = []; // Step 4 圖文版:[{dataUrl, base64, identity, index}]
 
+// ── Gemini Token Tracking State ──
+let sessionTokens = {
+    'gemini-2.5-flash': { input: 0, output: 0 },
+    'gemini-2.5-pro': { input: 0, output: 0 },
+    'gemini-2.5-flash-image': { input: 0, output: 0 }
+};
+
+const GEMINI_RATES = {
+    'gemini-2.5-flash': { input: 0.075 / 1000000, output: 0.30 / 1000000 },
+    'gemini-2.5-pro': { input: 1.25 / 1000000, output: 5.00 / 1000000 },
+    'gemini-2.5-flash-image': { input: 0.075 / 1000000, output: 0.30 / 1000000 }
+};
+
+function recordGeminiTokens(model, inputTokens, outputTokens) {
+    if (!sessionTokens[model]) {
+        sessionTokens[model] = { input: 0, output: 0 };
+    }
+    sessionTokens[model].input += (inputTokens || 0);
+    sessionTokens[model].output += (outputTokens || 0);
+    updateStatusBar();
+}
+
+function updateStatusBar() {
+    const apiKey = getGeminiKey();
+    const statusDot = $('api-status-dot');
+    const statusText = $('api-status-text');
+    
+    if (statusDot && statusText) {
+        if (apiKey) {
+            statusDot.className = 'status-indicator ready';
+            statusText.textContent = 'API 已連線';
+        } else {
+            statusDot.className = 'status-indicator';
+            statusText.textContent = 'API 未就緒';
+        }
+    }
+    
+    const activeModel = ($('gemini-model') ? $('gemini-model').value : 'gemini-2.5-flash');
+    if ($('active-model-text')) {
+        $('active-model-text').textContent = `Model: ${activeModel}`;
+    }
+    
+    // Accumulate session cost & tokens
+    let totalCost = 0;
+    let totalInput = 0;
+    let totalOutput = 0;
+    for (const m in sessionTokens) {
+        const usage = sessionTokens[m];
+        const rate = GEMINI_RATES[m] || GEMINI_RATES['gemini-2.5-flash'];
+        totalInput += usage.input;
+        totalOutput += usage.output;
+        totalCost += usage.input * rate.input + usage.output * rate.output;
+    }
+    const totalTokens = totalInput + totalOutput;
+    
+    if ($('session-tokens-text')) {
+        $('session-tokens-text').innerHTML = `${totalInput.toLocaleString()} in / ${totalOutput.toLocaleString()} out <span style="color: #666;">(Total: ${totalTokens.toLocaleString()}, $${totalCost.toFixed(5)})</span>`;
+    }
+    
+    // Projections
+    const rates = GEMINI_RATES[activeModel] || GEMINI_RATES['gemini-2.5-flash'];
+    
+    function getProjHTML(hours) {
+        const baseChars = hours * 60 * 200;
+        const baseTokens = Math.round(baseChars * 1.8);
+        const projInput = Math.round(4 * baseTokens + 10000);
+        const projOutput = Math.round(2.3 * baseTokens + 3000);
+        const projTotal = projInput + projOutput;
+        const projCost = projInput * rates.input + projOutput * rates.output;
+        
+        let tokenStr = (projTotal / 1000).toFixed(1) + 'K';
+        return `${tokenStr} ($${projCost.toFixed(2)})`;
+    }
+    
+    if ($('proj-5h-text')) {
+        $('proj-5h-text').innerHTML = getProjHTML(5);
+    }
+    if ($('proj-7h-text')) {
+        $('proj-7h-text').innerHTML = getProjHTML(7);
+    }
+}
+
 // ── Constants ──
 const GROQ_URL = 'https://api.groq.com/openai/v1/audio/transcriptions';
 // Groq 單次請求音檔上限約 25MB。小於此值 → 直送原檔(Groq 原生收 mp3/m4a/mp4/wav…,
@@ -560,6 +642,9 @@ async function callGemini(prompt, apiKey, model) {
         throw new Error(`Gemini ${resp.status} [${model}]: ${errText.substring(0, 200)}`);
     }
     const data = await resp.json();
+    if (data.usageMetadata) {
+        recordGeminiTokens(model, data.usageMetadata.promptTokenCount, data.usageMetadata.candidatesTokenCount);
+    }
     // 防呆:安全機制攔截、被截斷或無 parts 時給友善訊息,而非 TypeError。
     const cand = data.candidates && data.candidates[0];
     if (!cand) {
@@ -825,9 +910,19 @@ ${rawText}`;
 - 嚴禁刪減、濃縮、摘要、改語氣、第三人稱描述、省略細節
 ### 字數檢查:
 - 輸出字數必須落在輸入 95%-105% 之間`;
+        const r7Rules = rulesSection('## R7. Phase C', '## R8.') || `
+### Phase C 冒號:把「前指引導語(…是/就是/說/講說、概念名詞標頭、講者名、例如/換句話說)」後的逗號/句號改全形冒號「：」,並把半形標點全形化。`;
+        const r8Rules = rulesSection('## R8. Phase D', '## 引用方式') || `
+### Phase D 通順:在話題轉換/舉例/回扣前文/進入下一點的接縫,優先補「內容指涉型 hook」(回指/框架/轉折/列點/過場/復述/收束),零省略、不刪改原句。`;
         prompt = `你是一位逐字稿校稿專家。請對以下語音轉錄的原始文字進行校稿。
 
 ${r2Rules}
+
+## 標點正規化(Phase C,§ R7)
+${r7Rules}
+
+## 通順 / hook(Phase D,§ R8)
+${r8Rules}
 ${ctxBlock}
 ## 原始逐字稿(${rawText.length} 字)
 ${rawText}`;
@@ -1225,6 +1320,9 @@ async function callGeminiImage(promptText, baseImageBase64, apiKey) {
         throw new Error(`Gemini image ${resp.status}: ${errText.substring(0, 200)}`);
     }
     const data = await resp.json();
+    if (data.usageMetadata) {
+        recordGeminiTokens(model, data.usageMetadata.promptTokenCount, data.usageMetadata.candidatesTokenCount);
+    }
     const cand = data.candidates && data.candidates[0];
     if (!cand) {
         const block = data.promptFeedback && data.promptFeedback.blockReason;
@@ -1462,7 +1560,23 @@ document.addEventListener('DOMContentLoaded', () => {
     // ── Sync Gemini key between Step 2 and Step 3 ──
     $('gemini-key-2').addEventListener('input', () => {
         // No separate field in Step 3 anymore; all reads from gemini-key-2
+        updateStatusBar();
     });
+    $('gemini-key-2').addEventListener('change', () => {
+        updateStatusBar();
+    });
+
+    const modelSelect = $('gemini-model');
+    if (modelSelect) {
+        modelSelect.addEventListener('change', () => {
+            updateStatusBar();
+        });
+    }
+
+    // Initialize status bar, and run after a tiny delay to catch config.local.js autofills
+    updateStatusBar();
+    setTimeout(updateStatusBar, 100);
+    setTimeout(updateStatusBar, 500);
 
     // ── Help Drawer ──
     const helpData = {

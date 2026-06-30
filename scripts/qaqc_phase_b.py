@@ -187,6 +187,43 @@ def run_merged(in_text: str, context: str, api_key: str, model: str | None) -> t
     return out, stats
 
 
+# ─── polish mode (Phase C §R7.2 冒號 + Phase D §R8 hook) ───
+# 全形化(§R7.1)是確定性的,請先跑 scripts/normalize_punctuation.py;本模式只做判斷部分。
+
+POLISH_PROMPT = """你是一位逐字稿潤稿專家。輸入文字「已完成 Phase B 校稿且已全形化」。
+請只做兩件事,不得改寫、刪減或摘要任何原句(零省略,原段落數 == 輸出段落數):
+
+## Phase C 冒號規則(來自 prompts/qaqc_core_rules.md § R7.2)
+
+{r7_rules}
+
+## Phase D 通順 / hook 規則(來自 prompts/qaqc_core_rules.md § R8)
+
+{r8_rules}
+{context_block}
+## 輸入文字({n_chars} 字)
+
+{text}
+"""
+
+
+def run_polish(in_text: str, context: str, api_key: str, model: str | None) -> tuple[str, dict]:
+    context_block = ""
+    if context.strip():
+        context_block = f"\n## 領域背景(供判讀參考,不寫入輸出)\n{context.strip()}\n"
+    r7 = rules_section("## R7. Phase C", "## R8.")
+    r8 = rules_section("## R8. Phase D", "## 引用方式")
+    prompt = POLISH_PROMPT.format(
+        r7_rules=r7 or "(SSoT 不可用:把『前指引導語』後逗號/句號改全形冒號「：」)",
+        r8_rules=r8 or "(SSoT 不可用:接縫補內容指涉型 hook,零省略、1:1 段落)",
+        context_block=context_block, n_chars=len(in_text), text=in_text)
+    out = call_gemini_with_retry(prompt, api_key, preferred_model=model)
+    ratio = len(out) / max(1, len(in_text))
+    stats = {"mode": "polish", "in_chars": len(in_text), "out_chars": len(out),
+             "ratio": round(ratio, 4)}
+    return out, stats
+
+
 # ─── enhance mode (Step 3: 專有名詞補充) ───
 
 ENHANCE_PROMPT = """你是一位專業知識補充專家。請閱讀以下逐字稿,在文中適當位置插入專業知識補充區塊。
@@ -381,7 +418,7 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("input", nargs="?", help="Input file. Omit for stdin.")
     ap.add_argument("-o", "--output", help="Output file. Stdout if omitted.")
-    ap.add_argument("--mode", choices=["merged", "structured", "enhance", "notes"],
+    ap.add_argument("--mode", choices=["merged", "polish", "structured", "enhance", "notes"],
                     default="merged",
                     help="merged=Step2, structured=timecode-safe polish, "
                          "enhance=Step3 術語補充, notes=Step4 立場置入好學生筆記")
@@ -424,6 +461,8 @@ def main():
 
     if args.mode == "merged":
         out, stats = run_merged(in_text, context, api_key, args.model)
+    elif args.mode == "polish":
+        out, stats = run_polish(in_text, context, api_key, args.model)
     elif args.mode == "enhance":
         kws = []
         if args.keywords:

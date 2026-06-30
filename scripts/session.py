@@ -38,6 +38,7 @@ SESSIONS_DIR = PROJECT_ROOT / "sessions"
 GROQ_SCRIPT = PROJECT_ROOT / ".claude/skills/good-student-notes/scripts/groq_transcribe.py"
 QAQC_SCRIPT = PROJECT_ROOT / "SRT/qaqc_srt.py"
 PHASE_B_SCRIPT = PROJECT_ROOT / "scripts/qaqc_phase_b.py"
+NORMALIZE_SCRIPT = PROJECT_ROOT / "scripts/normalize_punctuation.py"
 
 
 # ─── Engine routing(誰在叫我?)──────────────────────────────────────
@@ -325,12 +326,84 @@ def new_session(args):
             print(f"[session] engine=none: Phase B skipped, cleaned.md = Phase A plaintext")
             phase_b_stats = {"engine": "none", "status": "skipped"}
 
+    # Phase C / Phase D(原則 9 強制門)標點正規化 + 通順/hook
+    # cleaned.md 一旦產出,進 Step 5/6 出版前必須過 Phase C、D(SSoT: qaqc_core_rules.md § R7/§ R8)。
+    # 依賴鏈:phase-b → phase-c → phase-d → step-3 → step-4(逐一清除,清一個驗一個)。
+    # Phase A/B/C/D 都操作同一份 cleaned.md;Step 3+ 才換產物。
+    phase_c_stats = None
+    phase_d_stats = None
+    do_c = do_phase_b  # 產 cleaned.md 就要過 Phase C
+    do_d = do_phase_b and args.stop_at != "phase-c"
+    if do_c:
+        mc = sdir / ".phase_c_pending.json"
+        md_ = sdir / ".phase_d_pending.json"
+        if engine in ("claude", "gemini", "copilot"):
+            marker = {
+                "stage": "phase-c",
+                "engine": engine,
+                "input_file": str(cleaned_md.relative_to(PROJECT_ROOT)),
+                "output_file": str(cleaned_md.relative_to(PROJECT_ROOT)),
+                "rules_ref": "prompts/qaqc_core_rules.md § R7",
+                "tool": "scripts/normalize_punctuation.py",
+                "depends_on": "phase-b 完成(cleaned.md 已校稿,不是純文字版)",
+                "instructions": (
+                    f"Phase C 待 {engine} agent 接手。先確認 .phase_b_pending.json 已處理。"
+                    "(1) 確定性全形化:跑 `python3 scripts/normalize_punctuation.py "
+                    f"{cleaned_md.name} --in-place`(§ R7.1,機械步驟走工具不靠手)。"
+                    "(2) 判斷:依 § R7.2 把『前指引導語(…是/就是/說/講說、概念名詞標頭、講者名、"
+                    "例如/換句話說)』後的逗號/句號改成全形冒號「：」,引述補『』/「」。"
+                    f"驗:`python3 scripts/normalize_punctuation.py {cleaned_md.name} --check` 殘留=0。"
+                    "完成後刪本 marker,並把 metadata.json 的 qaqc.phase_c.status 改 done、actor 改自己。"
+                ),
+                "created_at": dt.datetime.now().isoformat(timespec="seconds"),
+            }
+            mc.write_text(json.dumps(marker, ensure_ascii=False, indent=2), encoding="utf-8")
+            print(f"[session] Phase C 待 {engine} agent 接手: {mc.relative_to(PROJECT_ROOT)}")
+            phase_c_stats = {"engine": engine, "status": "pending_agent_handoff",
+                             "marker_file": mc.name}
+            if do_d:
+                marker = {
+                    "stage": "phase-d",
+                    "engine": engine,
+                    "input_file": str(cleaned_md.relative_to(PROJECT_ROOT)),
+                    "output_file": str(cleaned_md.relative_to(PROJECT_ROOT)),
+                    "rules_ref": "prompts/qaqc_core_rules.md § R8",
+                    "depends_on": "phase-c 完成",
+                    "instructions": (
+                        f"Phase D 待 {engine} agent 接手。先確認 .phase_c_pending.json 已處理。"
+                        "依 § R8 在話題轉換/舉例/回扣前文/進入下一點的接縫補『內容指涉型 hook』"
+                        "(回指/框架/轉折/列點/過場/復述/收束 七類),而非只補裸連接詞。"
+                        "零省略:hook 只插在句間,不得改寫或刪原句;原段落數 == 產物段落數(1:1)。"
+                        "完成後刪本 marker,並把 metadata.json 的 qaqc.phase_d.status 改 done、actor 改自己。"
+                    ),
+                    "created_at": dt.datetime.now().isoformat(timespec="seconds"),
+                }
+                md_.write_text(json.dumps(marker, ensure_ascii=False, indent=2), encoding="utf-8")
+                print(f"[session] Phase D 待 {engine} agent 接手: {md_.relative_to(PROJECT_ROOT)}")
+                phase_d_stats = {"engine": engine, "status": "pending_agent_handoff",
+                                 "marker_file": md_.name}
+
+        elif engine in ("api", "none"):
+            # 全形化(§ R7.1)是確定性的,任何 engine 都能直接做;冒號(§ R7.2)/hook(§ R8)
+            # 屬判斷,沒有對話 agent 無法完成 → 標 pending,出版閘(prepublish_gate.py)會擋。
+            try:
+                run(["python3", str(NORMALIZE_SCRIPT), str(cleaned_md), "--in-place"])
+                phase_c_stats = {"engine": engine, "status": "fullwidth_done_colon_pending",
+                                 "note": "§ R7.1 全形化已跑;§ R7.2 冒號需判斷,無 agent 未完成"}
+            except subprocess.CalledProcessError as e:
+                phase_c_stats = {"engine": engine, "status": "error", "error": str(e)}
+            phase_d_stats = {"engine": engine, "status": "skipped_no_agent",
+                             "note": "§ R8 hook 需判斷,api/none 無對話 agent"}
+            print(f"[session] engine={engine}: 已跑全形化;冒號/hook 需 agent,"
+                  "出版前 gate 會擋(原則 9)。")
+
     # 7.5 Step 3: 專有名詞補充 → enhanced.md
     # Runs if --keywords given OR --enhance flag OR stop-at in {enhance, notes}.
     enhanced_md = None
     enhance_stats = None
     do_enhance = (cleaned_md.exists()
-                  and args.stop_at not in ("transcribe", "phase-a", "phase-b")
+                  and args.stop_at not in ("transcribe", "phase-a", "phase-b",
+                                           "phase-c", "phase-d")
                   and (args.keywords or args.enhance
                        or (args.identity and args.stop_at == "notes")))
     if do_enhance:
@@ -466,6 +539,8 @@ def new_session(args):
             "phase_a_chars_no_space": phase_a_metrics["no_space"],
             "phase_a_chinese_chars": phase_a_metrics["chinese"],
             "phase_b": phase_b_stats,
+            "phase_c": phase_c_stats,
+            "phase_d": phase_d_stats,
             "enhance": enhance_stats,
             "notes": notes_stats,
             "structured_srt_produced": transcript_cleaned_srt is not None,
@@ -527,11 +602,13 @@ def main():
     new.add_argument("--enhance", action="store_true",
                      help="Run Step 3 (專有名詞補充) with auto-detected terms")
     new.add_argument("--stop-at",
-                     choices=["transcribe", "phase-a", "phase-b", "enhance", "notes"],
+                     choices=["transcribe", "phase-a", "phase-b",
+                              "phase-c", "phase-d", "enhance", "notes"],
                      default="phase-b",
                      help="Stopping point (default: phase-b = cleaned.md). "
                           "Step 2 is the most common終點 for users who just want the "
-                          "合併 cleaned.md — don't always run to notes.")
+                          "合併 cleaned.md — don't always run to notes. "
+                          "phase-c/phase-d 是 cleaned.md 出版前的強制標點/通順門(§ R7/§ R8)。")
     new.add_argument("--skip-phase-b", action="store_true",
                      help="(Legacy alias of --stop-at phase-a) Skip Phase B; produce cleaned.srt only")
     new.add_argument("--structured-srt", action="store_true",

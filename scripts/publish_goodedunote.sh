@@ -25,6 +25,9 @@ mkdir -p "$PUB"
 JSON
 [ -f "$DEPLOY/.firebaserc" ] || echo '{ "projects": { "default": "goodedunote" } }' > "$DEPLOY/.firebaserc"
 
+# 0) 出版前強制門(原則 9 + § R7/§ R8):cleaned 必須先過 Phase C/D 才放行
+python3 "$ROOT/scripts/prepublish_gate.py" "$MD" || exit 1
+
 # 清掉舊頁(避免章節數變動留下殘頁),保留/覆寫圖片
 rm -f "$PUB"/index.html "$PUB"/session-*.html
 

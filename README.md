@@ -7,6 +7,9 @@
 > 為什麼兩件事在同一個 repo?網頁部分是專案緣起(見 [`docs/origin-story.md`](./docs/origin-story.md) Zeabur 創辦人分享),
 > 啟發了這套好學生筆記工具的誕生 — 也就是現在的主戰場。
 
+> ⚠️ **本 README 是「非規範」的上手說明;一切規範以 [`CLAUDE.md`](./CLAUDE.md) 為準。**
+> pipeline 階段或核心原則變動時,必須同步更新本檔(見 CLAUDE.md § Project Structure Decisions 的文件同步守則)。
+
 ---
 
 ## 🚀 快速上手(好學生筆記工具)
@@ -48,16 +51,23 @@ python3 scripts/session.py new "諮詢錄音.m4a" \
 
 ## 🎯 Scenario-based 使用(依你想要的產物選指令)
 
-本工具有 **5 個步驟**,每一步都是合法終點 — **不要預設每次都跑到底**:
+每一步都是合法終點 — **不要預設每次都跑到底**:
 
 | 你想要什麼 | `--stop-at` | 產物 | 適用情境 |
 |------------|-------------|------|---------|
 | 帶時間軸的 SRT | `transcribe` | `transcript.srt` | 做字幕、影片編輯索引 |
 | 時間軸保留但錯字修正過 | `phase-a` | `cleaned.srt` | 專業字幕稿 |
 | **去時間軸、合併、通順的對話稿** | `phase-b` ⭐(預設) | `cleaned.md` | **大宗使用者的終點** |
+| 標點正規化(全形 + 預告語冒號) | `phase-c` | (精修 cleaned.md) | cleaned.md **出版前強制門**(§ R7) |
+| 通順 / hook(內容指涉型承接) | `phase-d` | (精修 cleaned.md) | cleaned.md **出版前強制門**(§ R8) |
 | 加專有名詞百科補充 | `enhance` | `enhanced.md` | 主題陌生的讀者 |
 | 以某立場(身份/角色)置入的好學生筆記 | `notes` | `notes_<立場>.md` | 學習者自用 |
 | 出版成可分享網頁 | (獨立指令 `publish_goodedunote.sh`,非 `--stop-at`) | `<slug>.html` + 線上網址 | 把筆記做成網頁分享(Step 5) |
+
+> **Phase C / Phase D(原 Step 2.2/2.5)= cleaned.md 出版前的強制門**(CLAUDE.md 原則 9):
+> 產出 cleaned.md 後,標點正規化(`scripts/normalize_punctuation.py`,§ R7)與通順/hook(§ R8)必須完成,
+> `scripts/prepublish_gate.py`(由 `publish_goodedunote.sh` 開頭呼叫)會擋下未過 Phase C/D 的出版。
+> 與 Phase A/B 同樣操作同一份 cleaned.md;Step 3+ 才換產物。
 
 > **Step 5(出版)是獨立的一層**:把任一 md 產物轉成分頁式 HTML,deploy 到 Firebase 的 **`goodedunote`** 專案
 > (`https://goodedunote.web.app/<slug>/`,每篇一個子路徑)。
@@ -104,7 +114,7 @@ Web 與 CLI 做同一件事,但 Web 有獨家優勢:
 - **每一步後隨時可匯出 Session ZIP**(解壓縮後結構與 CLI session 目錄同構,可直接塞進 `sessions/`)
 - **即時貼 context** — 對話中臨時補充背景資料,不用重跑整個 pipeline
 - **步驟 Preview/Edit**,每一步的 md 可直接在瀏覽器裡手動微調後再進下一步
-- **未來擴充**:Gemini 圖像生成,為好學生筆記產出圖文並茂版(尚未實作,見 `prompts/qaqc_core_rules.md § R6.3`)
+- **圖像版好學生筆記**:兩階段流程已實作(`/note` 生 A4 白底底稿 → `/好學生筆記` 逐頁疊視角手寫註解;見 `prompts/image_notes_skill.md` / `image_notes_design.md`)。**只能在 Web(自帶 key)/ Antigravity / Gemini CLI 驅動**,CLI 走 OAuth login token 無影像通道(原則 5 + Auth 雙軌表)
 
 開啟方式:
 ```bash
@@ -155,9 +165,14 @@ GitHub Pages 部署版:`https://shuotao.github.io/GENAI/web/studio.html`
 > 「圖像視角好學生筆記」的完整設計已從本目錄移至 **`prompts/image_notes_design.md`**(P3 設計 SSoT;僅 Web+Antigravity 可驅動)。
 
 ### 4. `/scripts` - 共用腳本層(2026-04 新增)
-- **`session.py`**: Pipeline 統籌器,一行命令跑完 Groq 轉錄 → Phase A → Phase B → 好學生筆記
-- **`qaqc_phase_b.py`**: Gemini-powered Phase B 校稿(CLI/Web 共用)
-- **`lang/`**: 多語系轉錄/清理腳本(目前有 `it/`,未來可擴充日文、英文等)
+- **`session.py`**: Pipeline 統籌器,一行命令跑完 Groq 轉錄 → Phase A → Phase B → Phase C → Phase D →(選)Step 3 補名詞 →(選)Step 4 筆記;偵測 host engine 決定打 API 或寫 marker 交對話 agent(原則 5)
+- **`qaqc_phase_b.py`**: Gemini-powered 校稿(merged / polish〔Phase C 冒號+Phase D hook〕/ enhance / notes / structured 模式)
+- **`normalize_punctuation.py`**: Phase C 全形化確定性工具(§ R7.1;中文句一律全形,保護小數/網址/網域/檔名/碼/markdown 連結)
+- **`prepublish_gate.py`**: 出版前強制門(原則 9)— 檢查 Phase C/D 完成戳記 + 無殘留 marker + 全形 lint
+- **`publish_goodedunote.sh`** + **`publish_qaqc.py`**: Step 5 出版(md→多頁 HTML→壓圖→deploy)與 Step 6 出版後 audit
+- **`compress_images.py`**: 出版前圖片壓縮 + EXIF 轉正
+- **`image_notes_session.py`** + **`md_to_a4_png.py`**: 好學生筆記**圖像版**兩階段工具(`/note` 生 A4 底稿 → `/好學生筆記` 逐頁生圖;僅 Web/Antigravity/Gemini CLI 可驅動)
+- **`lang/`**: 多語系轉錄/清理腳本(目前有 `it/` 義大利文、`en/` 英文、`ja/` 日文)
 
 ### 5. `/dict` - 共用詞典(2026-04 新增)
 CLI 與 Web 使用同一份字典:
@@ -221,7 +236,7 @@ Physics of Insight 網頁支持離線閱覽,不需要 server。直接進入 `web
 | CLI 跑出 `ffmpeg: command not found` | 裝 ffmpeg:`brew install ffmpeg` 或 `apt install ffmpeg` |
 | Python syntax error on `str \| None` | 需要 Python ≥ 3.10。檢查 `python3 --version` |
 | 產出的 `cleaned.md` 字數遠低於原文 | Phase B 違反 95%-105% 量化檢查。檢查 metadata.json 的 `ratio_chinese`,若 < 0.95 建議重跑 |
-| Gemini 圖像生成不能用 | 尚未實作,列為 P3。見 `prompts/qaqc_core_rules.md § R6.3` |
+| 好學生筆記圖像版生不出圖 | 影像生成只能在 Web(自帶 key)/ Antigravity / Gemini CLI 驅動;Claude Code / 純 CLI 走 OAuth login token,無影像通道(原則 5)。流程見 `prompts/image_notes_skill.md` |
 
 更多規範細節見 [`CLAUDE.md`](./CLAUDE.md) 第 § Common Gotchas 章節。
 
