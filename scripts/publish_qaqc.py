@@ -134,6 +134,7 @@ def _parse_book(book_str: str) -> dict:
         b[k] = _scalar(book_str, k, "num")
     b["quotes"] = _quotes(book_str)
     b["placeholder"] = bool(re.search(r"placeholder:\s*true", book_str))
+    b["single"] = bool(re.search(r"single:\s*true", book_str))
     return b
 
 
@@ -142,20 +143,26 @@ def _parse_book(book_str: str) -> dict:
 # ──────────────────────────────────────────────────────────────────
 _TAG_RE = re.compile(r"<[^>]+>")
 _CJK_RE = re.compile(r"[一-鿿㐀-䶿]")
-_PROSE_BLOCK_RE = re.compile(r"<(p|h3)\b[^>]*>(.*?)</\1>", re.S)
 
 
-def count_deployed_chinese_chars(session_files: list[Path]) -> int:
-    """從所有 session-*.html 的 <p> + <h3> 內容統計中文字總和。
-    這是 § S6.3.b 的『實際內容字數』,跟 data.js 的 words 比對。"""
+def count_deployed_chinese_chars(files: list[Path], include_h2: bool = False) -> int:
+    """統計 prose 區塊(<p> + <h3>[+ <h2>])內的中文字總和 = § S6.3.b 的『實際內容字數』。
+
+    - 多頁模式:prose 在 session-*.html,標題用 <h3>(session_head_block 的章節 <h2>
+      不算內容),故 include_h2=False。
+    - 單篇連續模式(single:true):prose 在 index.html,段落標題就是文章內 <h2>,
+      要一起算 → include_h2=True。
+    """
+    tags = "p|h2|h3" if include_h2 else "p|h3"
+    block_re = re.compile(rf"<({tags})\b[^>]*>(.*?)</\1>", re.S)
     total = 0
-    for p in session_files:
+    for p in files:
         html = p.read_text(encoding="utf-8")
         # 切掉 <head>/<script>/<style> 避免抓到 CSS/JS 內偶發 CJK
         html = re.sub(r"<head>.*?</head>", "", html, flags=re.S)
         html = re.sub(r"<script\b.*?</script>", "", html, flags=re.S)
         html = re.sub(r"<style\b.*?</style>", "", html, flags=re.S)
-        for _tag, inner in _PROSE_BLOCK_RE.findall(html):
+        for _tag, inner in block_re.findall(html):
             text = _TAG_RE.sub("", inner)  # strip nested <strong> etc.
             total += len(_CJK_RE.findall(text))
     return total
@@ -229,6 +236,23 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
         f"dangling: {dangling}(index 指向但檔案不存在)" if dangling else f"all {len(referenced_sessions)} index href 都解析到實檔",
     ))
 
+    # S6.8 拆分合理性(2026-07-05 引入)— 拆分單元是「講者(人)」,不是主題標題。
+    # 單一講者的一場分享 = 單篇連續(single: true):不得有 session-*.html,正文在單一 <article>。
+    # SSoT: prompts/publish_qaqc.md § S4.5 拆分決策 / § S6.8。
+    is_single = bool(book.get("single"))
+    if is_single:
+        results.append((
+            "S6.8 拆分合理性(單講者=單篇,無 session 檔)",
+            len(sessions) == 0,
+            f"single:true 卻有 {len(sessions)} 個 session-*.html(應為 0,單講者不該拆頁)"
+            if sessions else "單篇連續,無分頁 ✓",
+        ))
+        results.append((
+            "S6.8 單篇正文在單一 <article>",
+            "<article" in index_html,
+            "index.html 缺 <article> 連續正文" if "<article" not in index_html else "",
+        ))
+
     # S6.2 back link 統一
     expected_anchor = f"shelf-{shelf_id}"
     expected_label = f"回到{SHELF_LABELS.get(shelf_id, '?')}書架"
@@ -271,10 +295,12 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
     qn = len(book.get("quotes", []))
     results.append(("S6.3 quotes 數量 3-4", 3 <= qn <= 4, f"n={qn}"))
 
-    # S6.3.b data.js words 漂移檢查(vs deployed session-*.html prose CJK 字數)
+    # S6.3.b data.js words 漂移檢查(vs deployed prose CJK 字數)
+    # 單篇:prose 在 index.html(含文章內 <h2>);多頁:prose 在 session-*.html。
+    prose_files = [index_path] if is_single else sessions
     declared = book.get("words")
-    if isinstance(declared, int) and declared > 0 and sessions:
-        actual = count_deployed_chinese_chars(sessions)
+    if isinstance(declared, int) and declared > 0 and prose_files:
+        actual = count_deployed_chinese_chars(prose_files, include_h2=is_single)
         if actual == 0:
             results.append(("S6.3.b words 漂移檢查", True, "deployed prose 抓不到 CJK 字(可能全是英文書),跳過比對"))
         else:
@@ -334,6 +360,50 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
         f"{len(big)} 張 > 1MB(壓縮失效?)" if big else f"max={max((f.stat().st_size for f in imgs), default=0)//1024}KB" if imgs else "no images",
     ))
 
+    # S6.11 圖文相關性(2026-07-05 引入,§ S4.5.11 / § S6.11)
+    # 只在 session 產物有 image_notes.json 時檢查(舊書無 → 跳過不 fail)。
+    sessions_root = PROJECT_ROOT / "sessions"
+    notes_file = None
+    for sess in sessions_root.glob("*/image_notes.json") if sessions_root.is_dir() else []:
+        # 以 slug 對 metadata.session_id 或圖檔重疊姑且對映:找含相同圖檔名的 session
+        notes_file = sess if slug in sess.parent.name or _notes_match_slug(sess, slug_dir) else notes_file
+    if notes_file is None:
+        results.append(("S6.11 圖文相關性", True, "無 image_notes.json(舊書/無圖流程),跳過"))
+    else:
+        import sys as _sys
+        _sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+        from img_context_score import score as _score, verdict as _verdict  # noqa: E402
+        import json as _json
+        notes = {n["file"]: n for n in _json.loads(notes_file.read_text(encoding="utf-8"))}
+        bad_corr = []
+        checked = 0
+        for p in pages:
+            html = p.read_text(encoding="utf-8")
+            body = re.sub(r"<head>.*?</head>", "", html, flags=re.S)
+            # figure 圖與其前後 <p> 文字
+            blocks = re.findall(r"<(p|h2|h3|figure)[^>]*>(.*?)</\1>", body, flags=re.S)
+            for i, (tag, inner) in enumerate(blocks):
+                if tag != "figure":
+                    continue
+                msrc = re.search(r'src="([^"]+)"', inner)
+                if not msrc or msrc.group(1) == "cover.jpg":
+                    continue
+                n = notes.get(msrc.group(1)) or notes.get(Path(msrc.group(1)).name)
+                if not n:
+                    bad_corr.append(f"{msrc.group(1)}: 無描述條目")
+                    continue
+                ctx = [_TAG_RE.sub("", blocks[j][1]) for j in (i - 1, i + 1)
+                       if 0 <= j < len(blocks) and blocks[j][0] != "figure"]
+                s = _score(n, ctx)
+                checked += 1
+                if _verdict(s) == "fail":
+                    bad_corr.append(f"{msrc.group(1)}: score={s:.3f} 與上下文不相關")
+        results.append((
+            "S6.11 圖文相關性(描述↔上下文)",
+            not bad_corr,
+            "; ".join(bad_corr[:4]) if bad_corr else f"{checked} 張圖皆 ≥ fail 門檻",
+        ))
+
     # S6.6 dropcap 不套 **bold** 開頭
     bad_dropcap = []
     for p in pages:
@@ -361,6 +431,38 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
     ))
 
     return results
+
+
+def _notes_match_slug(notes_path: Path, slug_dir: Path) -> bool:
+    """image_notes.json 是否屬於這本書:看記錄的圖檔名與部署目錄的圖檔有交集。"""
+    try:
+        import json as _json
+        files = {Path(n["file"]).name for n in _json.loads(notes_path.read_text(encoding="utf-8"))}
+    except Exception:  # noqa: BLE001 — 壞 JSON 視為不匹配即可
+        return False
+    deployed = {f.name for f in slug_dir.iterdir() if f.suffix.lower() in (".jpg", ".jpeg", ".png")}
+    return len(files & deployed) >= max(1, len(files) // 2)
+
+
+def audit_shelf_order(shelf: dict) -> list[tuple]:
+    """S6.9 書架排序(2026-07-05 引入)— 新書一律 append 到 shelf.books 尾端,
+    書脊往右長。非 placeholder 的 book.date(YYYY.MM.DD)必須**非遞減**(舊左新右)。
+    date 是定寬點分式 → 字串比較即等於日期比較。SSoT: prompts/publish_qaqc.md § S6.9。
+    """
+    books = [b for b in shelf["books"] if not b.get("placeholder")]
+    bad = []
+    prev_id = prev_date = None
+    for b in books:
+        d = b.get("date")
+        if d and prev_date and d < prev_date:
+            bad.append(f"{b['id']}({d}) 排在 {prev_id}({prev_date}) 之後卻更早")
+        if d:
+            prev_id, prev_date = b["id"], d
+    return [(
+        "S6.9 書架排序(新書往右 append,date 非遞減)",
+        not bad,
+        "; ".join(bad) if bad else f"{len(books)} 本 date 遞增 ✓",
+    )]
 
 
 def audit_site_copy(pub_dir: Path) -> list[tuple]:
@@ -433,6 +535,18 @@ def main() -> int:
 
     for shelf in shelves:
         shelf_id = shelf["id"]
+        shelf_book_ids = [b["id"] for b in shelf["books"]]
+        # S6.9 書架排序:全站模式逐架檢查;單 slug 模式只查該 slug 所屬書架
+        if not args.slug or args.slug in shelf_book_ids:
+            print(f"\n=== {shelf_id} 書架排序(S6.9) ===")
+            for rule_id, ok, detail in audit_shelf_order(shelf):
+                if ok:
+                    total_pass += 1
+                    if not args.quiet:
+                        print(f"  ✓ {rule_id} — {detail}")
+                else:
+                    total_fail += 1
+                    print(f"  ✗ {rule_id} — {detail}")
         for book in shelf["books"]:
             if book.get("placeholder"):
                 continue

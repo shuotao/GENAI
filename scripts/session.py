@@ -397,6 +397,79 @@ def new_session(args):
             print(f"[session] engine={engine}: 已跑全形化;冒號/hook 需 agent,"
                   "出版前 gate 會擋(原則 9)。")
 
+    # 7.4 圖片理解 + 自動插圖(可選,--images 才啟用;SSoT § S4.5.11)
+    # marker 鏈:phase-d → images → image-insert(→ step-3 → step-4)
+    images_stats = None
+    image_insert_stats = None
+    if args.images and do_phase_b:
+        img_src = Path(args.images).resolve()
+        img_dst = sdir / "images"
+        if not img_src.is_dir():
+            print(f"[session] --images 不是目錄: {img_src}", file=sys.stderr)
+            sys.exit(1)
+        img_dst.mkdir(exist_ok=True)
+        import shutil as _sh
+        copied = 0
+        for p in sorted(img_src.iterdir()):
+            if p.is_file() and p.suffix.lower() in (".jpg", ".jpeg", ".png"):
+                _sh.copy2(p, img_dst / p.name)
+                copied += 1
+        print(f"[session] images: {copied} 張 → {img_dst.relative_to(PROJECT_ROOT)}")
+
+        if engine in ("claude", "gemini", "copilot"):
+            mi = sdir / ".images_pending.json"
+            mi.write_text(json.dumps({
+                "stage": "images",
+                "engine": engine,
+                "input_dir": str(img_dst.relative_to(PROJECT_ROOT)),
+                "output_file": str((sdir / "image_notes.json").relative_to(PROJECT_ROOT)),
+                "rules_ref": "prompts/publish_qaqc.md § S4.5.11",
+                "tool": "scripts/describe_images.py",
+                "depends_on": "phase-d 完成",
+                "instructions": (
+                    f"圖片理解待 {engine} agent 接手。先確認 .phase_d_pending.json 已處理。"
+                    f"跑 `python3 scripts/describe_images.py --session {sdir.relative_to(PROJECT_ROOT)}`"
+                    "(Antigravity headless,fallback gemini;逐張串行、可續跑)。"
+                    "驗:image_notes.json 每張 status=described、五欄位非空。"
+                    "工具全數完成會自動刪本 marker。"),
+                "created_at": dt.datetime.now().isoformat(timespec="seconds"),
+            }, ensure_ascii=False, indent=2), encoding="utf-8")
+            print(f"[session] 圖片理解待 {engine} agent 接手: {mi.relative_to(PROJECT_ROOT)}")
+            images_stats = {"engine": engine, "status": "pending_agent_handoff",
+                            "marker_file": mi.name, "count": copied}
+
+            if args.stop_at != "images":
+                mii = sdir / ".image_insert_pending.json"
+                mii.write_text(json.dumps({
+                    "stage": "image-insert",
+                    "engine": engine,
+                    "input_file": str((sdir / "cleaned.md").relative_to(PROJECT_ROOT)),
+                    "rules_ref": "prompts/publish_qaqc.md § S4.5.11",
+                    "tool": "scripts/insert_images.py",
+                    "depends_on": "images 完成(image_notes.json 全數 described)",
+                    "instructions": (
+                        f"自動插圖待 {engine} agent 接手。先確認 .images_pending.json 已清。"
+                        "流程:(1) `insert_images.py --plan` 取內容行清單;"
+                        "(2) 開 Claude Haiku subagent,輸入 plan + image_notes 描述,"
+                        "產出 anchors JSON([{file, after_line, confidence}])。"
+                        "Haiku 提示必含三規則(§ S4.5.11 QC 校準):"
+                        "(a) deck_page 頁碼序=演講時序,anchor 必須隨頁碼非遞減;"
+                        "(b) 撞名章節(如兩段都講『場地』)用 text_in_image/content_signal 的"
+                        "專名與該段逐字稿同現做 tie-break,勿只看章節標題字面;"
+                        "(c) needs_review=true 的圖(無頁碼)給保守 confidence,找不到就 -1。"
+                        "(3) `insert_images.py --apply --anchors <json>`(零省略+單調約束,fail 即 rollback);"
+                        "(4) `insert_images.py --verify` 過 → 刪本 marker;"
+                        "needs_review 清單向使用者回報複核。"),
+                    "created_at": dt.datetime.now().isoformat(timespec="seconds"),
+                }, ensure_ascii=False, indent=2), encoding="utf-8")
+                print(f"[session] 自動插圖待 {engine} agent 接手: {mii.relative_to(PROJECT_ROOT)}")
+                image_insert_stats = {"engine": engine, "status": "pending_agent_handoff",
+                                      "marker_file": mii.name}
+        else:
+            print(f"[session] engine={engine}: 圖片描述/插圖需對話 agent(Haiku anchors),"
+                  "已複製圖片但未寫 marker;出版前 gate 會擋未完成的圖片流程。")
+            images_stats = {"engine": engine, "status": "skipped_no_agent", "count": copied}
+
     # 7.5 Step 3: 專有名詞補充 → enhanced.md
     # Runs if --keywords given OR --enhance flag OR stop-at in {enhance, notes}.
     enhanced_md = None
@@ -541,6 +614,8 @@ def new_session(args):
             "phase_b": phase_b_stats,
             "phase_c": phase_c_stats,
             "phase_d": phase_d_stats,
+            "images": images_stats,
+            "image_insert": image_insert_stats,
             "enhance": enhance_stats,
             "notes": notes_stats,
             "structured_srt_produced": transcript_cleaned_srt is not None,
@@ -601,9 +676,14 @@ def main():
                           " omit + --enhance to let LLM auto-detect")
     new.add_argument("--enhance", action="store_true",
                      help="Run Step 3 (專有名詞補充) with auto-detected terms")
+    new.add_argument("--images",
+                     help="圖片資料夾:copy 進 sessions/<slug>/images/ 並啟用"
+                          "圖片理解(describe_images.py)+ 自動插圖(insert_images.py)"
+                          " stages(§ S4.5.11);marker 鏈 phase-d→images→image-insert")
     new.add_argument("--stop-at",
                      choices=["transcribe", "phase-a", "phase-b",
-                              "phase-c", "phase-d", "enhance", "notes"],
+                              "phase-c", "phase-d", "images", "image-insert",
+                              "enhance", "notes"],
                      default="phase-b",
                      help="Stopping point (default: phase-b = cleaned.md). "
                           "Step 2 is the most common終點 for users who just want the "

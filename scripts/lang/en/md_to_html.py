@@ -82,6 +82,8 @@ def render_blocks(lines_iter, first_in_sec_start=True):
     for s in lines_iter:
         if s.startswith("### "):
             blocks.append(f'      <h3>{inline_md(esc(s[4:].strip()))}</h3>'); continue
+        if s.startswith("## "):  # 單篇連續模式:## 是文章內段落標題(h2),不是分頁邊界
+            blocks.append(f'      <h2>{inline_md(esc(s[3:].strip()))}</h2>'); continue
         imgs = IMG_INLINE.findall(s)
         remainder = re.sub(r"[·、,，.\s]+", "", IMG_INLINE.sub("", s))
         if imgs and remainder == "":
@@ -133,6 +135,10 @@ def main():
     ap.add_argument("--cover", default="")
     ap.add_argument("--base-url", default="")
     ap.add_argument("--multipage", action="store_true")
+    ap.add_argument("--single", action="store_true",
+                    help="單篇連續模式:整場一頁到底(## → 文章內 h2 段落標題,無章節卡/無下一個)。"
+                         "用於單一講者的一場分享(見 prompts/publish_qaqc.md § S4.5 拆分決策)。"
+                         "out 視為目錄,只寫 index.html。")
     ap.add_argument("--back-anchor", default="shelves",
                     help="回到時要 scroll 到的 anchor(預設 shelves);讀書會書用 shelf-reading,公開活動用 shelf-public,研討會用 shelf-seminar")
     ap.add_argument("--back-label", default="書架",
@@ -140,7 +146,9 @@ def main():
     a = ap.parse_args()
 
     h1, subtitle, sessions = parse(a.md)
-    toc = json.loads(Path(a.workdir, "toc.json").read_text(encoding="utf-8"))
+    # toc.json 只有 multipage 需要(章節卡);單篇連續模式不需要 → 缺檔容忍
+    _toc_path = Path(a.workdir, "toc.json")
+    toc = json.loads(_toc_path.read_text(encoding="utf-8")) if _toc_path.is_file() else []
     n = len(sessions)
     base = a.base_url.rstrip("/") + "/" if a.base_url else ""
     cover_abs = (base + a.cover) if (a.cover and base) else (a.cover or "")
@@ -211,7 +219,36 @@ def main():
                        '        <a href="index.html" class="btn ui inline-flex items-center px-4 py-2 text-sm">← 回到選擇</a>\n'
                        '      </div>\n')
 
-    if not a.multipage:
+    if a.single:
+        # ── 單篇連續(單一講者的一場分享:整場一頁,## → 文章內 h2,無章節卡/無下一個)──
+        outdir = Path(a.out); outdir.mkdir(parents=True, exist_ok=True)
+        body_lines = []
+        for ln in Path(a.md).read_text(encoding="utf-8").splitlines():
+            t = ln.rstrip()
+            if not t.strip():
+                continue
+            if t.startswith("# ") and not t.startswith("## "):
+                continue  # H1 已進 header
+            if t.startswith("*") and t.endswith("*") and len(t) > 2 and t.strip("*").strip() == subtitle:
+                continue  # 副標已進 header
+            body_lines.append(t)
+        blocks, total_chars, _ = render_blocks(body_lines)
+        n = sum(1 for b in blocks if b.lstrip().startswith("<h2"))
+        og = og_block(h1, subtitle, cover_abs, base or "")
+        header = (f'  <header class="mb-6 text-center">\n'
+                  f'    <h1 class="text-3xl md:text-4xl font-bold mb-3">{esc(h1)}</h1>\n'
+                  f'    <p class="text-stone-500 italic">{esc(subtitle)}</p>\n'
+                  f'    <div class="ui mt-5 flex flex-wrap justify-center gap-x-4 gap-y-1 text-xs font-bold text-stone-400 tracking-widest uppercase">\n'
+                  f'      <span>{total_chars:,} 字</span><span>•</span><span>{esc(a.tagline)}</span>\n'
+                  f'    </div>\n  </header>\n')
+        parts = [head(h1, og), '<body>\n<div class="max-w-3xl mx-auto px-6 py-12" id="top">\n',
+                 f'      <div class="mb-6">{lib_btn}      </div>\n',
+                 hero_html(), header,
+                 '    <article class="prose prose-stone mx-auto">\n', "\n".join(blocks),
+                 '\n    </article>\n', footer, '</div>\n</body>\n</html>\n']
+        (outdir / "index.html").write_text("".join(parts), encoding="utf-8")
+        out_desc = f"{outdir}/index.html"
+    elif not a.multipage:
         # ── 單頁 SPA ──
         og = og_block(h1, subtitle, cover_abs, base or "")
         parts = [head(h1, og), '<body>\n<div class="max-w-3xl mx-auto px-6 py-12" id="top">\n']
@@ -261,8 +298,15 @@ def main():
     md_lines = Path(a.md).read_text(encoding="utf-8").splitlines()
     md_body = "".join(IMG_INLINE.sub("", l) for l in md_lines if l.strip() and not l.startswith("#") and not (l.startswith("*") and l.rstrip().endswith("*")))
     md_chars = len(re.sub(r"\s", "", md_body))
-    print(f"[html] 模式={'多頁' if a.multipage else '單頁'} | 章節 {n} | 封面={a.cover or '無'} | 段落字數(去圖){total_chars} | md 正文 {md_chars} | 保留率 {total_chars/max(1,md_chars):.4%}")
+    mode = "單篇連續" if a.single else ("多頁" if a.multipage else "單頁SPA")
+    retention = total_chars / max(1, md_chars)
+    unit = "段落" if a.single else "章節"
+    print(f"[html] 模式={mode} | {unit} {n} | 封面={a.cover or '無'} | 段落字數(去圖){total_chars} | md 正文 {md_chars} | 保留率 {retention:.4%}")
     print(f"[html] → {out_desc}")
+    # 內容缺漏硬門(單篇模式):渲染後正文字數若明顯少於來源 → 中止,不讓缺內容的頁上線
+    if a.single and retention < 0.995:
+        print(f"[html] ✗ 保留率 {retention:.4%} < 99.5% — 正文可能缺漏(§ S6.8/內容完整),中止出版", file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":

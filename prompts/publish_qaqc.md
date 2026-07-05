@@ -17,6 +17,23 @@
 
 ## S4.5 出版前 QAQC(cleaned.md + toc.json → HTML 之前)
 
+### S4.5.0 拆分模式決策(先決定,再出版)
+
+**出版的拆分單元是「講者(人)」,不是主題標題。** 出版前先判斷這場的講者數:
+
+| 情境 | 模式 | 工具 | 產物 |
+|---|---|---|---|
+| **多位講者**(研討會/多場議程,每場不同人) | 多頁 | `md_to_html.py --multipage` | `index.html`(章節卡)+ 每位講者一頁 `session-N.html` |
+| **單一講者的一場分享**(整場只有他一個人) | **單篇連續** | `md_to_html.py --single`(`publish_goodedunote.sh` 於 EXTRA 帶 `--single`) | **只有 `index.html`**,整場一頁到底 |
+
+**鐵律:單一講者 = 一篇連續文章,根本不拆 session。** `##`/`###` 是**文章內的段落
+標題**(渲染成 `<h2>`/`<h3>`),不是分頁邊界;讀者從書架點進去就是一頁滾到底,
+**不會有「下一個」導覽、不會有章節卡**。把單人一場切成多頁(或每個小標各一頁)是
+結構性錯誤 → 由 § S6.8 擋。
+
+判斷依據可看 `data.js` 該書的 `single: true`(單篇)或缺省(多頁)。**單篇模式
+不需要 toc.json**(沒有章節卡)。
+
 ### S4.5.1 檔案結構
 
 出版單元(workdir)必須包含:
@@ -95,7 +112,9 @@
 
 每個新出版的 slug 必須:
 1. 在 `scripts/publish/goodedunote/public/data.js` 的對應 SHELVES.books 陣列
-   尾端 push 一筆 entry(必填欄位見 § S6.3)
+   **尾端 push**(append)一筆 entry(必填欄位見 § S6.3)。**尾端 = 書架最右**:
+   `app.jsx` 以陣列順序 left→right 渲染書脊,新書往右長。**不得插在陣列前面**
+   (會跑到最左、破壞「舊左新右」的時間軸)→ 由 § S6.9 擋。
 2. 出版時帶上對應的 `--back-anchor` + `--back-label` flag
 3. 兩者**書架歸屬必須一致**(資料 vs 連結匹配)
 
@@ -142,6 +161,47 @@
 **S6.7 的 grep audit 是『最後安全網』,不是首道防線**。Audit 抓到紅旗詞代表
 S4.5.9 沒做好,應該回頭改文字而不是放任 grep 每次 fail。
 
+### S4.5.11 圖片理解 × 自動插圖(2026-07-05 引入)
+
+**新 stage(可選,`session.py --images <dir>` 啟用):marker 鏈 `phase-d → images → image-insert`。**
+
+**引擎(原則 5 對齊):** 圖片語意描述走 **Antigravity CLI headless**
+(`antigravity -p --model "Gemini 3.5 Flash (Medium)" --add-dir <session>`,自帶
+OAuth login、非 Gemini API key;fallback `gemini -p`)。插圖位置比對走 **Claude
+Haiku subagent**。工具:`scripts/describe_images.py` / `scripts/insert_images.py`。
+
+**image_notes.json schema(每張圖):**
+- `palette_hex`:PIL median-cut top-5 主色(**確定性**,工具算,不勞動 LLM)
+- `text_in_image`:圖中文字**逐字保留原語言**(英/中/日不翻譯、不省略)
+- `layout`:構圖區塊 [{region, content}]
+- `speaker_view` / `audience_view`:講者視角 + 聽眾視角雙敘述
+- `caption`:12-20 字圖說(寫入 md 的 alt → 出版頁 figcaption)
+- `anchor`:{para_index(=insert_images --plan 的內容行 index), confidence, engine}
+- `engine` / `status`:described → inserted(error 不得插入)
+
+**插圖鐵律:** 位置**判斷** = Haiku(讀 plan+描述回 anchors JSON);**套用/驗證** =
+`insert_images.py --apply`(確定性):原內容行 1:1 不變、CJK 正文字數不變、每張圖
+恰插一次、圖檔存在;任一不過 → rollback + exit 1(零省略延伸到插圖)。
+
+**圖文相關性計分(gate 與 S6.11 共用,`scripts/img_context_score.py`):**
+描述文字(text_in_image+雙視角+caption+layout)與插入點 ±1 內容行的
+CJK bigram + ASCII 詞 containment 分數;門檻以 0704CC 20 張人工 ground truth
+校準(healthy/warning/fail 值見模組常數)。fail → prepublish_gate 擋、複核 anchor。
+
+#### S4.5.11.b QC 驗證結論(2026-07-05,0704CC 20 張人工 ground truth 實測)
+
+**閉環邏輯判定:成立**(Opus 獨立檢查 agent 覆核)。實測數據與由此固化的規則:
+
+| 實測發現 | 固化成的規則 |
+|---|---|
+| 自動 anchors vs 人工位置:**11 EXACT + 8 ±1(全部同章節)+ 1 FAR = 95% 可接受**(門檻 80%);±1 是同方向系統偏移非隨機 | 驗收標準:同段落命中率 ≥ 80%;±1 視為可接受(渲染上=圖貼在正確段落的上/下一段) |
+| 唯一 FAR(IMG_2197)歸因=**兩個「場地」主題撞名**,且管線位置在內容對齊上比人工更合理(管線忠於圖片內容) | Haiku 提示必含 tie-break 規則:撞名章節用 text_in_image/content_signal 專名與該段逐字稿**同現**判定,勿只看章節標題字面 |
+| **18-19/20 投影自帶頁碼(`N/48`),頁碼序與人工插圖行序完全同序** = 免費的確定性排序鍵 | `describe_images.py` 確定性 regex 抽 `deck_page`;`insert_images.py --apply` 強制**單調非遞減約束**(頁碼大者 anchor 不得更早,違反整批退回) |
+| 無頁碼的圖(場地照/開場拼貼)恰好是最模糊的 2-3 張 | `deck_page=None → needs_review=true`:保守 confidence、找不到給 -1、插入後向使用者回報複核 |
+| 手機側拍照全帶 EXIF orientation(180°),LLM 讀原始像素會看顛倒圖 → layout 區塊鏡像錯、描述被「畫面顛倒」汙染 | `describe_images.py` 送圖前 `exif_transpose` 到 `.img_norm/` 暫存(原檔不動);描述 prompt **禁寫拍攝 meta**(顛倒/角度/反光) |
+| 相關性啟發式鑑別度:正樣本 0.030-0.220(med 0.064)、負樣本 0.000-0.088(med 0.036)、57% 重疊 → **只夠當粗網** | 門檻:fail<0.02(硬擋)、0.02-0.09 warning(交 agent 語意複核,不擋)、≥0.09 healthy;精準語意判斷屬 LLM(原則 6) |
+| Antigravity headless 連續 38 次呼叫 auth 零中斷 | Antigravity OAuth 通道可支撐批次(Auth 表已載明) |
+
 ### S4.5.10 授權 footer(2026-05-25 引入)
 
 每張出版 HTML(index 與 session-*)的 footer **自動帶授權行**,內容由
@@ -169,9 +229,12 @@ S4.5.9 沒做好,應該回頭改文字而不是放任 grep 每次 fail。
 ### S6.1 檔案結構
 
 - `public/<slug>/index.html` **必存**
+- **單篇連續模式(`single: true`)**:**只有 `index.html`**,正文在單一
+  `<article>` 內(`##`→`<h2>`、`###`→`<h3>`);**無** `session-*.html`、
+  **無**章節卡、**無**「下一個」。這是單一講者一場分享的正解(見 § S4.5.0)。
 - 多頁模式:有 `session-1.html` ... `session-N.html`,N == toc.json 長度,
   編號連續無跳號
-- 單頁模式:只有 `index.html`,內含 N 個 `id="session-1"` ~ `session-N"`
+- 單頁 SPA 模式:只有 `index.html`,內含 N 個 `id="session-1"` ~ `session-N"`
   的 `<section>`
 - 圖片檔(若有):與 cleaned.md 引用名稱一致存在於 `public/<slug>/`
 
@@ -299,9 +362,43 @@ placeholder 路徑即 ✗ 並要求人工確認。
   `location.hash` 並 scrollIntoView(因為 React-Babel render 比瀏覽器預設
   anchor scroll 慢,沒這層補償會落在 hero)
 
-### S6.7 後置檢查清單
+### S6.8 拆分合理性(2026-07-05 引入)
 
-- [ ] § S6.1 檔案數量正確
+**拆分單元 = 講者(人),不是主題標題。** 對照 § S4.5.0:
+
+- book 標 `single: true`(單一講者一場分享)→ slug 目錄**必須沒有** `session-*.html`
+  (0 個),且 `index.html` 內含 `<article` 連續正文。若單篇書卻出現 `session-*.html`
+  → ✗(代表被錯誤拆頁,例:把「開場→志工介紹」這種連續段落切成不同 session、
+  中間冒出「下一個」)。
+- 未標 `single` 的書維持多頁檢查(§ S6.1 的 N == toc 長度)。
+
+**Why:** 2026-07-05 出 `code-with-claude-tokyo-sharing`(單一講者 Justin)時,
+先被切成 16 碎頁、再 3 章,連續敘事被硬切、內容跳接錯亂。根因是沒有「依講者
+拆分」的規範與守門 → 補此條 + `md_to_html.py --single` 單篇模式。
+
+### S6.9 書架排序(2026-07-05 引入)
+
+- 每道 shelf 的 `books` 內,**非 placeholder** 的 `book.date`(`YYYY.MM.DD`)必須
+  **非遞減**(舊的在左、新的在右)。新書一律 append 到陣列尾端(§ S4.5.7)。
+- date 是定寬點分式 → 字串比較即日期比較。任何一本排在更新日期之後卻更早 → ✗。
+
+**Why:** 新書應「往右一次增加過去」。曾把新書 entry 插在 `books` 最前面,書脊
+就跑到最左、破壞時間軸。此條把「append 往右」機械化。
+
+### S6.11 圖文相關性(2026-07-05 引入)
+
+部署頁每個 `<figure>` 圖片(cover 除外)必須:
+- 在對應 session 的 `image_notes.json` 有條目(status=inserted);
+- 描述↔前後 prose 區塊的相關性分數(§ S4.5.11 同一把尺)≥ fail 門檻。
+
+舊書(無 image_notes.json)→ **跳過不 fail**(標註提示)。抓到 fail 代表出版後
+md 被手改、或 anchor 判斷漂移 → 修 anchor / 補描述後重出。
+
+### S6.10 後置檢查清單
+
+- [ ] § S6.1 檔案數量正確(單篇:只有 index.html)
+- [ ] § S6.8 單篇書無 session-*.html;多頁書 N == toc
+- [ ] § S6.9 書架 date 非遞減(新書在最右)
 - [ ] § S6.1.b 無孤兒 session-*.html
 - [ ] § S6.1.c index.html 引用的 session-N.html 全部存在
 - [ ] § S6.2 所有 HTML 含正確 back link
@@ -328,3 +425,17 @@ placeholder 路徑即 ✗ 並要求人工確認。
 - 2026-05-30:補 § S6.1.b 孤兒檢測、§ S6.1.c 斷裂引用、§ S6.3.b words 漂移檢測
   三條規則。動機:republish 章節數變動時舊 session 檔可能殘留 / metadata 跟
   cleaned.md 失同步,既有 audit 抓不到。
+- 2026-07-05:補 § S4.5.0 拆分模式決策(拆分單元＝講者,單講者用 `--single`
+  單篇)、§ S6.8 拆分合理性、§ S6.9 書架排序(新書往右 append)。`md_to_html.py`
+  加 `--single` 單篇連續模式、`publish_qaqc.py` 加 S6.8/S6.9 + 單篇 prose 計數。
+  動機:單一講者一場分享被錯誤拆成多頁(連續敘事被切、內容跳接);新書 entry
+  插在陣列最前面跑到書架最左。兩者都沒規範/守門 → 一次補齊 spec + 工具 + audit。
+- 2026-07-05(二):補 § S4.5.11 圖片理解×自動插圖(Antigravity headless 描述、
+  Haiku anchors、零省略插圖、相關性計分)與 § S6.11 圖文相關性 audit。新工具:
+  describe_images.py / insert_images.py / img_context_score.py / pipeline_autopilot.sh;
+  session.py 加 `--images` 與 images/image-insert stages;prepublish_gate 加圖片檢查。
+  動機:閉環管線(音檔+圖 → 出版前全自動,deploy 人工)。
+- 2026-07-05(三):§ S4.5.11.b QC 驗證結論固化。0704CC 20 張 ground truth 實測
+  95% 可接受、Opus 覆核判定閉環成立;結構性改善入庫:deck_page 確定性排序鍵 +
+  單調約束、needs_review 標記、撞名 tie-break 規則、EXIF 轉正、禁拍攝 meta、
+  相關性門檻依正負樣本分佈重校準(fail<0.02/healthy≥0.09)。

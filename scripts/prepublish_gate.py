@@ -79,6 +79,43 @@ def main() -> int:
                 shown = new_key if qaqc.get(new_key) is not None else f"{new_key}(/{old_key})"
                 fails.append(f"metadata qaqc.{shown}.status = {st!r}(需 'done')")
 
+        # (4) 圖片流程(§ S4.5.11)— 只在 session 有啟用圖片 stage 時檢查
+        if (root / "images").is_dir() or (root / "image_notes.json").exists():
+            for m in (".images_pending.json", ".image_insert_pending.json"):
+                if (root / m).exists():
+                    fails.append(f"殘留 marker:{m}(圖片理解/插圖尚未完成)")
+            import re as _re
+            notes_p = root / "image_notes.json"
+            notes = json.loads(notes_p.read_text(encoding="utf-8")) if notes_p.exists() else []
+            by_file = {n["file"]: n for n in notes}
+            md_text = md_path.read_text(encoding="utf-8")
+            refs = [m for m in _re.findall(r"!\[[^\]]*\]\(([^)]+)\)", md_text)
+                    if not m.startswith("http") and m != "cover.jpg"]
+            # (4a) md 每張圖要有 inserted 條目
+            for ref in refs:
+                n = by_file.get(ref) or by_file.get(Path(ref).name)
+                if not n:
+                    fails.append(f"圖片 {ref}:image_notes.json 無條目(§ S4.5.11)")
+                elif n.get("status") not in ("inserted",):
+                    fails.append(f"圖片 {ref}:status={n.get('status')!r}(需 'inserted')")
+            # (4b) 圖文相關性(確定性計分,與 S6.11 共用)
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            from img_context_score import score, verdict, THRESHOLD_FAIL  # noqa: E402
+            lines = [ln for ln in md_text.splitlines() if ln.strip()]
+            for i, ln in enumerate(lines):
+                m = _re.match(r"^!\[[^\]]*\]\(([^)]+)\)\s*$", ln)
+                if not m or m.group(1).startswith("http") or m.group(1) == "cover.jpg":
+                    continue
+                n = by_file.get(m.group(1)) or by_file.get(Path(m.group(1)).name)
+                if not n:
+                    continue  # 已在 4a 報過
+                ctx = [lines[j] for j in (i - 1, i + 1)
+                       if 0 <= j < len(lines) and not lines[j].startswith("![")]
+                s = score(n, ctx)
+                if verdict(s) == "fail":
+                    fails.append(f"圖文相關性:{m.group(1)} score={s:.3f} < {THRESHOLD_FAIL}"
+                                 f"(描述與上下文不相關,複核 anchor;§ S4.5.11)")
+
     if fails:
         print("[gate] ✗ 出版被擋(原則 9 — 每步須獨立完成驗證後才能往下):", file=sys.stderr)
         for f in fails:

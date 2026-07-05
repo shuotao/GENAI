@@ -31,8 +31,12 @@ python3 "$ROOT/scripts/prepublish_gate.py" "$MD" || exit 1
 # 清掉舊頁(避免章節數變動留下殘頁),保留/覆寫圖片
 rm -f "$PUB"/index.html "$PUB"/session-*.html
 
-# 1) md → 多頁 HTML(每頁自帶 OG;封面/base-url 由參數帶入)
-python3 "$ROOT/scripts/lang/en/md_to_html.py" "$MD" "$WD" "$PUB" --multipage --base-url "$BASE" "${EXTRA[@]}"
+# 1) md → HTML。拆分模式由「講者數」決定(SSoT: prompts/publish_qaqc.md § S4.5 拆分決策):
+#    多講者 → --multipage(每位講者一頁);單一講者 → 呼叫端在 EXTRA 帶 --single(整場一頁連續)。
+#    偵測到 EXTRA 含 --single 就不帶 --multipage(兩者互斥)。
+MODE_FLAG="--multipage"
+case " ${EXTRA[*]} " in *" --single "*) MODE_FLAG="";; esac
+python3 "$ROOT/scripts/lang/en/md_to_html.py" "$MD" "$WD" "$PUB" $MODE_FLAG --base-url "$BASE" "${EXTRA[@]}"
 
 # 2) 蒐集所有頁面參照到的本地圖檔 → 壓縮 + EXIF 轉正後放進部署夾(省流量、自動轉正)
 SRCS=()
