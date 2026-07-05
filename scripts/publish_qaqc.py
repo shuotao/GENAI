@@ -392,8 +392,15 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
                 if not n:
                     bad_corr.append(f"{msrc.group(1)}: 無描述條目")
                     continue
-                ctx = [_TAG_RE.sub("", blocks[j][1]) for j in (i - 1, i + 1)
-                       if 0 <= j < len(blocks) and blocks[j][0] != "figure"]
+                # 上下文 = 前後各自「最近的正文區塊」(向外跳過連續 figure;
+                # 多張圖共用同一插入點時 ±1 會是別的圖,需走到 prose 為止)
+                ctx = []
+                for step in (-1, 1):
+                    j = i + step
+                    while 0 <= j < len(blocks) and blocks[j][0] == "figure":
+                        j += step
+                    if 0 <= j < len(blocks):
+                        ctx.append(_TAG_RE.sub("", blocks[j][1]))
                 s = _score(n, ctx)
                 checked += 1
                 if _verdict(s) == "fail":

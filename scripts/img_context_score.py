@@ -21,6 +21,7 @@ import re
 
 CJK = re.compile(r"[一-鿿㐀-䶿]")
 ASCII_WORD = re.compile(r"[A-Za-z][A-Za-z0-9.+-]{1,}")
+NUMBER = re.compile(r"\d{2,}")  # 純數字是強錨點(頁碼/年份/天數,如 892、2024)
 
 THRESHOLD_FAIL = 0.02
 THRESHOLD_HEALTHY = 0.09
@@ -34,6 +35,7 @@ def terms(text: str) -> set[str]:
         if len(run) == 1:
             out.add(run)
     out.update(w.lower() for w in ASCII_WORD.findall(text))
+    out.update(NUMBER.findall(text))
     return out
 
 

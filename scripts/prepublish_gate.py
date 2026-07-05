@@ -109,8 +109,14 @@ def main() -> int:
                 n = by_file.get(m.group(1)) or by_file.get(Path(m.group(1)).name)
                 if not n:
                     continue  # 已在 4a 報過
-                ctx = [lines[j] for j in (i - 1, i + 1)
-                       if 0 <= j < len(lines) and not lines[j].startswith("![")]
+                # 上下文 = 前後各自最近的正文行(向外跳過連續圖片行)
+                ctx = []
+                for step in (-1, 1):
+                    j = i + step
+                    while 0 <= j < len(lines) and lines[j].startswith("!["):
+                        j += step
+                    if 0 <= j < len(lines):
+                        ctx.append(lines[j])
                 s = score(n, ctx)
                 if verdict(s) == "fail":
                     fails.append(f"圖文相關性:{m.group(1)} score={s:.3f} < {THRESHOLD_FAIL}"
