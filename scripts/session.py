@@ -450,16 +450,17 @@ def new_session(args):
                     "depends_on": "images 完成(image_notes.json 全數 described)",
                     "instructions": (
                         f"自動插圖待 {engine} agent 接手。先確認 .images_pending.json 已清。"
-                        "流程:(1) `insert_images.py --plan` 取內容行清單;"
-                        "(2) 開 Claude Haiku subagent,輸入 plan + image_notes 描述,"
+                        "流程:(1) `dedupe_images.py --report`(§ S4.5.12)確認後 `--apply` 去重;"
+                        "(2) `insert_images.py --plan` 取內容行清單;"
+                        "(3) 開 Claude Haiku subagent,輸入 plan + image_notes 描述,"
                         "產出 anchors JSON([{file, after_line, confidence}])。"
                         "Haiku 提示必含三規則(§ S4.5.11 QC 校準):"
                         "(a) deck_page 頁碼序=演講時序,anchor 必須隨頁碼非遞減;"
                         "(b) 撞名章節(如兩段都講『場地』)用 text_in_image/content_signal 的"
                         "專名與該段逐字稿同現做 tie-break,勿只看章節標題字面;"
                         "(c) needs_review=true 的圖(無頁碼)給保守 confidence,找不到就 -1。"
-                        "(3) `insert_images.py --apply --anchors <json>`(零省略+單調約束,fail 即 rollback);"
-                        "(4) `insert_images.py --verify` 過 → 刪本 marker;"
+                        "(4) `insert_images.py --apply --anchors <json>`(零省略+單調約束,fail 即 rollback);"
+                        "(5) `insert_images.py --verify` 過 → 刪本 marker;"
                         "needs_review 清單向使用者回報複核。"),
                     "created_at": dt.datetime.now().isoformat(timespec="seconds"),
                 }, ensure_ascii=False, indent=2), encoding="utf-8")

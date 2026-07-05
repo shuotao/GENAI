@@ -411,6 +411,44 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
             "; ".join(bad_corr[:4]) if bad_corr else f"{checked} 張圖皆 ≥ fail 門檻",
         ))
 
+    # S6.12 圖片去重與孤兒(2026-07-06 引入,§ S4.5.12 / § S6.12)
+    img_files = [f for f in slug_dir.iterdir()
+                 if f.is_file() and f.suffix.lower() in (".jpg", ".jpeg", ".png")
+                 and f.name != "cover.jpg"]
+    if img_files:
+        # (a) 孤兒圖:目錄裡有、但沒有任何 HTML 引用(去重後未清/殘留)
+        referenced = set()
+        for p in pages:
+            referenced.update(re.findall(r'src="([^"]+)"', p.read_text(encoding="utf-8")))
+        orphans = [f.name for f in img_files if f.name not in referenced]
+        results.append((
+            "S6.12 無孤兒圖片(檔案都被頁面引用)",
+            not orphans,
+            f"{len(orphans)} 個未引用: {orphans[:3]}…" if orphans else f"{len(img_files)} 檔全被引用",
+        ))
+        # (b) 重複圖:完全相同 bytes = fail;近似(dHash)僅列警告(同版型可能誤判)
+        import hashlib
+        by_md5: dict = {}
+        for f in img_files:
+            by_md5.setdefault(hashlib.md5(f.read_bytes()).hexdigest(), []).append(f.name)
+        exact_dupes = [v for v in by_md5.values() if len(v) > 1]
+        near_note = ""
+        try:
+            sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
+            from dedupe_images import dhash, hamming  # noqa: E402
+            hashes = [(f.name, dhash(f)) for f in img_files]
+            near = [(a, b) for i, (a, ha) in enumerate(hashes)
+                    for b, hb in hashes[i + 1:] if hamming(ha, hb) <= 6]
+            if near:
+                near_note = f";⚠ 近似對 {len(near)}(人工複核,同版型不一定重複)"
+        except Exception:  # noqa: BLE001 — PIL 缺席時跳過近似檢測
+            near_note = ";近似檢測跳過(PIL 不可用)"
+        results.append((
+            "S6.12 無完全重複圖片",
+            not exact_dupes,
+            f"重複組: {exact_dupes}" if exact_dupes else f"md5 全唯一{near_note}",
+        ))
+
     # S6.6 dropcap 不套 **bold** 開頭
     bad_dropcap = []
     for p in pages:

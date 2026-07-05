@@ -210,6 +210,24 @@ S4.5.9 沒做好,應該回頭改文字而不是放任 grep 每次 fail。
 基準:2026-07-05 實測 95%;導入 deck_page/tie-break 後 EXACT 11 → 14(R4,
 EXIF 轉正 + content_signal 描述),Opus 覆核成立。
 
+### S4.5.12 重複圖片去重(2026-07-06 引入)
+
+影片截圖抓拍會把同一張投影片拍進多幀。**describe 之後、anchors 之前**跑
+`scripts/dedupe_images.py --session <dir> --report`,確認後 `--apply`。
+
+**判定 = 雙訊號 AND 閘**(缺一不可):
+1. 影像指紋:dHash 64-bit Hamming ≤ 6(確定性)
+2. 描述一致:image_notes 描述詞彙 Jaccard ≥ 0.5
+
+只有影像近似、描述不同 = **同版型不同內容**(章節卡模板等)→ 列「人工複核」
+報告、保留兩張。實證:2026-06-26_1 的「892 天前/603 天前」兩張章節卡 dHash
+近似但描述相似僅 0.28,單訊號會誤刪。
+
+**--apply 行為**:每組保留 deck_page 最早一張;其餘自 cleaned.md 移除該圖行
+(正文零省略驗證,備份 `.pre-dedupe.bak`)、image_notes 標
+`status=duplicate` + `duplicate_of`。**republish 後必須清除部署目錄的孤兒圖檔**
+(由 § S6.12 擋)。
+
 ### S4.5.10 授權 footer(2026-05-25 引入)
 
 每張出版 HTML(index 與 session-*)的 footer **自動帶授權行**,內容由
@@ -402,11 +420,20 @@ placeholder 路徑即 ✗ 並要求人工確認。
 舊書(無 image_notes.json)→ **跳過不 fail**(標註提示)。抓到 fail 代表出版後
 md 被手改、或 anchor 判斷漂移 → 修 anchor / 補描述後重出。
 
+### S6.12 圖片去重與孤兒(2026-07-06 引入)
+
+- **無孤兒圖**:slug 目錄內每個圖檔(cover.jpg 除外)必須被至少一頁 HTML 的
+  `src` 引用。孤兒 = 去重/改版後未清的殘檔 → ✗(浪費流量、S6.5 預算失真)。
+- **無完全重複圖**:圖檔 md5 兩兩唯一;重複 → ✗。
+- **近似圖(dHash ≤ 6)只列警告**:同版型模板會誤判,交人工複核(§ S4.5.12
+  的雙訊號 AND 閘已在出版前把真重複擋掉,audit 端不重複硬擋)。
+
 ### S6.10 後置檢查清單
 
 - [ ] § S6.1 檔案數量正確(單篇:只有 index.html)
 - [ ] § S6.8 單篇書無 session-*.html;多頁書 N == toc
 - [ ] § S6.9 書架 date 非遞減(新書在最右)
+- [ ] § S6.12 無孤兒圖、無 md5 重複圖
 - [ ] § S6.1.b 無孤兒 session-*.html
 - [ ] § S6.1.c index.html 引用的 session-N.html 全部存在
 - [ ] § S6.2 所有 HTML 含正確 back link
@@ -448,3 +475,7 @@ md 被手改、或 anchor 判斷漂移 → 修 anchor / 補描述後重出。
   EXIF 轉正、禁拍攝 meta、門檻重校準(fail<0.02/healthy≥0.09)。
 - 2026-07-05(四):移除 gemini CLI fallback(個人免費方案遭下架,IneligibleTier
   為帳號級封鎖)改熔斷;§ S4.5.11 全文改指令式,刪 .b/.c 敘事段(歷程留 git)。
+- 2026-07-06:新增 § S4.5.12 重複圖去重(dedupe_images.py,dHash+描述雙訊號
+  AND 閘)與 § S6.12 audit(孤兒圖/md5 重複圖=fail、dHash 近似=警告)。
+  動機:genai2026-day1 影片截圖 51 張含 8 組相鄰幀重複;另 892/603 章節卡
+  證明單靠影像指紋會誤刪同版型不同內容。
