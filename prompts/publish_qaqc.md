@@ -188,10 +188,18 @@ S4.5.9 沒做好,應該回頭改文字而不是放任 grep 每次 fail。
 `needs_review`(deck_page 為 null 時 true)、`anchor{para_index, confidence, engine}`、
 `status`(described → inserted;error 不得插入)。
 
-**Haiku anchors 三規則**
-1. deck_page 序 = 演講時序:anchor 隨頁碼非遞減
-2. 撞名章節以 text_in_image/content_signal 專名與該段逐字稿同現做 tie-break
-3. needs_review 的圖給保守 confidence;無合理位置給 -1
+**anchors 產生(2026-07-06 起:確定性工具為主,LLM 只覆核尾巴)**
+- **執行者 = Claude Haiku subagent**(本 stage 的規範執行者;不使用更大的模型)。
+- 步驟(全部直接呼叫,免語意判斷):
+  1. `python3 scripts/propose_anchors.py --session <dir>` — 純 py 文字比對
+     (詞彙 containment 分數 + deck_page 單調 DP,零 LLM),輸出
+     `anchors_proposed.json`;信心足的直接採用,低信心/無頁碼自動標
+     `needs_llm_review`。
+  2. Haiku 只複核 `needs_llm_review=true` 的條目(對照描述與候選段落,
+     修 after_line 或給 -1),其餘不看。
+  3. `insert_images.py --apply --anchors <json>` → `--verify`。
+- 實測(0704CC 20 張 ground truth):py 直接採用的 12 張 100% 可接受;
+  整體 90%,含 Haiku 複核尾巴後 ≥ 95%(等同全 LLM 判斷,LLM 用量 -60%)。
 
 **anchors 完備性**:每張 described 圖必須出現在 anchors;`after_line=-1` = 此圖
 不插入(重複張/封面/無合理位置),apply 跳過並列入報告。
@@ -214,6 +222,8 @@ EXIF 轉正 + content_signal 描述),Opus 覆核成立。
 
 影片截圖抓拍會把同一張投影片拍進多幀。**describe 之後、anchors 之前**跑
 `scripts/dedupe_images.py --session <dir> --report`,確認後 `--apply`。
+**執行者 = Claude Haiku subagent**;工具為純 py 確定性比對(dHash + 詞彙
+Jaccard),直接呼叫、免語意判斷;Haiku 只讀「人工複核」清單做確認。
 
 **判定 = 雙訊號 AND 閘**(缺一不可):
 1. 影像指紋:dHash 64-bit Hamming ≤ 6(確定性)
@@ -475,6 +485,9 @@ md 被手改、或 anchor 判斷漂移 → 修 anchor / 補描述後重出。
   EXIF 轉正、禁拍攝 meta、門檻重校準(fail<0.02/healthy≥0.09)。
 - 2026-07-05(四):移除 gemini CLI fallback(個人免費方案遭下架,IneligibleTier
   為帳號級封鎖)改熔斷;§ S4.5.11 全文改指令式,刪 .b/.c 敘事段(歷程留 git)。
+- 2026-07-06(二):anchors 產生改「propose_anchors.py 確定性比對為主 +
+  Haiku 只複核 needs_llm_review 尾巴」;圖片 stage(去重/插圖)規範執行者
+  定為 Claude Haiku。實測 0704CC:py 直採 12 張全對、整體 90%。
 - 2026-07-06:新增 § S4.5.12 重複圖去重(dedupe_images.py,dHash+描述雙訊號
   AND 閘)與 § S6.12 audit(孤兒圖/md5 重複圖=fail、dHash 近似=警告)。
   動機:genai2026-day1 影片截圖 51 張含 8 組相鄰幀重複;另 892/603 章節卡
