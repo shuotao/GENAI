@@ -167,7 +167,8 @@ S4.5.9 沒做好,應該回頭改文字而不是放任 grep 每次 fail。
 
 **引擎(原則 5 對齊):** 圖片語意描述走 **Antigravity CLI headless**
 (`antigravity -p --model "Gemini 3.5 Flash (Medium)" --add-dir <session>`,自帶
-OAuth login、非 Gemini API key;fallback `gemini -p`)。插圖位置比對走 **Claude
+OAuth login、非 Gemini API key)。**無 `gemini` CLI fallback**(§ S4.5.11.c)——
+失敗改同引擎重試 2 次(指數退避)+ 連續失敗熔斷。插圖位置比對走 **Claude
 Haiku subagent**。工具:`scripts/describe_images.py` / `scripts/insert_images.py`。
 
 **image_notes.json schema(每張圖):**
@@ -201,6 +202,20 @@ CJK bigram + ASCII 詞 containment 分數;門檻以 0704CC 20 張人工 ground t
 | 手機側拍照全帶 EXIF orientation(180°),LLM 讀原始像素會看顛倒圖 → layout 區塊鏡像錯、描述被「畫面顛倒」汙染 | `describe_images.py` 送圖前 `exif_transpose` 到 `.img_norm/` 暫存(原檔不動);描述 prompt **禁寫拍攝 meta**(顛倒/角度/反光) |
 | 相關性啟發式鑑別度:正樣本 0.030-0.220(med 0.064)、負樣本 0.000-0.088(med 0.036)、57% 重疊 → **只夠當粗網** | 門檻:fail<0.02(硬擋)、0.02-0.09 warning(交 agent 語意複核,不擋)、≥0.09 healthy;精準語意判斷屬 LLM(原則 6) |
 | Antigravity headless 連續 38 次呼叫 auth 零中斷 | Antigravity OAuth 通道可支撐批次(Auth 表已載明) |
+| **`gemini` CLI 的個人免費方案已被 Google 官方下架**(`IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals`)—— 連不含圖的純文字 `-p "hi"` 都立即擋,**與用量/額度無關**,是帳號層級硬性封鎖,重試無意義 | 移除 `gemini` CLI fallback,`describe_images.py` 改「同引擎(antigravity)重試 2 次 + 指數退避 + 連續失敗熔斷(預設 3 張)」 |
+
+#### S4.5.11.c Gotcha:別把「引擎層級硬性封鎖」誤判成「額度耗盡」
+
+2026-07-05 圖片批次中途出現連續失敗,曾誤判為「Gemini 配額耗盡」而中止等待——
+**診斷後發現完全不是量的問題**:`gemini` CLI fallback 打中的是 Google **已下架**
+的「Gemini Code Assist for individuals」免費方案,錯誤訊息 `IneligibleTierError`
+在**任何一次呼叫**(甚至不含圖片的純文字測試)都會立即出現,與呼叫次數、
+額度、有沒有生圖完全無關。
+
+**教訓:** 連續失敗時,先用**最小可重現指令**(不含圖、不含批次上下文)單獨
+跑一次該引擎,看是「量」的問題(429/RESOURCE_EXHAUSTED,等待/退避有意義)
+還是「質」的問題(IneligibleTier/認證/帳號層級封鎖,重試永遠不會過,
+需要換引擎或換帳號)。兩種失敗的正確應對完全相反,診斷前別假設是哪一種。
 
 ### S4.5.10 授權 footer(2026-05-25 引入)
 

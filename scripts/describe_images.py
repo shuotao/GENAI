@@ -2,15 +2,19 @@
 """describe_images.py — 圖片理解 orchestrator(確定性外殼,LLM 只做看圖判斷)。
 
 SSoT: prompts/publish_qaqc.md § S4.5.11。CLAUDE.md 原則 5/6/9 對齊:
-- 引擎走 Antigravity CLI headless(自帶 OAuth login,非 Gemini API key);
-  失敗 fallback `gemini -p`(同樣 login token)。兩者都不受「腳本禁打 Gemini API」
-  守門限制 —— 那條擋的是 API key 通道,這裡是 CLI 自帶授權。
+- 引擎走 Antigravity CLI headless(自帶 OAuth login,非 Gemini API key),
+  不受「腳本禁打 Gemini API」守門限制(那條擋的是 API key 通道,這裡是 CLI
+  自帶授權)。**無 gemini CLI fallback**(2026-07-05 移除):`gemini` CLI 的個人
+  免費方案(Gemini Code Assist for individuals)已被 Google 官方下架,
+  `IneligibleTierError` 是帳號層級硬性封鎖、與用量/額度無關,重試無意義。
+  失敗改為**同引擎重試 + 指數退避**(見 § S4.5.11.c gotcha)。
 - 色碼(palette_hex)用 PIL 確定性抽取,不勞動 LLM(原則 6)。
 - 逐張**串行**、逐張落盤、可續跑(原則 6/9);已 described 的跳過。
+- **連續失敗熔斷**:連續 N 張都失敗 → 中止整批(原則 9,別在死路裡空轉)。
 
 用法:
     python3 scripts/describe_images.py --session sessions/<slug> \
-        [--model "Gemini 3.5 Flash (Medium)"] [--engine antigravity|gemini] [--limit N]
+        [--model "Gemini 3.5 Flash (Medium)"] [--limit N] [--max-consecutive-fails N]
 
 產物: sessions/<slug>/image_notes.json(list[dict],schema 見 § S4.5.11)
 完成: 全部 described → 刪 .images_pending.json、metadata.json 記 images stats。
@@ -25,7 +29,6 @@ import time
 from pathlib import Path
 
 DEFAULT_MODEL = "Gemini 3.5 Flash (Medium)"  # antigravity models 實機清單確認(2026-07-05)
-GEMINI_FALLBACK_MODEL = "gemini-flash-latest"
 IMG_EXTS = (".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG")
 CALL_TIMEOUT_S = 240
 
@@ -125,7 +128,7 @@ def normalized_copy(img_path: Path, session_dir: Path) -> Path:
     return out
 
 
-# ── LLM 呼叫(串行,antigravity 主、gemini 備)──
+# ── LLM 呼叫(單一引擎 Antigravity;無 fallback,見上方 docstring)──
 def call_antigravity(img_path: Path, session_dir: Path, model: str) -> str:
     prompt = PROMPT_TEMPLATE.format(img_path=img_path)
     r = subprocess.run(
@@ -137,49 +140,34 @@ def call_antigravity(img_path: Path, session_dir: Path, model: str) -> str:
     return r.stdout
 
 
-def call_gemini(img_path: Path, session_dir: Path) -> str:
-    prompt = PROMPT_TEMPLATE.format(img_path=img_path)
-    r = subprocess.run(
-        ["gemini", "-p", prompt, "-m", GEMINI_FALLBACK_MODEL,
-         "--approval-mode", "yolo"],
-        capture_output=True, text=True, timeout=CALL_TIMEOUT_S, cwd=str(session_dir))
-    if r.returncode != 0:
-        raise RuntimeError(f"gemini rc={r.returncode}: {r.stderr[:200]}")
-    return r.stdout
-
-
-def describe_one(img_path: Path, session_dir: Path, model: str, engine: str) -> tuple[dict, str]:
-    """回 (描述 dict, 實際引擎字串)。兩引擎各重試 1 次,全掛 raise。"""
-    engines = [("antigravity", lambda: call_antigravity(img_path, session_dir, model))]
-    if engine == "gemini":
-        engines = [("gemini", lambda: call_gemini(img_path, session_dir))]
-    else:
-        engines.append(("gemini", lambda: call_gemini(img_path, session_dir)))
+def describe_one(img_path: Path, session_dir: Path, model: str) -> tuple[dict, str]:
+    """回 (描述 dict, 實際引擎字串)。同引擎重試 2 次(指數退避),全掛 raise。"""
     last_err = None
-    for name, fn in engines:
-        for attempt in (1, 2):
-            try:
-                raw = fn()
-                d = extract_json(raw)
-                if d is None:
-                    raise RuntimeError(f"無法從輸出抽出 JSON(前 120 字: {raw[:120]!r})")
-                missing = validate(d)
-                if missing:
-                    raise RuntimeError(f"缺欄位: {missing}")
-                tag = f"{name}/{model}" if name == "antigravity" else f"{name}/{GEMINI_FALLBACK_MODEL}"
-                return d, tag
-            except Exception as e:  # noqa: BLE001 — 重試/換引擎是本函式的職責
-                last_err = e
-                print(f"    [{name} 第{attempt}次失敗] {e}", file=sys.stderr)
-    raise RuntimeError(f"兩引擎皆失敗: {last_err}")
+    for attempt in (1, 2):
+        try:
+            raw = call_antigravity(img_path, session_dir, model)
+            d = extract_json(raw)
+            if d is None:
+                raise RuntimeError(f"無法從輸出抽出 JSON(前 120 字: {raw[:120]!r})")
+            missing = validate(d)
+            if missing:
+                raise RuntimeError(f"缺欄位: {missing}")
+            return d, f"antigravity/{model}"
+        except Exception as e:  # noqa: BLE001 — 重試是本函式的職責
+            last_err = e
+            print(f"    [antigravity 第{attempt}次失敗] {e}", file=sys.stderr)
+            if attempt == 1:
+                time.sleep(5)
+    raise RuntimeError(f"antigravity 兩次皆失敗: {last_err}")
 
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="圖片理解 orchestrator(§ S4.5.11)")
     ap.add_argument("--session", required=True)
     ap.add_argument("--model", default=DEFAULT_MODEL)
-    ap.add_argument("--engine", choices=["antigravity", "gemini"], default="antigravity")
     ap.add_argument("--limit", type=int, default=0, help="只處理前 N 張(smoke/測試用)")
+    ap.add_argument("--max-consecutive-fails", type=int, default=3,
+                    help="連續失敗達此數即中止整批(原則 9,別在死路裡空轉;預設 3)")
     a = ap.parse_args()
 
     sdir = Path(a.session).resolve()
@@ -198,6 +186,7 @@ def main() -> int:
     by_file = {n["file"]: n for n in notes}
 
     done = errs = 0
+    consecutive_fails = 0
     for i, img in enumerate(images, 1):
         rel = img.name if scan_dir == sdir else f"images/{img.name}"
         existing = by_file.get(rel)
@@ -209,13 +198,22 @@ def main() -> int:
         palette = extract_palette(img)  # 確定性,先算
         send = normalized_copy(img, sdir)  # EXIF 轉正(顛倒側拍照防呆)
         try:
-            d, engine_tag = describe_one(send, sdir, a.model, a.engine)
+            d, engine_tag = describe_one(send, sdir, a.model)
         except RuntimeError as e:
             print(f"  ✗ {e}", file=sys.stderr)
             by_file[rel] = {**(existing or {}), "file": rel, "palette_hex": palette,
                             "status": "error", "error": str(e)[:300]}
             errs += 1
+            consecutive_fails += 1
+            if consecutive_fails >= a.max_consecutive_fails:
+                notes = [by_file[k] for k in sorted(by_file)]
+                notes_path.write_text(json.dumps(notes, ensure_ascii=False, indent=2), encoding="utf-8")
+                print(f"[images] ✗ 連續 {consecutive_fails} 張失敗,中止整批"
+                      f"(疑似引擎層級問題,不是單張圖的偶發錯誤 — 檢查 antigravity 登入狀態"
+                      f"再重跑,本工具可續跑)。", file=sys.stderr)
+                return 2
         else:
+            consecutive_fails = 0
             deck_page = extract_deck_page(d["text_in_image"])  # 確定性,LLM 不參與
             by_file[rel] = {"file": rel, "palette_hex": palette,
                             "text_in_image": d["text_in_image"], "layout": d["layout"],
