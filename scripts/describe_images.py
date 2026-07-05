@@ -2,15 +2,10 @@
 """describe_images.py — 圖片理解 orchestrator(確定性外殼,LLM 只做看圖判斷)。
 
 SSoT: prompts/publish_qaqc.md § S4.5.11。CLAUDE.md 原則 5/6/9 對齊:
-- 引擎走 Antigravity CLI headless(自帶 OAuth login,非 Gemini API key),
-  不受「腳本禁打 Gemini API」守門限制(那條擋的是 API key 通道,這裡是 CLI
-  自帶授權)。**無 gemini CLI fallback**(2026-07-05 移除):`gemini` CLI 的個人
-  免費方案(Gemini Code Assist for individuals)已被 Google 官方下架,
-  `IneligibleTierError` 是帳號層級硬性封鎖、與用量/額度無關,重試無意義。
-  失敗改為**同引擎重試 + 指數退避**(見 § S4.5.11.c gotcha)。
-- 色碼(palette_hex)用 PIL 確定性抽取,不勞動 LLM(原則 6)。
-- 逐張**串行**、逐張落盤、可續跑(原則 6/9);已 described 的跳過。
-- **連續失敗熔斷**:連續 N 張都失敗 → 中止整批(原則 9,別在死路裡空轉)。
+- 引擎:Antigravity CLI headless(OAuth login 通道,原則 5 合法)。
+  單引擎;失敗同引擎重試 2 次(退避 5s);連續 N 張失敗即中止整批。
+- 色碼(palette_hex)用 PIL 確定性抽取(原則 6)。
+- 逐張串行、逐張落盤、可續跑(原則 6/9);已 described 的跳過。
 
 用法:
     python3 scripts/describe_images.py --session sessions/<slug> \
@@ -30,7 +25,7 @@ from pathlib import Path
 
 DEFAULT_MODEL = "Gemini 3.5 Flash (Medium)"  # antigravity models 實機清單確認(2026-07-05)
 IMG_EXTS = (".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG")
-CALL_TIMEOUT_S = 240
+CALL_TIMEOUT_S = 480  # 照片型(非投影片)+ 完整 schema prompt 實測需 >240s 餘裕
 
 PROMPT_TEMPLATE = """讀取圖片檔 {img_path},然後只輸出一個 JSON 物件(前後不得有任何其他文字、不得用 markdown code fence),欄位:
 {{"text_in_image": "圖中所有文字逐字保留原語言(英文/中文/日文原樣抄錄,不翻譯、不省略;含頁碼)",
@@ -242,7 +237,7 @@ def main() -> int:
             meta = json.loads(meta_path.read_text(encoding="utf-8"))
             meta.setdefault("qaqc", {})["images"] = {
                 "status": "done", "count": len(images), "actor": "describe_images.py",
-                "engine": a.engine, "model": a.model}
+                "engine": "antigravity", "model": a.model}
             meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     return 1 if errs else 0
 

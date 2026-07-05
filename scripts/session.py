@@ -429,8 +429,8 @@ def new_session(args):
                 "instructions": (
                     f"圖片理解待 {engine} agent 接手。先確認 .phase_d_pending.json 已處理。"
                     f"跑 `python3 scripts/describe_images.py --session {sdir.relative_to(PROJECT_ROOT)}`"
-                    "(Antigravity headless;逐張串行、可續跑;連續失敗達門檻會自動中止,"
-                    "見 §S4.5.11.c gotcha,別誤判成額度問題)。"
+                    "(Antigravity headless;逐張串行、可續跑;連續失敗自動熔斷,"
+                    "熔斷後先以最小指令單測引擎再處置,規則見 § S4.5.11)。"
                     "驗:image_notes.json 每張 status=described、五欄位非空。"
                     "工具全數完成會自動刪本 marker。"),
                 "created_at": dt.datetime.now().isoformat(timespec="seconds"),

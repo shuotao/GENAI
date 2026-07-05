@@ -163,59 +163,52 @@ S4.5.9 沒做好,應該回頭改文字而不是放任 grep 每次 fail。
 
 ### S4.5.11 圖片理解 × 自動插圖(2026-07-05 引入)
 
-**新 stage(可選,`session.py --images <dir>` 啟用):marker 鏈 `phase-d → images → image-insert`。**
+啟用:`session.py --images <dir>`;marker 鏈 `phase-d → images → image-insert`。
+工具:`describe_images.py`(描述)、`insert_images.py`(插入)、`img_context_score.py`(相關性)。
 
-**引擎(原則 5 對齊):** 圖片語意描述走 **Antigravity CLI headless**
-(`antigravity -p --model "Gemini 3.5 Flash (Medium)" --add-dir <session>`,自帶
-OAuth login、非 Gemini API key)。**無 `gemini` CLI fallback**(§ S4.5.11.c)——
-失敗改同引擎重試 2 次(指數退避)+ 連續失敗熔斷。插圖位置比對走 **Claude
-Haiku subagent**。工具:`scripts/describe_images.py` / `scripts/insert_images.py`。
+**引擎**
+- 描述:Antigravity CLI headless — `antigravity -p --model "Gemini 3.5 Flash (Medium)"
+  --add-dir <session>`(OAuth login;`agy -p` 等效)。送圖前 `exif_transpose`
+  到 `.img_norm/` 暫存(原檔不動)。
+- 失敗處理:同引擎重試 2 次(退避 5s);連續 3 張失敗即中止整批
+  (`--max-consecutive-fails`)。連續失敗時先以最小指令(`antigravity -p "hi"`)
+  單測引擎,再決定退避(429=量)或換道(認證/tier=質)。
+- 插圖位置判斷:Claude Haiku subagent;套用與驗證:`insert_images.py`(確定性)。
 
-**image_notes.json schema(每張圖):**
-- `palette_hex`:PIL median-cut top-5 主色(**確定性**,工具算,不勞動 LLM)
-- `text_in_image`:圖中文字**逐字保留原語言**(英/中/日不翻譯、不省略)
-- `layout`:構圖區塊 [{region, content}]
-- `speaker_view` / `audience_view`:講者視角 + 聽眾視角雙敘述
-- `caption`:12-20 字圖說(寫入 md 的 alt → 出版頁 figcaption)
-- `anchor`:{para_index(=insert_images --plan 的內容行 index), confidence, engine}
-- `engine` / `status`:described → inserted(error 不得插入)
+**描述 prompt 五要求 + 一禁令**
+1. `text_in_image`:逐字保留原語言(英/中/日,含頁碼)
+2. `layout`:構圖區塊 [{region, content}]
+3. `speaker_view` / `audience_view`:雙視角敘述
+4. `content_signal`:3-5 個可在逐字稿檢索到的錨點詞(專名/數字)
+5. `caption`:12-20 字、含具體實體(地點/產品/主題)
+禁:拍攝 meta(顛倒/角度/反光)。
 
-**插圖鐵律:** 位置**判斷** = Haiku(讀 plan+描述回 anchors JSON);**套用/驗證** =
-`insert_images.py --apply`(確定性):原內容行 1:1 不變、CJK 正文字數不變、每張圖
-恰插一次、圖檔存在;任一不過 → rollback + exit 1(零省略延伸到插圖)。
+**schema 補充欄位(工具確定性產生)**
+`palette_hex`(PIL median-cut top-5)、`deck_page`(regex 抽 `N/M` 頁碼)、
+`needs_review`(deck_page 為 null 時 true)、`anchor{para_index, confidence, engine}`、
+`status`(described → inserted;error 不得插入)。
 
-**圖文相關性計分(gate 與 S6.11 共用,`scripts/img_context_score.py`):**
-描述文字(text_in_image+雙視角+caption+layout)與插入點 ±1 內容行的
-CJK bigram + ASCII 詞 containment 分數;門檻以 0704CC 20 張人工 ground truth
-校準(healthy/warning/fail 值見模組常數)。fail → prepublish_gate 擋、複核 anchor。
+**Haiku anchors 三規則**
+1. deck_page 序 = 演講時序:anchor 隨頁碼非遞減
+2. 撞名章節以 text_in_image/content_signal 專名與該段逐字稿同現做 tie-break
+3. needs_review 的圖給保守 confidence;無合理位置給 -1
 
-#### S4.5.11.b QC 驗證結論(2026-07-05,0704CC 20 張人工 ground truth 實測)
+**anchors 完備性**:每張 described 圖必須出現在 anchors;`after_line=-1` = 此圖
+不插入(重複張/封面/無合理位置),apply 跳過並列入報告。
 
-**閉環邏輯判定:成立**(Opus 獨立檢查 agent 覆核)。實測數據與由此固化的規則:
+**插圖鐵律(`insert_images.py --apply`)**
+原內容行 1:1 不變、CJK 字數不變、每張圖恰插一次、圖檔存在、deck_page 單調
+非遞減;任一不過 → rollback + exit 1。needs_review 清單回報使用者複核。
 
-| 實測發現 | 固化成的規則 |
-|---|---|
-| 自動 anchors vs 人工位置:**11 EXACT + 8 ±1(全部同章節)+ 1 FAR = 95% 可接受**(門檻 80%);±1 是同方向系統偏移非隨機 | 驗收標準:同段落命中率 ≥ 80%;±1 視為可接受(渲染上=圖貼在正確段落的上/下一段) |
-| 唯一 FAR(IMG_2197)歸因=**兩個「場地」主題撞名**,且管線位置在內容對齊上比人工更合理(管線忠於圖片內容) | Haiku 提示必含 tie-break 規則:撞名章節用 text_in_image/content_signal 專名與該段逐字稿**同現**判定,勿只看章節標題字面 |
-| **18-19/20 投影自帶頁碼(`N/48`),頁碼序與人工插圖行序完全同序** = 免費的確定性排序鍵 | `describe_images.py` 確定性 regex 抽 `deck_page`;`insert_images.py --apply` 強制**單調非遞減約束**(頁碼大者 anchor 不得更早,違反整批退回) |
-| 無頁碼的圖(場地照/開場拼貼)恰好是最模糊的 2-3 張 | `deck_page=None → needs_review=true`:保守 confidence、找不到給 -1、插入後向使用者回報複核 |
-| 手機側拍照全帶 EXIF orientation(180°),LLM 讀原始像素會看顛倒圖 → layout 區塊鏡像錯、描述被「畫面顛倒」汙染 | `describe_images.py` 送圖前 `exif_transpose` 到 `.img_norm/` 暫存(原檔不動);描述 prompt **禁寫拍攝 meta**(顛倒/角度/反光) |
-| 相關性啟發式鑑別度:正樣本 0.030-0.220(med 0.064)、負樣本 0.000-0.088(med 0.036)、57% 重疊 → **只夠當粗網** | 門檻:fail<0.02(硬擋)、0.02-0.09 warning(交 agent 語意複核,不擋)、≥0.09 healthy;精準語意判斷屬 LLM(原則 6) |
-| Antigravity headless 連續 38 次呼叫 auth 零中斷 | Antigravity OAuth 通道可支撐批次(Auth 表已載明) |
-| **`gemini` CLI 的個人免費方案已被 Google 官方下架**(`IneligibleTierError: This client is no longer supported for Gemini Code Assist for individuals`)—— 連不含圖的純文字 `-p "hi"` 都立即擋,**與用量/額度無關**,是帳號層級硬性封鎖,重試無意義 | 移除 `gemini` CLI fallback,`describe_images.py` 改「同引擎(antigravity)重試 2 次 + 指數退避 + 連續失敗熔斷(預設 3 張)」 |
+**相關性計分(gate 與 § S6.11 共用)**
+描述全文 vs 插入點 ±1 行,CJK bigram + ASCII 詞 containment。門檻(0704CC
+20 張 ground truth 校準):fail < 0.02 硬擋、0.02–0.09 warning 交 agent 複核、
+≥ 0.09 healthy。
 
-#### S4.5.11.c Gotcha:別把「引擎層級硬性封鎖」誤判成「額度耗盡」
-
-2026-07-05 圖片批次中途出現連續失敗,曾誤判為「Gemini 配額耗盡」而中止等待——
-**診斷後發現完全不是量的問題**:`gemini` CLI fallback 打中的是 Google **已下架**
-的「Gemini Code Assist for individuals」免費方案,錯誤訊息 `IneligibleTierError`
-在**任何一次呼叫**(甚至不含圖片的純文字測試)都會立即出現,與呼叫次數、
-額度、有沒有生圖完全無關。
-
-**教訓:** 連續失敗時,先用**最小可重現指令**(不含圖、不含批次上下文)單獨
-跑一次該引擎,看是「量」的問題(429/RESOURCE_EXHAUSTED,等待/退避有意義)
-還是「質」的問題(IneligibleTier/認證/帳號層級封鎖,重試永遠不會過,
-需要換引擎或換帳號)。兩種失敗的正確應對完全相反,診斷前別假設是哪一種。
+**驗收標準**
+自動 anchors vs 人工 ground truth 同段命中率 ≥ 80%(EXACT + ±1 + 同章節)。
+基準:2026-07-05 實測 95%;導入 deck_page/tie-break 後 EXACT 11 → 14(R4,
+EXIF 轉正 + content_signal 描述),Opus 覆核成立。
 
 ### S4.5.10 授權 footer(2026-05-25 引入)
 
@@ -450,7 +443,8 @@ md 被手改、或 anchor 判斷漂移 → 修 anchor / 補描述後重出。
   describe_images.py / insert_images.py / img_context_score.py / pipeline_autopilot.sh;
   session.py 加 `--images` 與 images/image-insert stages;prepublish_gate 加圖片檢查。
   動機:閉環管線(音檔+圖 → 出版前全自動,deploy 人工)。
-- 2026-07-05(三):§ S4.5.11.b QC 驗證結論固化。0704CC 20 張 ground truth 實測
-  95% 可接受、Opus 覆核判定閉環成立;結構性改善入庫:deck_page 確定性排序鍵 +
-  單調約束、needs_review 標記、撞名 tie-break 規則、EXIF 轉正、禁拍攝 meta、
-  相關性門檻依正負樣本分佈重校準(fail<0.02/healthy≥0.09)。
+- 2026-07-05(三):QC 驗證(0704CC 20 張 ground truth,95% 可接受,Opus 覆核
+  成立)結論固化入 § S4.5.11:deck_page 單調鍵、needs_review、tie-break、
+  EXIF 轉正、禁拍攝 meta、門檻重校準(fail<0.02/healthy≥0.09)。
+- 2026-07-05(四):移除 gemini CLI fallback(個人免費方案遭下架,IneligibleTier
+  為帳號級封鎖)改熔斷;§ S4.5.11 全文改指令式,刪 .b/.c 敘事段(歷程留 git)。
