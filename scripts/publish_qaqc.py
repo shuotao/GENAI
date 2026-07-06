@@ -362,19 +362,22 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
 
     # S6.11 圖文相關性(2026-07-05 引入,§ S4.5.11 / § S6.11)
     # 只在 session 產物有 image_notes.json 時檢查(舊書無 → 跳過不 fail)。
+    # 多場書(如 genai2026-day1)聚合多個 session 的圖 → 合併所有相關 session 的 notes。
     sessions_root = PROJECT_ROOT / "sessions"
-    notes_file = None
-    for sess in sessions_root.glob("*/image_notes.json") if sessions_root.is_dir() else []:
-        # 以 slug 對 metadata.session_id 或圖檔重疊姑且對映:找含相同圖檔名的 session
-        notes_file = sess if slug in sess.parent.name or _notes_match_slug(sess, slug_dir) else notes_file
-    if notes_file is None:
+    import json as _json
+    notes_files = [sess for sess in
+                   (sessions_root.glob("*/image_notes.json") if sessions_root.is_dir() else [])
+                   if slug in sess.parent.name or _notes_match_slug(sess, slug_dir)]
+    if not notes_files:
         results.append(("S6.11 圖文相關性", True, "無 image_notes.json(舊書/無圖流程),跳過"))
     else:
         import sys as _sys
         _sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
         from img_context_score import score as _score, verdict as _verdict  # noqa: E402
-        import json as _json
-        notes = {n["file"]: n for n in _json.loads(notes_file.read_text(encoding="utf-8"))}
+        notes = {}
+        for nf in notes_files:
+            for n in _json.loads(nf.read_text(encoding="utf-8")):
+                notes[n["file"]] = n  # 跨 session 合併(檔名唯一)
         bad_corr = []
         checked = 0
         for p in pages:
