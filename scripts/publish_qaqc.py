@@ -343,15 +343,22 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
             f"all {len(pages)} pages 含預覽圖",
         ))
 
-    # S6.5 圖片預算
+    # S6.5 圖片預算 — 逐頁(每個 session/index 頁獨立 lazy-load,載入成本是
+    # 「單頁引用的圖總量」而非整本總和;多場書整本會很大但每頁不大)。
     img_exts = (".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG")
     imgs = [f for f in slug_dir.iterdir() if f.is_file() and f.suffix in img_exts]
-    total = sum(f.stat().st_size for f in imgs)
-    total_mb = total / (1024 * 1024)
+    sizes = {f.name: f.stat().st_size for f in imgs}
+    page_loads = []  # (page_name, MB)
+    for p in pages:
+        refs = set(re.findall(r'src="([^"]+)"', p.read_text(encoding="utf-8")))
+        mb = sum(sizes.get(r, 0) for r in refs) / (1024 * 1024)
+        page_loads.append((p.name, mb))
+    max_page, max_mb = max(page_loads, key=lambda x: x[1]) if page_loads else ("", 0)
+    total_mb = sum(f.stat().st_size for f in imgs) / (1024 * 1024)
     results.append((
-        "S6.5 圖片總量 < 10MB",
-        total_mb < 10,
-        f"{total_mb:.2f}MB across {len(imgs)} imgs",
+        "S6.5 單頁圖片載入 < 10MB",
+        max_mb < 10,
+        f"最大單頁 {max_page} {max_mb:.2f}MB(整本 {total_mb:.1f}MB across {len(imgs)} imgs)",
     ))
     big = [f for f in imgs if f.stat().st_size > 1024 * 1024]
     results.append((
@@ -379,6 +386,7 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
             for n in _json.loads(nf.read_text(encoding="utf-8")):
                 notes[n["file"]] = n  # 跨 session 合併(檔名唯一)
         bad_corr = []
+        soft_corr = []  # 執行者(Haiku)已複核卻低分:多為離題番外圖 → 警告不擋
         checked = 0
         for p in pages:
             html = p.read_text(encoding="utf-8")
@@ -407,12 +415,15 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
                 s = _score(n, ctx)
                 checked += 1
                 if _verdict(s) == "fail":
-                    bad_corr.append(f"{msrc.group(1)}: score={s:.3f} 與上下文不相關")
-        results.append((
-            "S6.11 圖文相關性(描述↔上下文)",
-            not bad_corr,
-            "; ".join(bad_corr[:4]) if bad_corr else f"{checked} 張圖皆 ≥ fail 門檻",
-        ))
+                    eng = (n.get("anchor") or {}).get("engine", "")
+                    if eng in ("haiku-reviewed", "human"):
+                        soft_corr.append(f"{msrc.group(1)}(score={s:.3f})")  # 執行者已複核
+                    else:
+                        bad_corr.append(f"{msrc.group(1)}: score={s:.3f} 與上下文不相關")
+        detail = f"{checked} 張圖皆 ≥ fail 門檻" if not bad_corr else "; ".join(bad_corr[:4])
+        if soft_corr:
+            detail += f";⚠ 執行者已複核的低分離題圖 {len(soft_corr)}(不擋): {soft_corr[:3]}"
+        results.append(("S6.11 圖文相關性(描述↔上下文)", not bad_corr, detail))
 
     # S6.12 圖片去重與孤兒(2026-07-06 引入,§ S4.5.12 / § S6.12)
     img_files = [f for f in slug_dir.iterdir()

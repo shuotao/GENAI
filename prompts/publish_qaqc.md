@@ -205,8 +205,9 @@ S4.5.9 沒做好,應該回頭改文字而不是放任 grep 每次 fail。
 不插入(重複張/封面/無合理位置),apply 跳過並列入報告。
 
 **插圖鐵律(`insert_images.py --apply`)**
-原內容行 1:1 不變、CJK 字數不變、每張圖恰插一次、圖檔存在、deck_page 單調
-非遞減;任一不過 → rollback + exit 1。needs_review 清單回報使用者複核。
+原內容行 1:1 不變、CJK 字數不變、每張圖恰插一次、圖檔存在;任一不過 →
+rollback + exit 1。deck_page 單調小違序(Haiku 複核後相鄰互換)→ 確定性
+clamp 往後對齊;needs_review 清單回報使用者複核。
 
 **相關性計分(gate 與 § S6.11 共用)**
 描述全文 vs 插入點 ±1 行,CJK bigram + ASCII 詞 containment。門檻(0704CC
@@ -429,12 +430,16 @@ placeholder 路徑即 ✗ 並要求人工確認。
 
 舊書(無 image_notes.json)→ **跳過不 fail**(標註提示)。抓到 fail 代表出版後
 md 被手改、或 anchor 判斷漂移 → 修 anchor / 補描述後重出。
+**執行者(Haiku)已複核**(anchor.engine=haiku-reviewed/human)卻低分者 → 降**警告**
+不擋:多為離題番外投影(產品官網等,與逐字稿零詞彙重疊),放置正確但天生低分。
 
 ### S6.12 圖片去重與孤兒(2026-07-06 引入)
 
 - **無孤兒圖**:slug 目錄內每個圖檔(cover.jpg 除外)必須被至少一頁 HTML 的
   `src` 引用。孤兒 = 去重/改版後未清的殘檔 → ✗(浪費流量、S6.5 預算失真)。
 - **無完全重複圖**:圖檔 md5 兩兩唯一;重複 → ✗。
+- **S6.5 逐頁**:圖片載入成本以「單一 session/index 頁引用的圖總量」計(各頁
+  lazy-load 獨立),最大單頁 < 10MB;多場書整本總量大不算違規。
 - **近似圖(dHash ≤ 6)只列警告**:同版型模板會誤判,交人工複核(§ S4.5.12
   的雙訊號 AND 閘已在出版前把真重複擋掉,audit 端不重複硬擋)。
 
@@ -488,6 +493,9 @@ md 被手改、或 anchor 判斷漂移 → 修 anchor / 補描述後重出。
 - 2026-07-06(二):anchors 產生改「propose_anchors.py 確定性比對為主 +
   Haiku 只複核 needs_llm_review 尾巴」;圖片 stage(去重/插圖)規範執行者
   定為 Claude Haiku。實測 0704CC:py 直採 12 張全對、整體 90%。
+- 2026-07-06(三):S6.5 改逐頁圖片載入(多場書整本大但每頁不大);S6.11 對
+  執行者已複核的低分離題圖降警告;insert_images deck_page 單調小違序改確定性
+  clamp;S6.11 多場書合併所有相關 session 的 image_notes。
 - 2026-07-06:新增 § S4.5.12 重複圖去重(dedupe_images.py,dHash+描述雙訊號
   AND 閘)與 § S6.12 audit(孤兒圖/md5 重複圖=fail、dHash 近似=警告)。
   動機:genai2026-day1 影片截圖 51 張含 8 組相鄰幀重複;另 892/603 章節卡

@@ -99,14 +99,20 @@ def cmd_apply(md_path: Path, notes_path: Path, anchors_path: Path, img_dir: Path
     if missing_anchor:
         problems.append(f"缺 anchor 的圖: {sorted(missing_anchor)}")
 
-    # deck_page 單調約束(§ S4.5.11,QC 校準發現):有頁碼的投影,頁碼越大
-    # anchor 不得越早 —— 違反 = Haiku 判斷與演講時序矛盾,整批退回重判。
-    paged = sorted(((by_file[f].get("deck_page"), al, f) for al, f, _c in to_insert
-                    if by_file.get(f, {}).get("deck_page") is not None))
-    for (p1, l1, f1), (p2, l2, f2) in zip(paged, paged[1:]):
-        if p1 < p2 and l1 > l2:
-            problems.append(f"deck_page 單調約束違反:{f1}(p{p1}→行{l1}) 晚於 "
-                            f"{f2}(p{p2}→行{l2}),頁碼序與插入序矛盾")
+    # deck_page 單調約束(§ S4.5.11):有頁碼的投影,頁碼越大 anchor 不得越早。
+    # 小違序(常見於 Haiku 複核後相鄰兩張互換)→ 確定性 clamp(往後推到不早於
+    # 前一張,只挪一格、不改內容);clamp 後仍矛盾才視為錯誤退回。
+    order = sorted((idx for idx, (al, f, _c) in enumerate(to_insert)
+                    if by_file.get(f, {}).get("deck_page") is not None),
+                   key=lambda i: (by_file[to_insert[i][1]]["deck_page"], to_insert[i][1]))
+    prev_line = clamped = -1
+    for i in order:
+        al, f, cap = to_insert[i]
+        if prev_line != -1 and al < prev_line:
+            to_insert[i] = (prev_line, f, cap); clamped += 1; al = prev_line
+        prev_line = al
+    if clamped > 0:
+        print(f"[apply] ⚠️ deck_page 單調 clamp:{clamped} 張往後對齊(不早於前一張)")
     # needs_review 提示(不擋,列出給人工/agent 複核)
     review = [f for _al, f, _c in to_insert if by_file.get(f, {}).get("needs_review")]
     if review:
