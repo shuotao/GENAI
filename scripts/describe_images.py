@@ -95,10 +95,18 @@ REQUIRED_FIELDS = ("text_in_image", "layout", "speaker_view", "audience_view", "
 _PAGE_RE = re.compile(r"\b(\d{1,3})\s*/\s*(\d{1,3})\b")
 
 
-def extract_deck_page(text: str) -> int | None:
+_SEQ_RE = re.compile(r"-(\d{3,})\.[a-zA-Z]+$")  # 影片截圖檔名序號 = 演講時序
+
+
+def extract_deck_page(text: str, filename: str = "") -> int | None:
+    """deck_page = 演講時序代理。優先用投影片內印頁碼 `N/M`;沒有(影片截圖無內印
+    頁碼)則用檔名序號 `-NNNN.png`(單調、可靠)。兩者皆無才回 None。"""
     candidates = [(int(a), int(b)) for a, b in _PAGE_RE.findall(text)
                   if int(b) >= 5 and int(a) <= int(b)]  # 排除日期/比例等雜訊
-    return candidates[-1][0] if candidates else None
+    if candidates:
+        return candidates[-1][0]
+    m = _SEQ_RE.search(filename)  # fallback:檔名序號(影片截圖)
+    return int(m.group(1)) if m else None
 
 
 def validate(d: dict) -> list[str]:
@@ -209,7 +217,7 @@ def main() -> int:
                 return 2
         else:
             consecutive_fails = 0
-            deck_page = extract_deck_page(d["text_in_image"])  # 確定性,LLM 不參與
+            deck_page = extract_deck_page(d["text_in_image"], rel)  # 內印頁碼 → 檔名序號 fallback
             by_file[rel] = {"file": rel, "palette_hex": palette,
                             "text_in_image": d["text_in_image"], "layout": d["layout"],
                             "speaker_view": d["speaker_view"], "audience_view": d["audience_view"],

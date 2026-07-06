@@ -171,8 +171,9 @@ S4.5.9 沒做好,應該回頭改文字而不是放任 grep 每次 fail。
   --add-dir <session>`(OAuth login;`agy -p` 等效)。送圖前 `exif_transpose`
   到 `.img_norm/` 暫存(原檔不動)。
 - 失敗處理:同引擎重試 2 次(退避 5s);連續 3 張失敗即中止整批
-  (`--max-consecutive-fails`)。連續失敗時先以最小指令(`antigravity -p "hi"`)
-  單測引擎,再決定退避(429=量)或換道(認證/tier=質)。
+  (`--max-consecutive-fails`)。連續失敗先以最小指令(`antigravity -p "hi"`)單測:
+  空回應/節流(如日配額用盡,連非 Gemini model 都空)→ 冷卻等待或**改用 Opus
+  對話 agent 直接 Read 圖產同 schema 描述**(engine=opus-fallback),補完少數卡住的圖。
 - 插圖位置判斷:Claude Haiku subagent;套用與驗證:`insert_images.py`(確定性)。
 
 **描述 prompt 五要求 + 一禁令**
@@ -184,7 +185,7 @@ S4.5.9 沒做好,應該回頭改文字而不是放任 grep 每次 fail。
 禁:拍攝 meta(顛倒/角度/反光)。
 
 **schema 補充欄位(工具確定性產生)**
-`palette_hex`(PIL median-cut top-5)、`deck_page`(regex 抽 `N/M` 頁碼)、
+`palette_hex`(PIL median-cut top-5)、`deck_page`(投影片內印 `N/M` 頁碼;影片截圖無內印時 fallback 檔名序號 `-NNNN`)、
 `needs_review`(deck_page 為 null 時 true)、`anchor{para_index, confidence, engine}`、
 `status`(described → inserted;error 不得插入)。
 
@@ -493,6 +494,9 @@ md 被手改、或 anchor 判斷漂移 → 修 anchor / 補描述後重出。
 - 2026-07-06(二):anchors 產生改「propose_anchors.py 確定性比對為主 +
   Haiku 只複核 needs_llm_review 尾巴」;圖片 stage(去重/插圖)規範執行者
   定為 Claude Haiku。實測 0704CC:py 直採 12 張全對、整體 90%。
+- 2026-07-06(四):deck_page 加檔名序號 fallback(影片截圖無內印頁碼時,補
+  時序約束,避免 Haiku 無序約束把圖放亂 + clamp 堆疊);antigravity 節流時
+  Opus-fallback 補描述。動機:day1 第 7 場實戰。
 - 2026-07-06(三):S6.5 改逐頁圖片載入(多場書整本大但每頁不大);S6.11 對
   執行者已複核的低分離題圖降警告;insert_images deck_page 單調小違序改確定性
   clamp;S6.11 多場書合併所有相關 session 的 image_notes。
