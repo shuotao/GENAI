@@ -99,14 +99,15 @@ _SEQ_RE = re.compile(r"-(\d{3,})\.[a-zA-Z]+$")  # 影片截圖檔名序號 = 演
 
 
 def extract_deck_page(text: str, filename: str = "") -> int | None:
-    """deck_page = 演講時序代理。優先用投影片內印頁碼 `N/M`;沒有(影片截圖無內印
-    頁碼)則用檔名序號 `-NNNN.png`(單調、可靠)。兩者皆無才回 None。"""
+    """deck_page = 演講時序代理。**優先用檔名序號 `-NNNN`**(擷取/匯出順序,最可靠;
+    影片截圖、依序命名的匯出圖皆適用);沒有序號檔名才 fallback 投影片內印頁碼 `N/M`。
+    (內印頁碼會被 demo 畫面裡的數字如攻擊回合 1/6、token 數污染,故只當備援。)"""
+    m = _SEQ_RE.search(filename)
+    if m:
+        return int(m.group(1))
     candidates = [(int(a), int(b)) for a, b in _PAGE_RE.findall(text)
                   if int(b) >= 5 and int(a) <= int(b)]  # 排除日期/比例等雜訊
-    if candidates:
-        return candidates[-1][0]
-    m = _SEQ_RE.search(filename)  # fallback:檔名序號(影片截圖)
-    return int(m.group(1)) if m else None
+    return candidates[-1][0] if candidates else None
 
 
 def validate(d: dict) -> list[str]:
