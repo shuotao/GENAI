@@ -52,6 +52,16 @@ function updateStatusBar() {
         $('active-model-text').textContent = `Model: ${activeModel}`;
     }
     
+    // Model limits and rates description
+    const MODEL_LIMITS = {
+        'gemini-2.5-flash': '免費限額: 15 RPM / 1M TPM / 1500 RPD | 費率: $0.075/1M in, $0.30/1M out',
+        'gemini-2.5-pro': '免費限額: 2 RPM / 32K TPM / 50 RPD | 費率: $1.25/1M in, $5.00/1M out',
+        'gemini-2.5-flash-image': '免費限額: 15 RPM / 1M TPM / 1500 RPD | 費率: $0.075/1M in, $0.30/1M out'
+    };
+    if ($('model-limit-text')) {
+        $('model-limit-text').textContent = MODEL_LIMITS[activeModel] || '限額: 15 RPM / 1M TPM / 1500 RPD';
+    }
+    
     // Accumulate session cost & tokens
     let totalCost = 0;
     let totalInput = 0;
