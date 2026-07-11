@@ -16,6 +16,7 @@
 from __future__ import annotations
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -52,10 +53,36 @@ def main() -> int:
     fails: list[str] = []
 
     # (3) 全形 lint — 直接驗被出版的 md
-    residual = count_residual(md_path.read_text(encoding="utf-8"))
+    md_text_all = md_path.read_text(encoding="utf-8")
+    residual = count_residual(md_text_all)
     if residual > 0:
         fails.append(f"全形 lint:{md_path.name} 仍有 {residual} 處 CJK 語境半形標點未轉"
                      f"(跑 `python3 scripts/normalize_punctuation.py {md_path.name} --in-place`)")
+
+    # (3b) 分佈塌陷 — 無條件驗(不依賴 session;master-centric/legacy 裸 md 也擋)。
+    # 這是「連續投影片倒同一段」的硬門,與 § S6.11.b 事後 audit 同口徑。
+    from placement_check import overstacked, order_inversions  # noqa: E402
+    # 人工確認可連放的圖(image_notes.human_grouped)→ 分佈檢核放行(§ S4.5.11 人工覆寫)
+    approved: set[str] = set()
+    _sessions = Path(__file__).resolve().parent.parent / "sessions"
+    for np in (_sessions.glob("*/image_notes.json") if _sessions.is_dir() else []):
+        try:
+            for n in json.loads(np.read_text(encoding="utf-8")):
+                if n.get("human_grouped"):
+                    approved.add(n["file"].split("/")[-1])
+        except Exception:
+            pass
+    # 聚合多場書:各場投影片獨立編號 → 分佈/順序必須「分章」跑,不得跨 `## 章` 比對
+    # (否則第 N 場末圖 vs 第 N+1 場首圖會誤判逆位)。以 `^## ` 切章;無 `## ` 則整份為一段。
+    chapters = re.split(r"(?m)^(?=## )", md_text_all) if re.search(r"(?m)^## ", md_text_all) else [md_text_all]
+    for ch in chapters:
+        for anchor, refs in overstacked(ch, approved=approved):
+            tags = [r.split("-")[-1] for r in refs]
+            fails.append(f"圖片分佈塌陷:「{anchor[:30]}…」後一口氣掛 {len(refs)} 張 {tags}"
+                         f"(連續投影片未攤到對應段落;跑 placement_supervisor.py 收斂;§ S4.5.11)")
+        for a_ref, a_seq, b_ref, b_seq in order_inversions(ch):
+            fails.append(f"圖片順序逆位:{a_ref.split('-')[-1]}(序{a_seq})排在 "
+                         f"{b_ref.split('-')[-1]}(序{b_seq})之前 — 與原始截圖順序錯位(§ S4.5.11)")
 
     # (1)(2) 完成戳記 + marker
     root = find_session_root(md_path)
@@ -121,15 +148,34 @@ def main() -> int:
                 if verdict(s) == "fail":
                     fails.append(f"圖文相關性:{m.group(1)} score={s:.3f} < {THRESHOLD_FAIL}"
                                  f"(描述與上下文不相關,複核 anchor;§ S4.5.11)")
+            # (分佈塌陷已由上方 (3b) 無條件檢核涵蓋,此處不重複)
+
+    session_id = root.name if root else md_path.stem
 
     if fails:
         print("[gate] ✗ 出版被擋(原則 9 — 每步須獨立完成驗證後才能往下):", file=sys.stderr)
         for f in fails:
             print(f"        - {f}", file=sys.stderr)
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            from pipeline_logger import log_stage, enqueue_improvement  # noqa: E402
+            log_stage(root, "S4.5-gate", "prepublish_gate.py", "fail",
+                      metrics={"fails": len(fails)}, detail="; ".join(fails[:5]))
+            for f in fails:
+                enqueue_improvement("S4.5-gate", session_id, f)
+        except Exception:  # noqa: BLE001 — logger 缺席不影響 gate 判斷
+            pass
         return 1
 
     where = root.name if root else "(legacy 無 session)"
     print(f"[gate] ✓ Phase C/D 通過,放行出版({where},全形殘留=0)。")
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from pipeline_logger import log_stage  # noqa: E402
+        log_stage(root, "S4.5-gate", "prepublish_gate.py", "pass",
+                  metrics={"fails": 0}, detail=f"where={where}")
+    except Exception:  # noqa: BLE001
+        pass
     return 0
 
 

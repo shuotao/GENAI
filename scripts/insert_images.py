@@ -113,6 +113,16 @@ def cmd_apply(md_path: Path, notes_path: Path, anchors_path: Path, img_dir: Path
         prev_line = al
     if clamped > 0:
         print(f"[apply] ⚠️ deck_page 單調 clamp:{clamped} 張往後對齊(不早於前一張)")
+    # 分佈塌陷 backstop(F2,§ S4.5.11):不論來自 anchors 還是 clamp 累積,
+    # 同一插入點疊 > MAX_PER_ANCHOR 張即退回(clamp 可能在此重新製造塌陷)。
+    from collections import Counter as _Counter
+    MAX_PER_ANCHOR = 2
+    line_ct = _Counter(al for al, _f, _c in to_insert if al != -1)
+    over = {ln: c for ln, c in line_ct.items() if c > MAX_PER_ANCHOR}
+    if over:
+        problems.append(
+            f"分佈塌陷:{len(over)} 個插入點各疊 >{MAX_PER_ANCHOR} 張(最擠 {max(over.values())} 張)"
+            f" — 連續投影片未攤開(clamp 或 anchors 造成);跑 placement_supervisor.py 收斂後再 apply(§ S4.5.11)")
     # needs_review 提示(不擋,列出給人工/agent 複核)
     review = [f for _al, f, _c in to_insert if by_file.get(f, {}).get("needs_review")]
     if review:
@@ -121,6 +131,15 @@ def cmd_apply(md_path: Path, notes_path: Path, anchors_path: Path, img_dir: Path
         print("[apply] ✗ anchors 驗證失敗:", file=sys.stderr)
         for p in problems:
             print(f"  - {p}", file=sys.stderr)
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            from pipeline_logger import log_stage, enqueue_improvement  # noqa: E402
+            log_stage(md_path.parent, "S4.5-insert", "insert_images.py", "fail",
+                      metrics={"problems": len(problems)}, detail="; ".join(problems[:5]))
+            for p in problems:
+                enqueue_improvement("S4.5-insert", md_path.parent.name, p)
+        except Exception:  # noqa: BLE001 — logger 缺席不影響 apply 結果
+            pass
         return 1
 
     # 2) 套用:按原始行號由後往前插(避免位移),圖片行 = 獨立一行
@@ -143,6 +162,15 @@ def cmd_apply(md_path: Path, notes_path: Path, anchors_path: Path, img_dir: Path
     failed = [name for name, ok in checks if not ok]
     if failed:
         print(f"[apply] ✗ 零省略驗證失敗,rollback: {failed}", file=sys.stderr)
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            from pipeline_logger import log_stage, enqueue_improvement  # noqa: E402
+            log_stage(md_path.parent, "S4.5-insert", "insert_images.py", "fail",
+                      metrics={"failed_checks": len(failed)}, detail="; ".join(failed))
+            enqueue_improvement("S4.5-insert", md_path.parent.name,
+                                 f"零省略驗證失敗,rollback: {failed}")
+        except Exception:  # noqa: BLE001 — logger 缺席不影響 apply 結果
+            pass
         return 1
 
     # 4) 落盤 + 回寫 image_notes 狀態
@@ -159,6 +187,14 @@ def cmd_apply(md_path: Path, notes_path: Path, anchors_path: Path, img_dir: Path
             n["status"] = "inserted"
     notes_path.write_text(json.dumps(notes, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"[apply] ✓ 插入 {len(to_insert)} 張(備份: {bak.name});驗證全過")
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from pipeline_logger import log_stage  # noqa: E402
+        log_stage(md_path.parent, "S4.5-insert", "insert_images.py", "pass",
+                  metrics={"inserted": len(to_insert), "skipped": len(skipped)},
+                  detail=f"backup={bak.name}")
+    except Exception:  # noqa: BLE001 — logger 缺席不影響 apply 結果
+        pass
     return 0
 
 

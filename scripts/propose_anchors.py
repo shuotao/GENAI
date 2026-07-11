@@ -43,24 +43,31 @@ def score_matrix(notes: list[dict], lines: list[str]) -> list[list[float]]:
     return mat
 
 
-def solve_monotonic(mat: list[list[float]]) -> list[int]:
-    """DP:每張圖選一行,行序非遞減(可同行),最大化總分。回傳每張圖的行 index。"""
+def solve_monotonic(mat: list[list[float]], stack_penalty: float = 0.0) -> list[int]:
+    """DP:每張圖選一行,行序非遞減(可同行),最大化總分。回傳每張圖的行 index。
+
+    反塌陷(2026-07-09,§ S4.5.11):把「連續投影片疊在同一行」變成有成本。
+    轉移分兩種:前一張在 *嚴格更前* 的行 k<j(無懲罰)或 *同一行* j(扣 stack_penalty)。
+    → 一行疊 t 張的總成本 = (t-1)·stack_penalty;唯有該行分數夠高、勝過次佳*不同*行
+      至少 stack_penalty 才會疊。stack_penalty=0 時退化回原本可無限疊的行為。
+    """
     n, m = len(mat), len(mat[0])
     dp = [[NEG_INF] * m for _ in range(n)]
-    choice = [[0] * m for _ in range(n)]
-    best_prefix = [NEG_INF] * m
+    choice = [[0] * m for _ in range(n)]  # choice[i][j] = 第 i-1 張選的行 k
     for j in range(m):
         dp[0][j] = mat[0][j]
     for i in range(1, n):
-        run = NEG_INF
-        argmax = 0
+        run = NEG_INF   # max dp[i-1][k] for k < j(嚴格更前,無懲罰)
+        argrun = 0
         for j in range(m):
-            if dp[i - 1][j] > run:
-                run = dp[i - 1][j]
-                argmax = j
-            best_prefix[j] = run
-            choice[i][j] = argmax
-            dp[i][j] = (mat[i][j] + run) if run > NEG_INF and mat[i][j] > NEG_INF else NEG_INF
+            best_val, best_k = run, argrun
+            same = (dp[i - 1][j] - stack_penalty) if dp[i - 1][j] > NEG_INF else NEG_INF
+            if same > best_val:            # 疊同一行(付懲罰)
+                best_val, best_k = same, j
+            dp[i][j] = (mat[i][j] + best_val) if (mat[i][j] > NEG_INF and best_val > NEG_INF) else NEG_INF
+            choice[i][j] = best_k
+            if dp[i - 1][j] > run:          # 納入 k=j,供之後 j'>j 用(維持嚴格更前)
+                run, argrun = dp[i - 1][j], j
     # 回溯
     out = [0] * n
     j = max(range(m), key=lambda k: dp[n - 1][k])
@@ -79,6 +86,10 @@ def main() -> int:
     ap.add_argument("--min-score", type=float, default=0.02, help="低於此分 → -1 不插入")
     ap.add_argument("--review-below", type=float, default=0.06,
                     help="低於此分標 needs_llm_review(Haiku 複核)")
+    ap.add_argument("--stack-penalty", type=float, default=0.08,
+                    help="反塌陷:連續圖疊同一行的每張懲罰(0=關閉;§ S4.5.11)")
+    ap.add_argument("--max-per-anchor", type=int, default=2,
+                    help="unpaged 圖貪婪讓位門檻:單行已達此數就換次佳行(F5)")
     a = ap.parse_args()
 
     sdir = Path(a.session).resolve()
@@ -91,13 +102,17 @@ def main() -> int:
                    key=lambda n: (n["deck_page"], n["file"]))
     unpaged = [n for n in usable if n.get("deck_page") is None]
 
+    from collections import Counter
+    used: Counter = Counter()   # 各行已放幾張(unpaged 貪婪讓位用,F5)
     anchors = []
     review_ct = skip_ct = 0
     if paged:
         mat = score_matrix(paged, lines)
-        picks = solve_monotonic(mat)
-        for n, j in zip(paged, picks):
-            s = mat[paged.index(n)][j]
+        picks = solve_monotonic(mat, stack_penalty=a.stack_penalty)
+        for i, (n, j) in enumerate(zip(paged, picks)):   # F7:enumerate,不用 paged.index
+            s = mat[i][j]
+            if s > a.min_score:
+                used[j] += 1
             if s <= a.min_score:
                 anchors.append({"file": n["file"], "after_line": -1, "confidence": round(max(s, 0), 3),
                                 "engine": "py-textmatch", "needs_llm_review": True})
@@ -110,15 +125,19 @@ def main() -> int:
                                 **({"needs_llm_review": True} if need else {})})
                 review_ct += 1 if need else 0
     for n in unpaged:
+        # F5:無頁碼圖也套「讓開已滿行」的貪婪,避免全撞同一行造成塌陷。
+        ranked = sorted(
+            ((score(n, [ln] + ([lines[j + 1]] if j + 1 < len(lines) else [])), j)
+             for j, ln in enumerate(lines) if line_type(ln) not in ("h1", "h2")),
+            reverse=True)
         best_j, best_s = -1, 0.0
-        for j, ln in enumerate(lines):
-            if line_type(ln) in ("h1", "h2"):
-                continue
-            ctx = [ln] + ([lines[j + 1]] if j + 1 < len(lines) else [])
-            s = score(n, ctx)
-            if s > best_s:
+        for s, j in ranked:
+            if used[j] < a.max_per_anchor:
                 best_j, best_s = j, s
+                break
         ok = best_s > a.min_score
+        if ok:
+            used[best_j] += 1
         anchors.append({"file": n["file"], "after_line": best_j if ok else -1,
                         "confidence": round(best_s, 3), "engine": "py-textmatch",
                         "needs_llm_review": True})  # 無頁碼一律複核(§ S4.5.11)
@@ -128,7 +147,12 @@ def main() -> int:
     out_path = Path(a.out) if a.out else sdir / "anchors_proposed.json"
     out_path.write_text(json.dumps(anchors, ensure_ascii=False, indent=1), encoding="utf-8")
     placed = sum(1 for x in anchors if x["after_line"] != -1)
+    from collections import Counter
+    dist = Counter(x["after_line"] for x in anchors if x["after_line"] != -1)
+    distinct = len(dist)
+    worst_line, worst_ct = (dist.most_common(1)[0] if dist else (None, 0))
     print(f"[anchors] {len(anchors)} 張:插入 {placed} / 不插 {skip_ct} / 需 Haiku 複核 {review_ct}")
+    print(f"[anchors] 分佈:{placed} 張落在 {distinct} 個不同插入點;最擠一行 {worst_ct} 張(stack_penalty={a.stack_penalty})")
     print(f"[anchors] → {out_path}")
     return 0
 

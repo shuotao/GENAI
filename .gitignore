@@ -93,3 +93,7 @@ MCP5/
 # Newsletter / 能力宣傳稿等交付物,任何位置皆不上推
 # (docs/origin-story.md 等規範文件不受影響)
 **/*newsletter*.md
+
+# 派生/執行期產物留本機(可由 master + scripts 重生;見 memory outward-docs 原則)
+build/
+.worktrees/

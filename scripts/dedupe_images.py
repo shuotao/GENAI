@@ -31,6 +31,8 @@ from img_context_score import terms  # noqa: E402
 
 HASH_THRESHOLD = 6   # 64-bit dHash Hamming 距離;≤6 = 影像近似(含輕微轉場/游標差異)
 DESC_FLOOR = 0.5     # 描述 Jaccard ≥ 0.5 才確認為同內容(擋同版型不同內容的誤判)
+MAX_DUP_GAP = 4      # deck_page 間距 ≤ 此值才算「連拍幀重複」自動移除;超過 = 講者回頭
+                     # 放同一張(非連續重複)→ 兩張都留、列複核(§ S4.5.12,2026-07-09)
 
 
 def dhash(img_path: Path) -> int:
@@ -56,11 +58,14 @@ def desc_jaccard(n1: dict, n2: dict) -> float:
     return len(t1 & t2) / len(t1 | t2)
 
 
-def find_groups(notes: list[dict], sdir: Path, threshold: int,
-                desc_floor: float) -> tuple[list[list[dict]], list[tuple[dict, dict, float]]]:
+def find_groups(notes: list[dict], sdir: Path, threshold: int, desc_floor: float,
+                max_gap: int = MAX_DUP_GAP
+                ) -> tuple[list[list[dict]], list[tuple[dict, dict, float]]]:
     """回 (重複組, 人工複核清單)。
-    重複組:dHash ≤ threshold **且** 描述 Jaccard ≥ desc_floor(AND 閘,union-find)。
-    人工複核:僅影像相似、描述不足 → (n1, n2, jaccard),不移除。"""
+    重複組:dHash ≤ threshold **且** 描述 Jaccard ≥ desc_floor **且** deck_page 間距 ≤ max_gap
+    (三閘 AND,union-find)。
+    人工複核:僅影像相似描述不足、**或影像+描述都像但 deck_page 遠距**(講者回頭放同一張,
+    非連續重複)→ (n1, n2, jaccard),不移除、兩張都留。"""
     items = []
     for n in notes:
         p = sdir / n["file"]
@@ -79,10 +84,14 @@ def find_groups(notes: list[dict], sdir: Path, threshold: int,
         for j in range(i + 1, len(items)):
             if hamming(items[i][1], items[j][1]) <= threshold:
                 sim = desc_jaccard(items[i][0], items[j][0])
-                if sim >= desc_floor:
-                    parent[find(i)] = find(j)
+                dp_i, dp_j = items[i][0].get("deck_page"), items[j][0].get("deck_page")
+                gap = abs(dp_i - dp_j) if (dp_i is not None and dp_j is not None) else 0
+                if sim >= desc_floor and gap <= max_gap:
+                    parent[find(i)] = find(j)               # 近距連拍幀 → 真重複,移除
+                elif sim >= desc_floor and gap > max_gap:
+                    review.append((items[i][0], items[j][0], sim))  # 遠距回頭 → 兩張都留
                 else:
-                    review.append((items[i][0], items[j][0], sim))
+                    review.append((items[i][0], items[j][0], sim))  # 描述不足 → 兩張都留
     groups: dict[int, list[dict]] = {}
     for i, (n, _h) in enumerate(items):
         groups.setdefault(find(i), []).append(n)
@@ -100,6 +109,8 @@ def main() -> int:
     ap.add_argument("--md", default="cleaned.md")
     ap.add_argument("--hash-threshold", type=int, default=HASH_THRESHOLD)
     ap.add_argument("--desc-floor", type=float, default=DESC_FLOOR)
+    ap.add_argument("--max-dup-gap", type=int, default=MAX_DUP_GAP,
+                    help="deck_page 間距 ≤ 此值才算連拍重複自動移除;超過=講者回頭放同一張,兩張都留")
     mode = ap.add_mutually_exclusive_group(required=True)
     mode.add_argument("--report", action="store_true")
     mode.add_argument("--apply", action="store_true")
@@ -108,7 +119,7 @@ def main() -> int:
     sdir = Path(a.session).resolve()
     notes_path = sdir / "image_notes.json"
     notes = json.loads(notes_path.read_text(encoding="utf-8"))
-    groups, review = find_groups(notes, sdir, a.hash_threshold, a.desc_floor)
+    groups, review = find_groups(notes, sdir, a.hash_threshold, a.desc_floor, a.max_dup_gap)
 
     total_dupes = sum(len(g) - 1 for g in groups)
     print(f"[dedupe] 檢查 {len(notes)} 張 | 重複組 {len(groups)} 組(多餘 {total_dupes} 張)"

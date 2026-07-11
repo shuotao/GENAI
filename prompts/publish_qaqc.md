@@ -166,6 +166,19 @@ S4.5.9 沒做好,應該回頭改文字而不是放任 grep 每次 fail。
 啟用:`session.py --images <dir>`;marker 鏈 `phase-d → images → image-insert`。
 工具:`describe_images.py`(描述)、`insert_images.py`(插入)、`img_context_score.py`(相關性)。
 
+**描述伴讀與人機分流(2026-07-11 引入)**
+- **工作流**:`describe(必跑)→ images_readme.md(伴讀)→ [人放圖 | AI 放圖(supervisor)] → 三門驗證(分佈/順序/去重)照跑`。
+  describe 無論後續誰放圖都**必跑**:它產的 `images_readme.md`(每張圖一節:檔名 + 圖 + caption +
+  講者/聽眾雙視角 + 圖中文字摘錄)是**描述伴讀**,讓自己手排圖的使用者先看見簡報當下沒注意到的細節。
+  `describe_images.py` 主流程全描述完會自動產;`--readme-only` 可不打引擎、只從既有 image_notes 重產。
+- **人放圖規律(實證,供「AI 放圖」演算法對齊)**:
+  - (a)**錨在解說該圖的段落尾,不錨小標下**:人把圖放在講者解說完那張圖的段落**末尾**,而非章節小標正下方
+    (`placement_diff` 實證段尾 vs 小標下 19:1 / 41:1)。AI 放圖的錨點偏好應對齊「解說段尾」。
+  - (b)**密集 deck 人會刻意連放同錨**:圖數/內容行 > 0.5 的密集 deck,人會把同一段的多張投影片刻意連放在
+    同一錨點,與「單錨 max-2」硬門衝突 → 由 `human_grouped` 機制承接(整組 approved 才放行連放,§ S4.5.11 手排覆寫)。
+  - (c)**deck-flow 均勻分佈的可用邊界**:疏場(圖密度 ≤ 0.35)依 deck 序均勻分佈,mean|Δ| ≈ 1.6 行、可用;
+    密場會崩(mean|Δ| 4.86)→ 密場**優先文字訊號(content_signal)或轉人工**,不硬套 deck-flow。
+
 **引擎**
 - 描述:Antigravity CLI headless — `antigravity -p --model "Gemini 3.5 Flash (Medium)"
   --add-dir <session>`(OAuth login;`agy -p` 等效)。送圖前 `exif_transpose`
@@ -220,6 +233,54 @@ clamp 往後對齊;needs_review 清單回報使用者複核。
 基準:2026-07-05 實測 95%;導入 deck_page/tie-break 後 EXACT 11 → 14(R4,
 EXIF 轉正 + content_signal 描述),Opus 覆核成立。
 
+**反塌陷 + 分佈監管(2026-07-09 引入,day2 第8場實戰)**
+- **病灶**:舊 `solve_monotonic` 只求總分最大、對「多張圖疊同一段落」零成本 → 整段 demo
+  截圖一口氣倒在一個 anchor(實測 12 張擠一行);相關性 gate 逐張看局部分數,每張單看
+  都過 → audit 全綠、塌陷放行。「逐張相關性」對「塌陷」這個失效模式**天生是盲的**。
+- **反塌陷(軟)**:`propose_anchors.py` / `placement_supervisor.py` 的 DP 加 `stack_penalty`
+  ——同一行第 2 張起每張扣分,疊 t 張成本 (t-1)·penalty,逼連續投影片攤到連續段落。
+  supervisor 會自動把 penalty 從 0.08 升到收斂(無塌陷)為止。
+- **分佈硬檢核(硬,§ 與 S6.11.b 同口徑)**:單一 anchor 疊 **> 2 張即 fail**。
+  `scripts/placement_check.py` 為 SSoT,`prepublish_gate.py`(3b,**無條件**、不依賴 session)、
+  `insert_images.py --apply`(backstop,擋 clamp 重新製造的塌陷)、`publish_qaqc.py`(S6.11.b,
+  驗已部署 HTML)三處共用。判定對 kc-row 一行多張、cover/http 夾圖、一字墊行皆不被繞過。
+- **必在「出版產物」上驗,不只 master**:`build_*` 會刪 `---`/休息小標等分隔行,master 分佈
+  合格的收尾圖在 publish.md 可能黏成一段 → gate 3b/S6.11.b 對 publish.md 驗才抓得到。
+- **順序不得逆位(2026-07-09,§ 與 S6.11.c 同口徑)**:投影片有固有先後(deck_page /
+  檔名序號)。反塌陷/複核/手動編輯**不得把後面的投影片排到前面**,否則與講者原始放映順序
+  錯位。`placement_check.order_inversions` 為 SSoT,`prepublish_gate`(3c,無條件)與
+  `publish_qaqc`(S6.11.c,驗已部署 HTML)共用。單調 DP 本應保證,但這條把「不得逆位」變成
+  可稽核硬門(手動改動時才不會默默破壞)。**注意**與「講者回頭放同一張」(§ S4.5.12 遠距保留)
+  相容:回頭的那張其檔名序號仍在其原始位置,依序插入即不構成逆位。
+- **監管 loop(執行者流程)**:supervisor 收斂分佈 → 逐張算相關性分級 → warning/fail 交
+  Haiku 語意複核(在單調 allowed_range 內定案)→ 收不掉則吐 `spec_gap` 反寫本節,而非硬吞。
+
+**密集/概念型 deck 收尾 + 多場批次(2026-07-09,day2 五場 234 張實戰)**
+- **檔名序號放寬**:`_SEQ_RE` 認「副檔名前的數字 ≥2 位」(`01.png` / `happy-01.png` / `-0232.png`
+  皆可),不強制 dash。使用者手動命名(`NN.png`)也能得 deck_page → 排序/逆位檢核才有效。
+  拿到已描述圖後**先用檔名序號重設 deck_page**(舊 code 描述的無序號),再 dedupe(否則間距閘失效)。
+- **`finalize_placement.py`(deck-flow)**:supervisor 反塌陷 DP 在密集/弱錨點 deck 仍留 3-stack、
+  且把弱圖判 -1。對「必須全保留、圖序=放映序」的 deck,改用**依 deck 序均勻分佈**(structurally
+  單調+max-2+無-1);engine=`deck-flow`。audit S6.11 對 deck-flow 低分**降警告不擋**(序位才是
+  ground truth,相關性對概念圖屬建議性)。
+- **build-strip 不可當插入點**:`**講者：**`/`**講題：**`/`---`/休息小標會被 `build_*` 刪 → finalize
+  排除這些行當 anchor(否則圖落其後、build 刪行後黏成塌陷)。
+- **分章檢核**:聚合多場書各場獨立編號 → gate 的分佈/順序**以 `^## ` 切章分別跑**,不得跨章比對
+  (否則第 N 場末圖 vs 第 N+1 場首圖誤判逆位)。
+- **S6.11.c 只在有 deck_page 時跑**:舊照片書(無 image_notes、檔名是時間戳/`IMG_NNNN`,尾碼非
+  talk 序)跳過順序檢核,避免時間戳誤報。
+- **多場同名檔碰撞**:各場若用 bare `NN.png`,部署到同一目錄會互相覆蓋 → 每場**加唯一前綴**
+  (實體檔名 + image_notes `file` + master 引用三者一致)。Happy/Peggy 等已唯一命名不用加。
+
+**使用者手動校稿/排版覆寫(2026-07-09,Happy 場實戰)**
+- 使用者交回自己校稿+排好圖序的 `cleaned.md` = 該章權威版:保留 `## 第N場` 標題,其餘 body
+  全部取代;若使用者半形標點 → 先 `normalize_punctuation --in-place`(Phase C)再 build。
+- **人工確認覆寫**:`image_notes[*].human_grouped=true` 的圖 →(a)分佈檢核:整組全 approved
+  才放行連放(`overstacked(..., approved=)`);(b)相關性:視為軟性(手排章的相關性屬建議性)。
+  gate 從所有 session image_notes 收集 approved;S6.11.b/S6.11 同口徑。手排整章即全標。
+- **踩雷**:使用者貼圖常出現**多行破圖**(`![` 換行 `](x.png)`)→ markdown 渲染不出、圖消失;
+  去重/合併前先掃「單獨 `![` 開頭無 `](` 閉合」的行,補回單行 `![caption](x.png)`。
+
 ### S4.5.12 重複圖片去重(2026-07-06 引入)
 
 影片截圖抓拍會把同一張投影片拍進多幀。**describe 之後、anchors 之前**跑
@@ -227,13 +288,20 @@ EXIF 轉正 + content_signal 描述),Opus 覆核成立。
 **執行者 = Claude Haiku subagent**;工具為純 py 確定性比對(dHash + 詞彙
 Jaccard),直接呼叫、免語意判斷;Haiku 只讀「人工複核」清單做確認。
 
-**判定 = 雙訊號 AND 閘**(缺一不可):
+**判定 = 三訊號 AND 閘**(缺一不可,2026-07-09 補第 3 條):
 1. 影像指紋:dHash 64-bit Hamming ≤ 6(確定性)
 2. 描述一致:image_notes 描述詞彙 Jaccard ≥ 0.5
+3. **deck_page 間距 ≤ `--max-dup-gap`(預設 4)**:只有「連續截到同一張投影片的相鄰幀」
+   才算重複自動移除。
 
 只有影像近似、描述不同 = **同版型不同內容**(章節卡模板等)→ 列「人工複核」
 報告、保留兩張。實證:2026-06-26_1 的「892 天前/603 天前」兩張章節卡 dHash
 近似但描述相似僅 0.28,單訊號會誤刪。
+
+**遠距同張 ≠ 重複(2026-07-09,day2 第8場實戰)**:講者可能**中間隔了好幾張又回頭
+放同一張**(例:開場總覽 + 結尾總結),兩者 dHash + 描述都像、但 deck_page 相距很遠
+(實例 p232↔p268 相隔 36 頁)。這**不是連拍重複**,兩張各自對應不同段落的講述,**都要留**。
+故第 3 閘:間距 > max_gap → 不移除、列複核。缺這條會把「回頭放的同一張」誤刪、漏掉那段圖說。
 
 **--apply 行為**:每組保留 deck_page 最早一張;其餘自 cleaned.md 移除該圖行
 (正文零省略驗證,備份 `.pre-dedupe.bak`)、image_notes 標

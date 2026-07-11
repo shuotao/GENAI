@@ -107,6 +107,45 @@ scripts/publish_goodedunote.sh <cleaned.md> <workdir> <slug> [圖片來源目錄
 
 ---
 
+## 🔁 全流程總覽:自動迴圈與人的角色(2026-07-11 起)
+
+一場演講從音檔到上線,現在長這樣(粗體 = 有自動守門):
+
+```
+Step 1  Groq 轉錄            → transcript.srt(不可變)
+Step 2  Phase A 清理(工具) → Phase B 校稿(agent,§R2:60~120字/段)
+        → Phase C 全形標點(工具) → Phase D hook(agent) → cleaned.md
+Step 4.5 圖片:describe 必跑 → images_readme.md(描述伴讀)
+        → 【人放圖 或 AI 放圖(supervisor)】→ **三門驗證:分佈/順序/去重**
+Step 5  build → **prepublish_gate(全形/塌陷/逆位)** → deploy(人按「發」)
+Step 6  **publish_qaqc audit(306 項)**
+```
+
+### 迴圈什麼時候自動發生
+
+每一個粗體守門(gate / insert / audit)執行時都會:
+1. 寫一筆結構化 log → `sessions/<slug>/pipeline_log.jsonl` + `build/pipeline_runs.jsonl`
+2. **任何 check fail → 自動進 `build/improvement_queue.jsonl` 開單**
+3. 下次 agent 接手時消化 queue:修復 → 重驗 → 關單(`python3 scripts/pipeline_logger.py --list-open` 隨時看)
+
+也就是說:**你不需要主動檢查品質**——只要有任何一關失敗,單就開著,不修完不會消失;audit 綠 + queue 空 = 品質已被機器背書。
+
+### 人類的角色(收斂後)
+
+| 你做的 | 系統做的 |
+|---|---|
+| 提供音檔 + **context(務必含每位講者人名/產品專名**,ASR 對專名最不可靠) | 轉錄/清理/校稿/標點/hook,全程零省略 |
+| (可選)自己排圖前先讀 `images_readme.md`,看見簡報中你沒注意到的細節 | describe 必跑;AI 放圖時 supervisor 反塌陷 + Haiku 複核 |
+| (可選)手改 cleaned.md:改專名、拆段、刪口語——**你的終稿是權威**,刻意連放/重複圖會被標 human_grouped 放行 | 手改的 diff 會回流成規則(本輪已把你的段落風格 60~120 字寫進 §R2,Peggy 場驗證自動達標 71%) |
+| 按「發」(deploy 永遠人工扳機) | gate 擋壞件、audit 事後驗、fail 自動開單 |
+| **認真閱讀與學習內容本身** | 資料正確性由迴圈把關 |
+
+### Web Studio 受影響嗎?
+
+不受影響、反而同步受益:`web/studio.js` 用 `rulesSection()` 動態抓 `prompts/qaqc_core_rules.md` 的 §R2/§R7/§R8——**CLI 這輪改的分段規則,Web 下次 reload 自動生效**(SSoT 設計紅利,無需改 Web 程式)。
+
+---
+
 ## 🌐 何時用 Web Studio(`web/studio.html`)
 
 Web 與 CLI 做同一件事,但 Web 有獨家優勢:
@@ -170,7 +209,9 @@ GitHub Pages 部署版:`https://shuotao.github.io/GENAI/web/studio.html`
 - **`normalize_punctuation.py`**: Phase C 全形化確定性工具(§ R7.1;中文句一律全形,保護小數/網址/網域/檔名/碼/markdown 連結)
 - **`prepublish_gate.py`**: 出版前強制門(原則 9)— 檢查 Phase C/D 完成戳記 + 無殘留 marker + 全形 lint
 - **`publish_goodedunote.sh`** + **`publish_qaqc.py`**: Step 5 出版(md→HTML→壓圖→deploy;拆分依講者數:單一講者一場用 `--single` 單篇連續、多講者用 `--multipage`,見 CLAUDE.md 原則 8)與 Step 6 出版後 audit
-- **`describe_images.py`** + **`dedupe_images.py`** + **`propose_anchors.py`** + **`insert_images.py`** + **`pipeline_autopilot.sh`**: 圖片理解(Antigravity headless)→ Haiku 自動插圖 → 閉環入口(`session.py --images <dir>`,見 prompts/publish_qaqc.md § S4.5.11)
+- **`describe_images.py`** + **`dedupe_images.py`** + **`propose_anchors.py`** + **`insert_images.py`** + **`pipeline_autopilot.sh`**: 圖片理解(Antigravity headless;必跑,產 `images_readme.md` 描述伴讀供手排圖者參考)→ Haiku 自動插圖 → 閉環入口(`session.py --images <dir>`,見 prompts/publish_qaqc.md § S4.5.11)
+- **`placement_check.py`** + **`placement_supervisor.py`** + **`finalize_placement.py`**: 插圖分佈/順序監管(反塌陷、不逆位、去重間距;§ S4.5.11)
+- **`pipeline_logger.py`**: Step1~6 結構化 log(`pipeline_log.jsonl` / `build/pipeline_runs.jsonl`)+ check fail 自動進 `build/improvement_queue.jsonl` 的 return-and-improvement 迴圈
 - **`compress_images.py`**: 出版前圖片壓縮 + EXIF 轉正
 - **`image_notes_session.py`** + **`md_to_a4_png.py`**: 好學生筆記**圖像版**兩階段工具(`/note` 生 A4 底稿 → `/好學生筆記` 逐頁生圖;僅 Web/Antigravity/Gemini CLI 可驅動)
 - **`lang/`**: 多語系轉錄/清理腳本(目前有 `it/` 義大利文、`en/` 英文、`ja/` 日文)

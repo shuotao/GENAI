@@ -375,6 +375,7 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
     notes_files = [sess for sess in
                    (sessions_root.glob("*/image_notes.json") if sessions_root.is_dir() else [])
                    if slug in sess.parent.name or _notes_match_slug(sess, slug_dir)]
+    notes: dict = {}   # 有 image_notes 時填入;無則保持空(S6.11.b/c 不依賴它)
     if not notes_files:
         results.append(("S6.11 圖文相關性", True, "無 image_notes.json(舊書/無圖流程),跳過"))
     else:
@@ -416,14 +417,69 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
                 checked += 1
                 if _verdict(s) == "fail":
                     eng = (n.get("anchor") or {}).get("engine", "")
-                    if eng in ("haiku-reviewed", "human"):
-                        soft_corr.append(f"{msrc.group(1)}(score={s:.3f})")  # 執行者已複核
+                    # 軟性(警告不擋):haiku-reviewed/human 已複核;deck-flow 依放映序流水放置;
+                    # human_grouped = 使用者手動排定的位置(相關性對手排章屬建議性)。
+                    if eng in ("haiku-reviewed", "human", "deck-flow") or n.get("human_grouped"):
+                        soft_corr.append(f"{msrc.group(1)}(score={s:.3f})")
                     else:
                         bad_corr.append(f"{msrc.group(1)}: score={s:.3f} 與上下文不相關")
         detail = f"{checked} 張圖皆 ≥ fail 門檻" if not bad_corr else "; ".join(bad_corr[:4])
         if soft_corr:
             detail += f";⚠ 執行者已複核的低分離題圖 {len(soft_corr)}(不擋): {soft_corr[:3]}"
         results.append(("S6.11 圖文相關性(描述↔上下文)", not bad_corr, detail))
+
+    # S6.11.b/c 無條件對「所有含圖的書」跑(不依賴 image_notes;順序用檔名序號 fallback)。
+    # 2026-07-09:堵住「舊工具出的書(無 image_notes)整段被跳過、audit 綠但沒驗到」的漏洞。
+    if imgs:
+        # S6.11.b 分佈塌陷(2026-07-09,§ S4.5.11)— 連續 N 張圖倒在同一段落。
+        # F1:以每個 <img>(含 kc-row 並排 div 內)為單元,只有「實質正文」才重置 run,
+        # 避免 figure/kc-row/一字墊行的表示差異讓塌陷穿透。
+        MAX_PER_ANCHOR = 2
+        # 人工確認可連放的圖(image_notes.human_grouped)→ 整組放行(§ S4.5.11 人工覆寫)
+        approved_grp = {f.split("/")[-1] for f, n in notes.items() if n.get("human_grouped")}
+        collapse = []
+        unit_re = re.compile(r'<img\b[^>]*\bsrc="([^"]+)"[^>]*>|<(p|h2|h3)[^>]*>(.*?)</\2>', re.S)
+
+        def _run_bad(run_srcs):
+            return len(run_srcs) > MAX_PER_ANCHOR and not all(
+                s.split("/")[-1] in approved_grp for s in run_srcs)
+        for p in pages:
+            html = p.read_text(encoding="utf-8")
+            body = re.sub(r"<head>.*?</head>", "", html, flags=re.S)
+            run_srcs: list[str] = []
+            for mm in unit_re.finditer(body):
+                if mm.group(1) is not None:            # <img src=...>
+                    run_srcs.append(mm.group(1))
+                else:
+                    if _TAG_RE.sub("", mm.group(3)).strip():   # 實質正文才打斷
+                        if _run_bad(run_srcs):
+                            collapse.append(f"{p.name}:一段落後連掛 {len(run_srcs)} 張")
+                        run_srcs = []
+            if _run_bad(run_srcs):
+                collapse.append(f"{p.name}:結尾連掛 {len(run_srcs)} 張")
+        cdetail = (f"最擠一段 ≤ {MAX_PER_ANCHOR} 張,無塌陷" if not collapse
+                   else "; ".join(collapse[:5]) + "(連續投影片未攤到對應段落;§ S4.5.11)")
+        results.append(("S6.11.b 圖片分佈(不塌陷)", not collapse, cdetail))
+
+        # S6.11.c 順序逆位(2026-07-09,§ S4.5.11)— 後面投影片被排到前面 = 與原始順序錯位。
+        # 僅在有 image_notes 的 deck_page(投影片管線決定的權威放映序)時檢查;舊照片書
+        # (無 image_notes、檔名是時間戳/IMG 流水號,尾碼非talk序)跳過,避免時間戳誤報。
+        from placement_check import order_inversions as _order_inv  # noqa: E402
+        dp_of = {f: n.get("deck_page") for f, n in notes.items() if n.get("deck_page") is not None}
+        if not dp_of:
+            results.append(("S6.11.c 圖片順序(不逆位)", True, "無 deck_page(舊照片書/非投影片序),跳過"))
+        else:
+            inv = []
+            for p in pages:
+                html = p.read_text(encoding="utf-8")
+                refs_html = "\n".join(f"![]({m})" for m in re.findall(r'<img\b[^>]*\bsrc="([^"]+)"', html))
+                # 只比對「有 deck_page 的圖」;無 deck_page 的(封面等)不參與序
+                refs_dp = "\n".join(l for l in refs_html.splitlines()
+                                    if any(l.split("](")[-1].rstrip(")").endswith(k) for k in dp_of))
+                for a_ref, a_s, b_ref, b_s in _order_inv(refs_dp, dp_of):
+                    inv.append(f"{p.name}:{a_ref.split('/')[-1]}(序{a_s})在 {b_ref.split('/')[-1]}(序{b_s})之前")
+            idetail = "圖序與 deck_page 一致(無逆位)" if not inv else "; ".join(inv[:5]) + "(§ S4.5.11)"
+            results.append(("S6.11.c 圖片順序(不逆位)", not inv, idetail))
 
     # S6.12 圖片去重與孤兒(2026-07-06 引入,§ S4.5.12 / § S6.12)
     img_files = [f for f in slug_dir.iterdir()
@@ -446,7 +502,12 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
         for f in img_files:
             by_md5.setdefault(hashlib.md5(f.read_bytes()).hexdigest(), []).append(f.name)
         exact_dupes = [v for v in by_md5.values() if len(v) > 1]
-        near_note = ""
+        # 人工確認(human_grouped)的圖:使用者刻意在多處重放同一張投影片(匯出成多個檔名)
+        # → 整組都人工確認時降為警告不擋(§ S4.5.11 人工覆寫)。
+        _hg = {f.split("/")[-1] for f, n in notes.items() if n.get("human_grouped")}
+        soft_dupes = [g for g in exact_dupes if all(x in _hg for x in g)]
+        exact_dupes = [g for g in exact_dupes if g not in soft_dupes]
+        near_note = f";⚠ 人工確認的重複組 {len(soft_dupes)}(不擋)" if soft_dupes else ""
         try:
             sys.path.insert(0, str(PROJECT_ROOT / "scripts"))
             from dedupe_images import dhash, hamming  # noqa: E402
@@ -454,9 +515,9 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
             near = [(a, b) for i, (a, ha) in enumerate(hashes)
                     for b, hb in hashes[i + 1:] if hamming(ha, hb) <= 6]
             if near:
-                near_note = f";⚠ 近似對 {len(near)}(人工複核,同版型不一定重複)"
+                near_note += f";⚠ 近似對 {len(near)}(人工複核,同版型不一定重複)"
         except Exception:  # noqa: BLE001 — PIL 缺席時跳過近似檢測
-            near_note = ";近似檢測跳過(PIL 不可用)"
+            near_note += ";近似檢測跳過(PIL 不可用)"
         results.append((
             "S6.12 無完全重複圖片",
             not exact_dupes,
@@ -579,6 +640,7 @@ def main() -> int:
         return 2
 
     total_pass = total_fail = total_books = 0
+    fail_items: list[tuple[str, str]] = []  # (book_id_or_scope, "rule_id — detail")
 
     # 跨書檢查:站台文字 freshness(S6.7)
     if not args.slug:  # --slug 模式跳過,避免無關書本被 flag
@@ -591,6 +653,7 @@ def main() -> int:
             else:
                 total_fail += 1
                 print(f"  ✗ {rule_id} — {detail}")
+                fail_items.append(("(site)", f"{rule_id} — {detail}"))
 
     for shelf in shelves:
         shelf_id = shelf["id"]
@@ -606,6 +669,7 @@ def main() -> int:
                 else:
                     total_fail += 1
                     print(f"  ✗ {rule_id} — {detail}")
+                    fail_items.append((f"(shelf:{shelf_id})", f"{rule_id} — {detail}"))
         for book in shelf["books"]:
             if book.get("placeholder"):
                 continue
@@ -622,9 +686,24 @@ def main() -> int:
                 else:
                     total_fail += 1
                     print(f"  ✗ {rule_id}" + (f" — {detail}" if detail else ""))
+                    fail_items.append((book["id"], f"{rule_id}" + (f" — {detail}" if detail else "")))
 
     print("\n" + "=" * 60)
     print(f"審查完成:{total_books} 本書 / {total_pass} 項通過 / {total_fail} 項失敗")
+
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        from pipeline_logger import log_stage, enqueue_improvement  # noqa: E402
+        session_label = args.slug or "(all)"
+        log_stage(None, "S6-audit", "publish_qaqc.py",
+                  "pass" if total_fail == 0 else "fail",
+                  metrics={"passed": total_pass, "failed": total_fail, "books": total_books},
+                  detail=session_label)
+        for book_id, issue in fail_items:
+            enqueue_improvement("S6-audit", book_id, issue)
+    except Exception:  # noqa: BLE001 — logger 缺席不影響 audit 結果
+        pass
+
     if total_fail == 0:
         print("✅ 全部通過")
         return 0

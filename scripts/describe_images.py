@@ -95,7 +95,7 @@ REQUIRED_FIELDS = ("text_in_image", "layout", "speaker_view", "audience_view", "
 _PAGE_RE = re.compile(r"\b(\d{1,3})\s*/\s*(\d{1,3})\b")
 
 
-_SEQ_RE = re.compile(r"-(\d{3,})\.[a-zA-Z]+$")  # 影片截圖檔名序號 = 演講時序
+_SEQ_RE = re.compile(r"(\d{2,})\.[a-zA-Z]+$")  # 副檔名前的序號 = 演講時序(≥2 位;含 01.png / happy-01.png / -0232.png)
 
 
 def extract_deck_page(text: str, filename: str = "") -> int | None:
@@ -165,6 +165,60 @@ def describe_one(img_path: Path, session_dir: Path, model: str) -> tuple[dict, s
     raise RuntimeError(f"antigravity 兩次皆失敗: {last_err}")
 
 
+# ── 確定性:描述伴讀 images_readme.md(§ S4.5.11「描述伴讀與人機分流」)──
+# 讓「自己手排圖」的使用者在放圖前先看見簡報中沒注意到的細節(逐字稿/雙視角/圖中文字)。
+# 純確定性:從 image_notes 逐張渲染,不打任何引擎。
+README_TEXT_LIMIT = 200  # text_in_image 摘錄上限(字元)
+
+
+def write_images_readme(session_dir: Path, notes: list[dict]) -> Path:
+    """從 image_notes 產 sessions/<slug>/images_readme.md(描述伴讀)。
+
+    每張圖一節:`### <檔名>` + `![](<檔名>)` + caption + speaker_view/audience_view
+    (各一行)+ text_in_image 摘錄(≤200 字,code block)。回傳寫出的路徑。
+    """
+    session_dir = Path(session_dir)
+    lines: list[str] = [
+        f"# 圖片描述伴讀 — {session_dir.name}",
+        "",
+        f"共 {len(notes)} 張。放圖前先讀:每張圖的雙視角敘述與圖中文字,",
+        "常含簡報當下沒注意到的細節(§ S4.5.11 描述伴讀與人機分流)。",
+        "",
+    ]
+    for n in notes:
+        fname = n.get("file", "")
+        lines.append(f"### {fname}")
+        lines.append("")
+        lines.append(f"![]({fname})")
+        lines.append("")
+        caption = (n.get("caption") or "").strip()
+        if caption:
+            lines.append(caption)
+            lines.append("")
+        sv = (n.get("speaker_view") or "").strip()
+        av = (n.get("audience_view") or "").strip()
+        if sv:
+            lines.append(f"- **講者視角**:{sv}")
+        if av:
+            lines.append(f"- **聽眾視角**:{av}")
+        if sv or av:
+            lines.append("")
+        text = (n.get("text_in_image") or "").strip()
+        if text:
+            excerpt = text[:README_TEXT_LIMIT]
+            if len(text) > README_TEXT_LIMIT:
+                excerpt += "…"
+            lines.append("圖中文字摘錄:")
+            lines.append("")
+            lines.append("```")
+            lines.append(excerpt)
+            lines.append("```")
+            lines.append("")
+    out = session_dir / "images_readme.md"
+    out.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    return out
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="圖片理解 orchestrator(§ S4.5.11)")
     ap.add_argument("--session", required=True)
@@ -172,9 +226,22 @@ def main() -> int:
     ap.add_argument("--limit", type=int, default=0, help="只處理前 N 張(smoke/測試用)")
     ap.add_argument("--max-consecutive-fails", type=int, default=3,
                     help="連續失敗達此數即中止整批(原則 9,別在死路裡空轉;預設 3)")
+    ap.add_argument("--readme-only", action="store_true",
+                    help="不打 antigravity,只從既有 image_notes.json 重產 images_readme.md")
     a = ap.parse_args()
 
     sdir = Path(a.session).resolve()
+
+    if a.readme_only:
+        notes_path = sdir / "image_notes.json"
+        if not notes_path.exists():
+            print(f"[images] {notes_path} 不存在,無法產 readme", file=sys.stderr)
+            return 1
+        notes = json.loads(notes_path.read_text(encoding="utf-8"))
+        out = write_images_readme(sdir, notes)
+        print(f"[images] 描述伴讀已重產 → {out}({len(notes)} 節)")
+        return 0
+
     img_dir = sdir / "images"
     scan_dir = img_dir if img_dir.is_dir() else sdir
     images = sorted(p for p in scan_dir.iterdir()
@@ -237,6 +304,8 @@ def main() -> int:
     print(f"[images] 本輪 {done} 張完成 / {errs} 張失敗 | 累計 described {total_described}/{len(images)}")
 
     if total_described == len(images) and not a.limit:
+        readme = write_images_readme(sdir, notes)  # 描述伴讀(§ S4.5.11)
+        print(f"[images] 描述伴讀 → {readme}")
         marker = sdir / ".images_pending.json"
         if marker.exists():
             marker.unlink()
