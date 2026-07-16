@@ -717,3 +717,23 @@ Web 使用者 git pull(或瀏覽器下次 reload)
 - **雙軌授權**:程式碼 MIT(`LICENSE`)+ 內容 CC BY 4.0(`LICENSE-CONTENT`)
   + 講者話語講者保留(`NOTICE`)。所有出版頁 footer 自動套授權行,
   root index 也壓在最底。**新增任何引用第三方內容前**,先看 `NOTICE` 確認層級。
+
+---
+
+## 部署完成的定義(2026-07-16 依 /insights 報告新增;附加條款,不取代上述任何原則)
+
+> 本節是原則 7/8/9 的**收尾補強**,不改變任何既有步驟或關卡;
+> 逐步獨立執行(原則 9)、prepublish gate、Step 4.5/6 QAQC 照常全部執行。
+
+1. **commit 之後必 push**。本專案有兩個部署層(原則 7):Step 5 筆記出版層
+   (Firebase `goodedunote`)與 GENAI Web 端(GitHub Pages,吃 git push 生效)。
+   歷史摩擦:多次 commit 沒 push,GitHub Pages / 字典分發(Git-as-Knowledge-Base
+   機制靠 push 分發)停在舊版,線上看起來「還是壞的」。
+2. **宣告完成前,實際打開線上網址驗證**:
+   - Step 5 出版 → 開 `https://goodedunote.web.app/<slug>/` 確認新頁可見、
+     無亂碼(mojibake)、書架 back-link 正確(Step 6 audit 之外再加一眼人工確認)。
+   - 改 `/web` → push 後開 GitHub Pages 網址確認生效。
+3. **兩層部署不互相觸發(原則 7 鐵律)但各自都要收尾**:動了哪一層,就把該層
+   deploy/push + 線上驗證做完;若同一次工作兩層都動了,兩層都要收尾,不得只做一半。
+4. 長逐字稿/翻譯的產出**分段寫檔**,不要一次性輸出到對話(避免輸出 token 上限);
+   拆分只影響輸出方式,零省略 95–105% 字數帶照常適用。
