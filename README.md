@@ -69,6 +69,10 @@ python3 scripts/session.py new "諮詢錄音.m4a" \
 > `scripts/prepublish_gate.py`(由 `publish_goodedunote.sh` 開頭呼叫)會擋下未過 Phase C/D 的出版。
 > 與 Phase A/B 同樣操作同一份 cleaned.md;Step 3+ 才換產物。
 
+> **多場次書要先做 Step 4.5 場次狀態收斂**(CLAUDE.md 原則 8 / § S4.5.13):錄音若是「拆檔(每檔一場)」或
+> 「一檔多講者」,先跑 `classify_session.py` 判狀態(分類後停等確認)→ `build_book_master.py` 收斂成同一
+> canonical master → `step45_converge.py` dry-run 驗 `session==toc==##`,兩型態才會出版成一致的書。
+
 > **Step 5(出版)是獨立的一層**:把任一 md 產物轉成分頁式 HTML,deploy 到 Firebase 的 **`goodedunote`** 專案
 > (`https://goodedunote.web.app/<slug>/`,每篇一個子路徑)。
 > 工具:`scripts/lang/en/md_to_html.py`(md→HTML)+ `scripts/publish_goodedunote.sh`(同步圖 + `deploy --only hosting`)。
@@ -208,7 +212,8 @@ GitHub Pages 部署版:`https://shuotao.github.io/GENAI/web/studio.html`
 - **`qaqc_phase_b.py`**: Gemini-powered 校稿(merged / polish〔Phase C 冒號+Phase D hook〕/ enhance / notes / structured 模式)
 - **`normalize_punctuation.py`**: Phase C 全形化確定性工具(§ R7.1;中文句一律全形,保護小數/網址/網域/檔名/碼/markdown 連結)
 - **`prepublish_gate.py`**: 出版前強制門(原則 9)— 檢查 Phase C/D 完成戳記 + 無殘留 marker + 全形 lint
-- **`publish_goodedunote.sh`** + **`publish_qaqc.py`**: Step 5 出版(md→HTML→壓圖→deploy;拆分依講者數:單一講者一場用 `--single` 單篇連續、多講者用 `--multipage`,見 CLAUDE.md 原則 8)與 Step 6 出版後 audit
+- **`classify_session.py`** + **`build_book_master.py`** + **`step45_converge.py`**: Step 4.5 場次狀態分類與收斂 — 把「拆檔錄音(State A)」與「一檔多講者(State B)」都收斂成同一 canonical master,確保出版一致;`step45_converge.py` 做 dry-run 驗 `session==toc==##`(規則見 CLAUDE.md 原則 8 / prompts/publish_qaqc.md § S4.5.13;取代寫死的 `build_genai2026_day1/day2.py`)
+- **`publish_goodedunote.sh`** + **`publish_qaqc.py`**: Step 5 出版(md→HTML→壓圖→deploy;`DRY_RUN=1` 可停在部署前;拆分依講者數:單一講者一場用 `--single` 單篇連續、多講者用 `--multipage`,見 CLAUDE.md 原則 8)與 Step 6 出版後 audit
 - **`describe_images.py`** + **`dedupe_images.py`** + **`propose_anchors.py`** + **`insert_images.py`** + **`pipeline_autopilot.sh`**: 圖片理解(Antigravity headless;必跑,產 `images_readme.md` 描述伴讀供手排圖者參考)→ Haiku 自動插圖 → 閉環入口(`session.py --images <dir>`,見 prompts/publish_qaqc.md § S4.5.11)
 - **`placement_check.py`** + **`placement_supervisor.py`** + **`finalize_placement.py`**: 插圖分佈/順序監管(反塌陷、不逆位、去重間距;§ S4.5.11)
 - **`pipeline_logger.py`**: Step1~6 結構化 log(`pipeline_log.jsonl` / `build/pipeline_runs.jsonl`)+ check fail 自動進 `build/improvement_queue.jsonl` 的 return-and-improvement 迴圈

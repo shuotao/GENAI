@@ -50,6 +50,12 @@ if [ "${#SRCS[@]}" -gt 0 ]; then
   python3 "$ROOT/scripts/compress_images.py" "$PUB" "${SRCS[@]}"
 fi
 
+# 2.5) DRY_RUN=1:產出 HTML + 壓圖後停在部署前(step45_converge.py 的一致性 dry-run 用,不上線)
+if [ "${DRY_RUN:-}" = "1" ]; then
+  echo "[publish] DRY_RUN=1 → 已產 HTML 於 $PUB,略過 firebase deploy(未上線)"
+  exit 0
+fi
+
 # 3) 部署(只 hosting,只 goodedunote)
 # 帳號:goodedunote 專案用 codefortaiwan.com@gmail.com 發布(每個專案發布帳號不同)。
 # 可用 FIREBASE_ACCOUNT 環境變數覆寫;空字串則用 firebase 當前預設帳號。
