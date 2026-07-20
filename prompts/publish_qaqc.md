@@ -179,6 +179,18 @@ S4.5.9 沒做好,應該回頭改文字而不是放任 grep 每次 fail。
 與現行 live 差異:現行位置 tail 由 **Haiku** 複核;四角色版把位置 tail 改 **Codex**、Haiku 降為 `--apply`
 驅動、加 **Opus** 語意驗證。State A 多場書須**每 session 各自跑完此鏈把圖攤放,才進 § S4.5.13 合併**。
 
+**放置品質調校迴圈與已知天花板(2026-07-20 實測,BIM 第1場 23 張):** 有使用者手排 ground-truth 時,用
+`scripts/compare_placement.py --gt <gt> --pred <anchors> --tol N` 量化相符率(tol=±N content-line),
+跑「Haiku 放置 → 比 GT → Sonnet 診斷 → 調 prompt/規則 → loop」。實測各法對 GT(tol±1 / ±2):
+純字面 `propose_anchors` 30%/35%、Haiku 自由放置 3 輪 48→57→**61%/78%**、Sonnet 直放 57%/70%、
+`scripts/place_by_section.py`(Fable 建議的**章節綁定** Viterbi + first-occurrence + step-cap,把 `##` 小標
+當硬邊界)+ Haiku 只做粗分節 39%/61%。**天花板 ~78%(tol±2),達不到 90%**。
+根因(Fable/Sonnet 共識):**放置是「敘事位置(何時翻到該片)」,不是「主題分類」** —— 少數投影片在講 A
+主題時被順帶秀出(如 CAD 串 Revit 段先預覽「封裝 MCP」的圖),其 caption 主題對到的是**後面**的段落,
+任何主題/關鍵字比對都會系統性放太晚(單向偏差,deck16~19 恆錯)。**結論:自動放置只能到「同區±2 段」,
+最後幾張敘事錯位的圖需人工定奪;有手排 GT 時直接採用手排。** 章節綁定 + step-cap 能把誤差封頂在小節寬度、
+消除大跳,是目前自動化的最佳確定性骨架(`place_by_section.py`),但無 offline embedding 前無法根治敘事錯位。
+
 **描述伴讀與人機分流(2026-07-11 引入)**
 - **工作流**:`describe(必跑)→ images_readme.md(伴讀)→ [人放圖 | AI 放圖(supervisor)] → 三門驗證(分佈/順序/去重)照跑`。
   describe 無論後續誰放圖都**必跑**:它產的 `images_readme.md`(每張圖一節:檔名 + 圖 + caption +
