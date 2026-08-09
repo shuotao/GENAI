@@ -16,9 +16,16 @@
   api — generativelanguage API key 通道(GEMINI_API_KEY from .env);受原則 5
       宿主引擎守衛,需 --force-api 明確授權。
 
+領域先驗(--domain):
+  本場的領域敘述 + 必須原字串保留的專名清單,可直接給字串或給 .txt 路徑。
+  省略時用通用技術演講 prime(DEFAULT_DOMAIN)。
+  歷史註記:2026-08-08 以前此 prime 寫死 Autodesk Revit MEP;
+  要重現 mechanical-design-cert-prep 需明確帶 --domain(見 README 範例)。
+
 Usage:
   python3 md_translate_zhtw.py IN.md -o OUT.md [--engine antigravity|api]
                                [--model NAME] [--batch 30] [--force-api]
+                               [--domain "領域敘述+專名" | --domain path/to/domain.txt]
 """
 
 import argparse
@@ -127,14 +134,32 @@ def strip_fence(text: str) -> str:
     return t
 
 
-PROMPT = """你是專業繁體中文(台灣)技術譯者。以下是 Autodesk Revit MEP 教學逐段英文文本,
+DEFAULT_DOMAIN = "一般技術演講/教學。產品名、專案名、指令與縮寫一律保留英文原字串。"
+
+
+def resolve_domain(value: str | None) -> str:
+    """--domain 接受「字串」或「.txt 路徑」(比照 session.py 的 --context 語義)。"""
+    if not value:
+        return DEFAULT_DOMAIN
+    p = Path(value)
+    if p.exists() and p.is_file():
+        return p.read_text(encoding="utf-8").strip()
+    return value.strip()
+
+
+PROMPT = """你是專業繁體中文(台灣)技術譯者。以下是逐段英文文本,
 以 JSON 陣列給出,共 {n} 段。請逐段翻譯為繁體中文,回傳「同長度」的 JSON 字串陣列,
-第 i 個元素是第 i 段的完整翻譯。規則:
+第 i 個元素是第 i 段的完整翻譯。
+
+【本場領域與專名】
+{domain}
+
+規則:
 1. 忠實完整翻譯,零省略、零增添;不可合併或拆分段落。
 2. 段落若以 Markdown 標題開頭(#/##/###),保留相同的標題前綴。
-3. 產品名、軟體 UI 名稱、指令、參數名、檔案格式、縮寫保留英文
-   (如 Revit、MEP、System Browser、CFM、duct 譯「風管」但 Duct Systems 面板名可保留)。
-4. 使用台灣工程慣用語;標點使用全形。
+3. 產品名、軟體 UI 名稱、指令、參數名、檔案格式、縮寫一律保留英文;
+   上方【本場領域與專名】列出的專名,必須原字串輸出,不得音譯或意譯。
+4. 使用台灣業界慣用語;標點使用全形。
 5. 只輸出 JSON 陣列,不要任何其他文字。
 
 輸入段落:
@@ -161,9 +186,9 @@ def extract_json_array(raw: str) -> str:
 
 
 def translate_batch(blocks: list[str], api_key: str, model: str,
-                    engine: str) -> list[str]:
+                    engine: str, domain: str = DEFAULT_DOMAIN) -> list[str]:
     payload = json.dumps(blocks, ensure_ascii=False)
-    prompt = PROMPT.format(n=len(blocks), payload=payload)
+    prompt = PROMPT.format(n=len(blocks), payload=payload, domain=domain)
     for attempt in range(1, 4):
         if engine == "antigravity":
             try:
@@ -199,9 +224,16 @@ def main() -> None:
     ap.add_argument("--model", default=None,
                     help="預設: antigravity=gemini-3.6-flash-medium, api=gemini-2.5-flash")
     ap.add_argument("--batch", type=int, default=30)
+    ap.add_argument("--domain", default=None,
+                    help="本場領域先驗:領域敘述 + 必須保留原文的專名清單。"
+                         "可給字串或 .txt 路徑;省略時用通用技術演講 prime。")
     ap.add_argument("--force-api", action="store_true",
                     help="(--engine api 時)明確授權,在宿主引擎環境下仍走 API")
     args = ap.parse_args()
+
+    domain = resolve_domain(args.domain)
+    print(f"[translate] domain prime ({len(domain)} chars): {domain[:80]}…",
+          file=sys.stderr)
 
     if args.model is None:
         args.model = ("gemini-3.6-flash-medium" if args.engine == "antigravity"
@@ -238,7 +270,7 @@ def main() -> None:
         if not pending:
             continue
         result = translate_batch([blocks[i] for i in pending], api_key,
-                                 args.model, args.engine)
+                                 args.model, args.engine, domain)
         for i, zh in zip(pending, result):
             done[str(i)] = zh
         progress_path.write_text(

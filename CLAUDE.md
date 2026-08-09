@@ -185,7 +185,7 @@ Phase A/B/C/D 都在精修同一份 cleaned.md(A/B 產出、C/D 出版前強制�
 
 - `.phase_c_pending.json`(stage `phase-c`,SSoT § R7):先跑確定性工具 `scripts/normalize_punctuation.py --in-place`(全形化),再依 § R7.2 補全形冒號;完成後刪 marker、`metadata.json` 的 `qaqc.phase_c.status` 改 `done`。
 - `.phase_d_pending.json`(stage `phase-d`,SSoT § R8):依 § R8 補內容指涉型 hook,零省略 1:1;完成後刪 marker、`qaqc.phase_d.status` 改 `done`。
-- **出版閘**:`scripts/prepublish_gate.py`(由 `publish_goodedunote.sh` 開頭呼叫)會擋下「2.2/2.5 未 done、marker 殘留、或正文仍有 CJK 語境半形標點」的出版。
+- **出版閘**:`scripts/prepublish_gate.py`(由 `publish_goodedunote.sh` 開頭呼叫)會擋下「2.2/2.5 未 done、marker 殘留、正文仍有 CJK 語境半形標點,或出現 `[文字](網址)` 連結語法(§ S6.14 — 本管線只支援裸網址自動連結)」的出版。
 
 ### 原則 6 — 算力分工:確定性工作用工具,LLM 只做判斷(2026-05 引入)
 
@@ -620,6 +620,13 @@ Whisper 的幻覺集中在**靜音/音樂/掌聲/休息/開場墊場**等非語�
    - **例外:Web Step 2 的 `cleaned.md` 可選「翻譯成繁體中文」**。因為 `cleaned.md` 本就**刻意丟棄時間軸**(Step 2 產物定位),翻譯合併進 Phase B(Gemini 一次「忠實翻譯+校稿」)**不違反原則 2**(沒有時間軸要保護);零省略改用 **1:1 段落對齊**驗證(E3),不用跨語言失效的字數比。**要保留時間軸的翻譯**仍須走 `srt_zhtw.py` 結構保留路徑,不可用此捷徑。
    - **歷史假設更正**:本專案早期假設「音檔永遠是繁體中文」(`language` 寫死 zh),處理非中文音檔即壞。此假設已移除,改為自動偵測 + 可手動覆寫。
 
+7. **吵雜場地的 context prompt 會被 Whisper 吐回成幻覺 —— 轉完先量化,中招就整場無 prompt 重轉**
+   - **症狀**:靜音/掌聲/換場等非語音段,Whisper 照著我們給的 prompt 生成,產出「內容包含 X、Y、Z…」(中文)或「Key terms …」(英文)的整條亂碼 cue。它**不只是加噪,是蓋掉真實話語**。
+   - **量化**:轉完立刻 `grep -c '內容包含\|字幕由' <srt>`(英文用 `Key terms`)。>0 就整場重來 —— 2026-08-08 COSCUP 11 場中 6 場中招,最高一場 20.8% 的 cue 是純幻覺。
+   - **解方(已內建)**:`GROQ_NO_PROMPT=1`(完全不送 prompt,連 base 句也不送)+ `GROQ_CHUNK_SECONDS=300`(短切段抑制迴圈),`groq_transcribe.py` 與 `groq_transcribe_en.py` 皆支援。實測 echo 歸零、**CJK 字數反增 10–18%**(被蓋掉的內容回來了)。
+   - **重轉要整場重建**:`session.py` 拒絕既有目錄,且 `cleaned.md` 與 marker 的字數區間要一致重生 → 先把舊 SRT 複製出去當 Phase B 專名交叉參考,再 `rm -rf` 該 session 重跑。
+   - **代價與補償**:無 prompt 會失去專名先驗(如 Open Data→「Open Beta」),改由 Phase B 依 `context.txt` + 官方議程校正(核心鐵律 F1)。**字數門要記得放行**:ASR base 被幻覺灌水時 95–105% 的分母無效,真門是 `build_book_master` 的 self_assert(≥99.5%)與 `publish_qaqc` 字數漂移(<10%)。
+
 ---
 
 ## Git-as-Knowledge-Base 機制
@@ -705,6 +712,8 @@ Web 使用者 git pull(或瀏覽器下次 reload)
 | **Step 5** 圖片壓縮 + EXIF 轉正 | `/scripts/compress_images.py`(出版前壓縮省流量、把手機側拍照轉正) |
 | **Step 5** 出版到 Firebase goodedunote | `/scripts/publish_goodedunote.sh`(多頁 HTML + 壓圖 + `deploy --only hosting`;自動帶 `--base-url`) |
 | **Step 5** goodedunote 部署根(累積所有筆記) | `/scripts/publish/goodedunote/`(每篇 `public/<slug>/`) |
+| **Phase B** 段落長度量測 | `/scripts/para_len_check.py`(§ R2.1 目標 60~120 CJK 字;只量測不切段——切在哪是語意判斷。判準刻意不對稱:超長才 fail、過短僅提醒,因為 § R2.1 寫的是「寧短勿長」) |
+| **Phase D** 只插入不改寫的證明 | `/scripts/phase_d_check.py`(§ R8.2;`--snapshot` 存 base → 事後驗段落數 1:1 + **原文字元須為新文字的子序列** + CJK 成長率上限。子序列比對可精確指出被刪改的位置) |
 | Standalone 轉錄 | `/SRT/transcribe.py` |
 | QA/QC 腳本 | `/SRT/qaqc_srt.py` |
 | Context 範例檔 | `/SRT/context.example.txt` |

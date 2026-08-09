@@ -59,6 +59,22 @@ def main() -> int:
         fails.append(f"全形 lint:{md_path.name} 仍有 {residual} 處 CJK 語境半形標點未轉"
                      f"(跑 `python3 scripts/normalize_punctuation.py {md_path.name} --in-place`)")
 
+    # (3a) 連結語法殘留(§ S6.14)— md_to_html 的 inline_md() 只處理 **粗體** 與裸網址
+    # 自動連結,`[文字](網址)` 會原封渲染成字面可見文字。全書 corpus 從未使用該語法,
+    # 也沒有任何事後檢查會抓到,破掉的連結會靜默上線 → 出版前直接擋。
+    # 正解:空格包夾的裸網址 + 全形括號(先例 build/genai2026-july-meetup/publish.md)。
+    # 注意排除圖片語法 ![..](..) —— 圖片走 img_prefix/placement 那條路,是合法的。
+    # lookbehind 要放在整個 `[…](` 的開頭 `[` 之前 —— 放在 `](` 之前會誤判,
+    # 因為 `![](x.png)` 的 `](` 前一字是 `[` 而不是 `!`。
+    link_residue = [
+        (i, ln) for i, ln in enumerate(md_text_all.splitlines(), 1)
+        if re.search(r"(?<!!)\[[^\]]*\]\(", ln)
+    ]
+    if link_residue:
+        head = "; ".join(f"L{i}:{ln.strip()[:40]}" for i, ln in link_residue[:3])
+        fails.append(f"連結語法殘留(§ S6.14):{md_path.name} 有 {len(link_residue)} 行含 "
+                     f"`[文字](網址)`,md_to_html 會渲染成字面文字 → 改成空格包夾的裸網址。{head}")
+
     # (3b) 分佈塌陷 — 無條件驗(不依賴 session;master-centric/legacy 裸 md 也擋)。
     # 這是「連續投影片倒同一段」的硬門,與 § S6.11.b 事後 audit 同口徑。
     from placement_check import overstacked, order_inversions  # noqa: E402
@@ -149,6 +165,83 @@ def main() -> int:
                     fails.append(f"圖文相關性:{m.group(1)} score={s:.3f} < {THRESHOLD_FAIL}"
                                  f"(描述與上下文不相關,複核 anchor;§ S4.5.11)")
             # (分佈塌陷已由上方 (3b) 無條件檢核涵蓋,此處不重複)
+
+    # (3c) 座談對談歸屬與順序(§ S4.5.14)— 只在找得到 reference_notes.md 的
+    # panel session 時檢查(單一講者/舊書零影響)。
+    panel_sessions: list[Path] = []
+    sessions_root = Path(__file__).resolve().parent.parent / "sessions"
+    book_data: dict | None = None
+    if root is not None and (root / "reference_notes.md").is_file():
+        panel_sessions = [root]
+    elif root is None:
+        book_json = md_path.parent / "book.json"
+        if book_json.is_file():
+            try:
+                book_data = json.loads(book_json.read_text(encoding="utf-8"))
+            except Exception:  # noqa: BLE001
+                book_data = None
+            if book_data:
+                for src_slug in book_data.get("sources", []):
+                    s_dir = sessions_root / src_slug
+                    if (s_dir / "reference_notes.md").is_file():
+                        panel_sessions.append(s_dir)
+
+    for s in panel_sessions:
+        r = s / "dialogue_report.json"
+        if not r.exists():
+            fails.append(f"座談檢核:{s.name} 缺 dialogue_report.json"
+                         f"(先跑 dialogue_check;§ S4.5.14)")
+            continue
+        cmd_md = s / "cleaned.md"
+        if cmd_md.exists() and r.stat().st_mtime < cmd_md.stat().st_mtime:
+            fails.append(f"座談檢核:{s.name} dialogue_report 過期(重跑;§ S4.5.14)")
+            continue
+        try:
+            rep = json.loads(r.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            fails.append(f"座談檢核:{s.name} dialogue_report.json 格式錯誤(§ S4.5.14)")
+            continue
+        if rep.get("applicable") and not rep.get("converged"):
+            d1_ok = rep.get("checks", {}).get("D1", {}).get("ok")
+            d2_ok = rep.get("checks", {}).get("D2", {}).get("ok")
+            fails.append(f"座談檢核:{s.name} 未收斂(D1={d1_ok}/D2={d2_ok};§ S4.5.14)")
+
+    # master-centric(root is None,md 在 build/<slug>/):額外驗 publish.md 各 panel
+    # 章節的講者標籤覆蓋(章↔source 依 book.json.sources 序 == toc 序)。
+    if root is None and panel_sessions and book_data is not None:
+        try:
+            sys.path.insert(0, str(Path(__file__).resolve().parent))
+            from dialogue_check import check_labels  # noqa: E402
+            sources = book_data.get("sources", [])
+            speakers = book_data.get("speakers", [])
+            chapters = re.split(r"(?m)^(?=## )", md_text_all)
+            # 章節與 sources 依序對齊(第 0 章可能是全書前言/開場,略過對不上的)
+            offset = max(0, len(chapters) - len(sources))
+            for i, src_slug in enumerate(sources):
+                s_dir = sessions_root / src_slug
+                if not (s_dir / "reference_notes.md").is_file():
+                    continue
+                ci = i + offset
+                if ci >= len(chapters):
+                    continue
+                full = (speakers[i] or {}).get("full", "") if i < len(speakers) else ""
+                items = [p.strip() for p in full.split("×") if p.strip()]
+                roster = set()
+                host = None
+                for it in items:
+                    if it.endswith("（主持）"):
+                        name = it[: -len("（主持）")].strip()
+                        host = name
+                        roster.add(name)
+                    else:
+                        roster.add(it)
+                if not roster:
+                    continue
+                ok, detail = check_labels(chapters[ci], roster, host)
+                if not ok:
+                    fails.append(f"座談檢核:publish.md 第 {i} 章標籤覆蓋 {detail}(§ S4.5.14)")
+        except Exception:  # noqa: BLE001 — 章節比對失敗不該讓既有 gate 邏輯掛掉
+            pass
 
     session_id = root.name if root else md_path.stem
 

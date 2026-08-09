@@ -35,8 +35,8 @@ rm -f "$PUB"/index.html "$PUB"/session-*.html
 #    多講者 → --multipage(每位講者一頁);單一講者 → 呼叫端在 EXTRA 帶 --single(整場一頁連續)。
 #    偵測到 EXTRA 含 --single 就不帶 --multipage(兩者互斥)。
 MODE_FLAG="--multipage"
-case " ${EXTRA[*]} " in *" --single "*) MODE_FLAG="";; esac
-python3 "$ROOT/scripts/lang/en/md_to_html.py" "$MD" "$WD" "$PUB" $MODE_FLAG --base-url "$BASE" "${EXTRA[@]}"
+case " ${EXTRA[*]:-} " in *" --single "*) MODE_FLAG="";; esac
+python3 "$ROOT/scripts/lang/en/md_to_html.py" "$MD" "$WD" "$PUB" $MODE_FLAG --base-url "$BASE" ${EXTRA[@]+"${EXTRA[@]}"}
 
 # 2) 蒐集所有頁面參照到的本地圖檔 → 壓縮 + EXIF 轉正後放進部署夾(省流量、自動轉正)
 SRCS=()
@@ -44,10 +44,23 @@ while IFS= read -r r; do
   [ -z "$r" ] && continue
   case "$r" in http://*|https://*) continue;; esac
   [ -f "$IMGSRC/$r" ] && SRCS+=("$IMGSRC/$r")
-done < <(grep -hoE 'src="[^"]+"' "$PUB"/*.html | sed 's/^src="//;s/"$//' | sort -u)
+done < <(grep -hoE '<img [^>]*src="[^"]+"' "$PUB"/*.html | grep -oE 'src="[^"]+"' | sed 's/^src="//;s/"$//' | sort -u)
 if [ "${#SRCS[@]}" -gt 0 ]; then
   echo "[publish] 壓縮 ${#SRCS[@]} 張圖 → $PUB"
   python3 "$ROOT/scripts/compress_images.py" "$PUB" "${SRCS[@]}"
+fi
+
+# 2b) 影片(<source src=*.mp4>)與其封面(poster=*.jpg)原檔複製進部署夾。
+#     mp4 不可送進 compress_images.py(會 UnidentifiedImageError 中斷);poster 檔小,原檔即可。
+VSRCS=()
+while IFS= read -r r; do
+  [ -z "$r" ] && continue
+  case "$r" in http://*|https://*) continue;; esac
+  [ -f "$IMGSRC/$r" ] && VSRCS+=("$r")
+done < <( { grep -hoE 'poster="[^"]+"' "$PUB"/*.html; grep -hoE '<source[^>]*src="[^"]+"' "$PUB"/*.html; } | grep -oE '"[^"]+"' | tr -d '"' | sort -u)
+if [ "${#VSRCS[@]}" -gt 0 ]; then
+  echo "[publish] 複製 ${#VSRCS[@]} 個影片/封面原檔 → $PUB"
+  for r in "${VSRCS[@]}"; do cp -f "$IMGSRC/$r" "$PUB/$r"; done
 fi
 
 # 2.5) DRY_RUN=1:產出 HTML + 壓圖後停在部署前(step45_converge.py 的一致性 dry-run 用,不上線)

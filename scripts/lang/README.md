@@ -52,7 +52,21 @@ scripts/lang/
 | `groq_transcribe_en.py` | Groq Whisper 英文單檔轉錄(language=en) |
 | `srt_zhtw.py` | 結構保留型翻譯 EN→zh-TW(prep/assemble + 時間軸 byte 驗證,原則 2)。`prep --keep-all` 停用英文幻覺過濾,供已清理的**非英文源**(如日文 SRT)沿用同一條 assemble/驗證鏈 |
 | `srt_to_md.py` | SRT → cleaned.md(翻譯版,讀 zh_parts) |
+| `md_translate_zhtw.py` | **整檔** `cleaned.md` EN→zh-TW 翻譯 driver(CLAUDE.md Gotcha #6 認可的「時間軸已丟棄」捷徑)。段落 1:1 對齊驗證、`.progress.json` 斷點續存;預設走 `antigravity -p` OAuth headless(原則 5),`--engine api` 需 `--force-api`。**領域先驗用 `--domain`**(字串或 .txt 路徑) |
 | `md_to_html.py` | Step 5 出版:md → 分頁 HTML(見 CLAUDE.md 原則 7) |
+
+`md_translate_zhtw.py` 範例(`--domain` 於 2026-08-08 引入,取代原本寫死的 Autodesk Revit MEP prime;
+**舊書要重現須明確帶 `--domain`**):
+
+```bash
+# COSCUP 技術演講
+python3 scripts/lang/en/md_translate_zhtw.py in.en.md -o out.zh.md \
+    --model gemini-3.6-flash-medium --domain COSCUP2026/domain/03.txt
+
+# 重現 mechanical-design-cert-prep(2026-08-01 那批)
+python3 scripts/lang/en/md_translate_zhtw.py in.en.md -o out.zh.md \
+    --domain "Autodesk Revit MEP 教學。保留:Revit、MEP、System Browser、CFM、Duct Systems;duct 譯「風管」但面板名 Duct Systems 保留。"
+```
 
 ### `ja/` — 日文
 

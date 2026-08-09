@@ -20,7 +20,10 @@ import time
 from datetime import timedelta
 from pathlib import Path
 
-CHUNK_DURATION = 600  # 10 minutes per chunk
+CHUNK_DURATION = int(os.environ.get("GROQ_CHUNK_SECONDS") or 600)  # seconds per chunk
+# GROQ_NO_PROMPT=1:完全不送 prompt(連 base 句也不送)。吵雜場地 Whisper 會把
+# prompt 吐回成幻覺 cue(英文版樣態:"Key terms …"),見 memory feedback_groq_prompt_echo。
+NO_PROMPT = os.environ.get("GROQ_NO_PROMPT", "") not in ("", "0", "false", "False")
 GROQ_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 
 
@@ -100,17 +103,17 @@ def extract_and_split_audio(input_file, temp_dir):
 
 
 def transcribe_chunk(chunk_path, api_keys, key_index, context_prompt):
-    base_prompt = "This is an English-language recording of a technical talk or meeting."
-    raw_prompt = f"{base_prompt} Key terms: {context_prompt}." if context_prompt else base_prompt
-    final_prompt = truncate_prompt(raw_prompt, max_chars=896)
-
     data = {
         "model": "whisper-large-v3",
-        "prompt": final_prompt,
         "response_format": "verbose_json",
         "language": "en",
         "temperature": "0.0"
     }
+    if not NO_PROMPT:
+        base_prompt = "This is an English-language recording of a technical talk or meeting."
+        raw_prompt = (f"{base_prompt} Key terms: {context_prompt}."
+                      if context_prompt else base_prompt)
+        data["prompt"] = truncate_prompt(raw_prompt, max_chars=896)
 
     rate_limit_attempts = 0
     server_error_attempts_on_current_key = 0

@@ -7,6 +7,13 @@ Groq Whisper 逐字稿工具 (CLI 版)
 
 Usage:
     python3 groq_transcribe.py <media_file> [output_dir] [context_file]
+
+環境變數(prompt-echo 幻覺的解方,見 memory feedback_groq_prompt_echo):
+    GROQ_NO_PROMPT=1        完全不送 prompt(連 base_prompt 也不送)。
+        用於吵雜/回音場地 —— Whisper 會把 context prompt 整段吐回成亂碼 cue,
+        污染率可達 20%。無 prompt 重轉可消除,代價是失去專名先驗,
+        專名改由 Phase B 依 context.txt / 議程筆記校正(核心鐵律 F1)。
+    GROQ_CHUNK_SECONDS=300  覆寫切段長度(預設 600)。短切段可降低幻覺累積。
 """
 
 import os
@@ -18,7 +25,8 @@ import time
 from datetime import timedelta
 from pathlib import Path
 
-CHUNK_DURATION = 600  # 10 minutes per chunk
+CHUNK_DURATION = int(os.environ.get("GROQ_CHUNK_SECONDS") or 600)  # seconds per chunk
+NO_PROMPT = os.environ.get("GROQ_NO_PROMPT", "") not in ("", "0", "false", "False")
 GROQ_URL = "https://api.groq.com/openai/v1/audio/transcriptions"
 
 
@@ -120,17 +128,17 @@ def transcribe_chunk(chunk_path, api_keys, key_index, context_prompt):
     - 其他 4xx: 視為致命,直接放棄
     回傳 (result_dict_or_None, updated_key_index)。
     """
-    base_prompt = "這是一段關於技術開發與會議簡報內容的繁體中文錄音。"
-    raw_prompt = f"{base_prompt} 內容包含：{context_prompt}。" if context_prompt else base_prompt
-    final_prompt = truncate_prompt(raw_prompt, max_chars=896)
-
     data = {
         "model": "whisper-large-v3",
-        "prompt": final_prompt,
         "response_format": "verbose_json",
         "language": "zh",
         "temperature": "0.0"
     }
+    if not NO_PROMPT:
+        base_prompt = "這是一段關於技術開發與會議簡報內容的繁體中文錄音。"
+        raw_prompt = (f"{base_prompt} 內容包含：{context_prompt}。"
+                      if context_prompt else base_prompt)
+        data["prompt"] = truncate_prompt(raw_prompt, max_chars=896)
 
     rate_limit_attempts = 0
     server_error_attempts_on_current_key = 0

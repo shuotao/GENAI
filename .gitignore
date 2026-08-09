@@ -97,3 +97,7 @@ MCP5/
 # 派生/執行期產物留本機(可由 master + scripts 重生;見 memory outward-docs 原則)
 build/
 .worktrees/
+
+# COSCUP 2026 現場素材(音檔 + context;含現場臨時憑證,絕不進版控)
+/COSCUP2026/
+/COSCUP2026_2/

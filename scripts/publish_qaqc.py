@@ -2,7 +2,7 @@
 """scripts/publish_qaqc.py — Step 6 出版後 QAQC 自動審查腳本
 
 讀 scripts/publish/goodedunote/public/data.js + 各 slug 目錄,對照
-prompts/publish_qaqc.md § S6 規則,逐 slug 跑 S6.1–S6.6 檢查。
+prompts/publish_qaqc.md § S6 規則,逐 slug 跑 S6.1–S6.6 + S6.14 檢查。
 
 用法:
     python3 scripts/publish_qaqc.py            # 審查所有非 placeholder 的 book
@@ -489,7 +489,9 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
         # (a) 孤兒圖:目錄裡有、但沒有任何 HTML 引用(去重後未清/殘留)
         referenced = set()
         for p in pages:
-            referenced.update(re.findall(r'src="([^"]+)"', p.read_text(encoding="utf-8")))
+            txt = p.read_text(encoding="utf-8")
+            referenced.update(re.findall(r'src="([^"]+)"', txt))
+            referenced.update(re.findall(r'poster="([^"]+)"', txt))  # <video poster> 封面也算引用
         orphans = [f.name for f in img_files if f.name not in referenced]
         results.append((
             "S6.12 無孤兒圖片(檔案都被頁面引用)",
@@ -524,6 +526,80 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
             f"重複組: {exact_dupes}" if exact_dupes else f"md5 全唯一{near_note}",
         ))
 
+    # S6.13 座談歸屬與順序 audit(2026-07-23 引入,§ S4.5.14 / § S6.13)
+    # 只對「build/<slug>/book.json 存在且任一 source session 有 reference_notes.md」的
+    # 書執行(single:true 直接 skip;舊書零影響)。
+    book_json = PROJECT_ROOT / "build" / slug / "book.json"
+    if book_json.is_file() and not is_single:
+        import json as _json2
+        try:
+            book_meta = _json2.loads(book_json.read_text(encoding="utf-8"))
+        except Exception:  # noqa: BLE001
+            book_meta = None
+        panel_sources = []
+        if book_meta:
+            for src_slug in book_meta.get("sources", []):
+                if (PROJECT_ROOT / "sessions" / src_slug / "reference_notes.md").is_file():
+                    panel_sources.append(src_slug)
+        if panel_sources:
+            parts = []
+            all_ok = True
+            for i, src_slug in enumerate(panel_sources):
+                s_dir = PROJECT_ROOT / "sessions" / src_slug
+                r = s_dir / "dialogue_report.json"
+                if not r.is_file():
+                    all_ok = False
+                    parts.append(f"{src_slug}: 缺 dialogue_report.json")
+                    continue
+                try:
+                    rep = _json2.loads(r.read_text(encoding="utf-8"))
+                except Exception:  # noqa: BLE001
+                    all_ok = False
+                    parts.append(f"{src_slug}: dialogue_report.json 格式錯誤")
+                    continue
+                report_ok = bool(rep.get("applicable")) and bool(rep.get("converged"))
+                if not report_ok:
+                    all_ok = False
+
+                # 已部署 HTML:對應 session-N.html(N = sources index+1),或 single-page 用 index.html
+                src_idx = book_meta.get("sources", []).index(src_slug)
+                page = slug_dir / f"session-{src_idx + 1}.html" if sessions else index_path
+                if not page.is_file():
+                    all_ok = False
+                    parts.append(f"{src_slug}: report {'converged' if report_ok else 'not converged'}, "
+                                 f"html {page.name} 不存在")
+                    continue
+                html = page.read_text(encoding="utf-8")
+                body = re.sub(r"<head>.*?</head>", "", html, flags=re.S)
+                body = re.sub(r"<footer\b.*?</footer>", "", body, flags=re.S)
+                body = re.sub(r"<nav\b.*?</nav>", "", body, flags=re.S)
+                # 編註/延伸參考/附錄 = 編輯性附錄,非講者對談,截斷不計入標籤覆蓋(對齊 dialogue_check)
+                body = re.split(r"<h[1-6][^>]*>[^<]*(?:延伸參考|編註|附錄)", body, maxsplit=1, flags=re.S)[0]
+                body_paras = re.findall(r"<p\b[^>]*>(.*?)</p>", body, flags=re.S)
+                total_p = len(body_paras)
+                # roster 從 speakers[src_idx].full 抽
+                full = ""
+                spk = book_meta.get("speakers", [])
+                if src_idx < len(spk):
+                    full = (spk[src_idx] or {}).get("full", "")
+                roster_names = {p.strip().replace("（主持）", "") for p in full.split("×") if p.strip()}
+                allowed_names = roster_names | {"觀眾", "現場提問", "主持人", "全場", "Discord"}
+                label_re = re.compile(
+                    r"^(?:" + "|".join(re.escape(n) for n in allowed_names) + r")："
+                ) if allowed_names else None
+                labeled_p = 0
+                for inner in body_paras:
+                    text = _TAG_RE.sub("", inner).strip()
+                    if label_re and label_re.match(text):
+                        labeled_p += 1
+                html_ratio = (labeled_p / total_p) if total_p else 0.0
+                html_ok = total_p > 0 and html_ratio >= 0.95
+                if not html_ok:
+                    all_ok = False
+                parts.append(f"{src_slug}: report {'converged' if report_ok else 'not converged'}, "
+                             f"html label {labeled_p}/{total_p}")
+            results.append(("S6.13 座談歸屬與順序", all_ok, "; ".join(parts)))
+
     # S6.6 dropcap 不套 **bold** 開頭
     bad_dropcap = []
     for p in pages:
@@ -548,6 +624,23 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
         "S6.6 markdown **bold** 已轉 <strong>",
         not bad_md,
         f"字面 ** 殘留於: {bad_md}" if bad_md else "no literal ** in body",
+    ))
+
+    # S6.14 連結語法殘留 — md_to_html 的 inline_md() 只處理 **bold** 與裸網址自動連結,
+    # `[文字](網址)` 會原封輸出成字面可見文字。出版前由 prepublish_gate 擋,這裡是事後保險。
+    bad_link = []
+    for p in pages:
+        html = p.read_text(encoding="utf-8")
+        for m in re.finditer(r"(?:<p[^>]*>|<h[23]>)(.*?)</(?:p|h[23])>", html, re.S):
+            seg = m.group(1)
+            # 圖片在此階段已是 <img>,不會留 ![..](..);故只要出現 [..](  即為破掉的連結
+            if re.search(r"\[[^\]]*\]\(", seg):
+                bad_link.append(f"{p.name}: {re.sub(r'<[^>]+>', '', seg)[:60]}")
+                break
+    results.append((
+        "S6.14 無 [文字](網址) 字面殘留",
+        not bad_link,
+        f"破損連結: {bad_link[:3]}" if bad_link else f"all {len(pages)} pages OK",
     ))
 
     return results

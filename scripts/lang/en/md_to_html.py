@@ -20,6 +20,35 @@ from pathlib import Path
 
 IMG_INLINE = re.compile(r"!\[([^\]]*)\]\(([^)]+)\)")
 _PLACEHOLDER_ALT = ("", "alt text", "alt", "image", "photo", "圖", "圖片")
+_VIDEO_EXTS = (".mp4", ".mov")
+
+
+def _is_video(src):
+    """src 是否為影片檔(依副檔名,忽略 querystring)。"""
+    return src.strip().lower().rsplit("?", 1)[0].endswith(_VIDEO_EXTS)
+
+
+def _video_figure(alt, src):
+    """把 ![caption|poster=xxx.jpg|portrait](file.mp4) 轉成點擊播放的 <video> figure。
+    poster= 必填(缺封面的影片不得進發布);portrait 加直向壓高 class。"""
+    parts = [p.strip() for p in alt.split("|")]
+    caption = parts[0] if parts else ""
+    poster, portrait = "", False
+    for p in parts[1:]:
+        if p.lower().startswith("poster="):
+            poster = p.split("=", 1)[1].strip()
+        elif p.lower() == "portrait":
+            portrait = True
+    if not poster:
+        raise SystemExit(f"[md_to_html] 影片缺少 poster= metadata,拒絕發布:{src}")
+    cls = "kc-video portrait" if portrait else "kc-video"
+    cap = "" if caption.lower() in _PLACEHOLDER_ALT else f'\n        <figcaption>{esc(caption)}</figcaption>'
+    return (f'      <figure class="{cls}">\n'
+            f'        <video controls preload="metadata" playsinline poster="{esc(poster)}">\n'
+            f'          <source src="{esc(src)}" type="video/mp4">\n'
+            f'          您的瀏覽器不支援 HTML5 影片。\n'
+            f'        </video>{cap}\n'
+            f'      </figure>')
 
 CSS = """<style>
 @import url('https://fonts.googleapis.com/css2?family=Noto+Serif+TC:wght@400;600;700&family=Noto+Sans+TC:wght@400;500;700&display=swap');
@@ -45,6 +74,10 @@ body { background:#fdfbf7; color:#2d2a26; font-family:'Noto Serif TC',serif; lin
 .kc-inline { display:inline-block; max-width:100%; height:auto; border-radius:8px; vertical-align:middle; margin:.2rem; }
 .kc-row { display:flex; flex-wrap:wrap; gap:.6rem; margin:1.8rem 0; }
 .kc-row img { flex:1 1 0; min-width:140px; max-width:100%; height:auto; border-radius:12px; box-shadow:0 8px 24px -14px rgba(80,40,25,.5); object-fit:cover; }
+.kc-video { margin:1.8rem auto; text-align:center; }
+.kc-video video { display:block; width:100%; max-width:100%; height:auto; margin:0 auto; background:#000; border-radius:12px; box-shadow:0 8px 24px -14px rgba(80,40,25,.5); }
+.kc-video.portrait video { width:auto; max-width:100%; max-height:min(78vh,820px); object-fit:contain; }
+.kc-video figcaption { margin-top:.6rem; font-size:.85rem; color:#9c8e82; }
 html { scroll-behavior:smooth; }
 </style>"""
 
@@ -70,10 +103,24 @@ def head(title, og):
             f'<title>{esc(title)}</title>\n{og}\n<script src="https://cdn.tailwindcss.com"></script>\n{CSS}\n</head>\n')
 
 
+_URL_RE = re.compile(r'https?://[^\s<>"\'）)，。、；！？【】「」『』]+')
+
+
+def _linkify(m):
+    u = m.group(0)
+    tail = ""
+    while u and u[-1] in ".,;)":          # 尾隨標點/括號不算 URL 一部分
+        tail = u[-1] + tail
+        u = u[:-1]
+    return f'<a href="{u}" target="_blank" rel="noopener noreferrer">{u}</a>{tail}'
+
+
 def inline_md(text):
-    """**bold** → <strong>。esc() 之後再呼叫。
+    """**bold** → <strong>;裸 http(s) URL → 可點超連結。esc() 之後再呼叫。
+    URL 自動連結:讓逐字稿裡貼的網址讀者能直接點(esc 後圖片 src 是 .png,不會被誤連)。
     用 [^*]+ 限制不跨越下一個 *,避免吃進巢狀。"""
-    return re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", text)
+    text = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", text)
+    return _URL_RE.sub(_linkify, text)
 
 
 def render_blocks(lines_iter, first_in_sec_start=True):
@@ -87,6 +134,9 @@ def render_blocks(lines_iter, first_in_sec_start=True):
         imgs = IMG_INLINE.findall(s)
         remainder = re.sub(r"[·、,，.\s]+", "", IMG_INLINE.sub("", s))
         if imgs and remainder == "":
+            # 影片:單一 .mp4/.mov 媒體行 → 點擊播放 <video>(不設為 OG 首圖,OG 只用靜圖)
+            if len(imgs) == 1 and _is_video(imgs[0][1]):
+                blocks.append(_video_figure(imgs[0][0], imgs[0][1])); continue
             if first_img is None: first_img = imgs[0][1]
             if len(imgs) == 1:
                 alt, src = imgs[0]

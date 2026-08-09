@@ -393,6 +393,23 @@ dry-run 階段書尚未進 data.js,故不在收斂 loop 內呼叫;真正 deploy 
 
 ---
 
+### S4.5.14 座談對談歸屬與順序檢核(2026-07-23 引入)
+
+**問題**:2026-07-22 兩場座談的 cleaned.md 出版時丟失逐 turn 講者歸屬、把 ASR 時序打散成主題段、且無視使用者的分講者參考筆記 — 無任何 gate 攔截。
+
+**判定「座談」的確定性訊號**:`sessions/<slug>/reference_notes.md` 存在(人工放置 = 人工宣告,原則 9),或呼叫 `dialogue_check.py` 時顯式給 `--speakers`。無訊號的 session(單講者/舊書)一律 skip,零誤擋。
+
+**工具**:`python3 scripts/dialogue_check.py --session sessions/<slug> --book build/<書slug>/book.json`(純 stdlib、確定性、不打 LLM)。三檢:
+- **D1 歸屬覆蓋(硬)**:每個 prose 段落開頭 `名字：` ∈ roster ∪ {觀眾, 現場提問, 主持人, 全場, Discord};未標段 == 0、未知標籤 == 0、每位 roster 講者 ≥ 1 turn、相異講者 ≥ 2。
+- **D2 順序 + 筆記覆蓋(硬)**:對 reference_notes.md 逐條抽罕見 anchor(ASCII 詞 / df ≤ 2 的 CJK 3–6-gram)定位到 cleaned.md 段落;覆蓋率 ≥ 0.70、落點序列 LIS 順序率 ≥ 0.85、有效 anchor ≥ 10。比 turn 序列與模糊話題錨點、不比 verbatim,故容忍 Phase B/C/D 的正當精修,但抓得到主題化重排與整塊漏記。
+- **D3 跨講者混併(警告)**:note 講者 ≠ 落點段歸屬講者的比例 > 0.10 → warn 列清單交人工複核(引述他人會天然假陽性,不硬擋)。
+
+產物 `sessions/<slug>/dialogue_report.json`(含 `converged` bool);exit 0=skip/收斂、1=未收斂、2=格式錯。結果進 pipeline_logger(stage `S4.5-dialogue`)+ improvement queue。
+
+**gate**:`prepublish_gate.py` 對「找得到 reference_notes.md 的 source session」要求 report 存在、比 cleaned.md 新、且 converged;master-centric 出版(build/<slug>/publish.md)經 book.json.sources 展開逐 session 驗,並對 publish.md 的 panel 章節加驗 D1 標籤覆蓋(章↔source 依 § S4.5.13 的 sources 序 == toc 序)。任一不過 → 中止出版。
+
+---
+
 ## S6 出版後 QAQC(deployed HTML)
 
 對 `scripts/publish/goodedunote/public/<slug>/` 的本地副本做檢查
@@ -579,6 +596,42 @@ md 被手改、或 anchor 判斷漂移 → 修 anchor / 補描述後重出。
 - **近似圖(dHash ≤ 6)只列警告**:同版型模板會誤判,交人工複核(§ S4.5.12
   的雙訊號 AND 閘已在出版前把真重複擋掉,audit 端不重複硬擋)。
 
+### S6.13 座談歸屬與順序 audit(2026-07-23 引入)
+
+僅對「`build/<slug>/book.json` 存在且任一 source session 有 reference_notes.md」的書執行(`single:true` 直接 skip;舊書零影響)。兩段合一顆結果:
+- 每個 panel source 的 `dialogue_report.json` 存在、`applicable` 且 `converged`。
+- 已部署 HTML(panel source 對應的 session-N.html):正文 `<p>` 以 `名字：`(roster ∪ 允許標籤)開頭的比例 ≥ 0.95(排除 footer/導覽模板 <p>),確認標籤活著到線上、未被出版鏈剝除。
+失敗 → 依 § S4.5.14 重跑 dialogue_check 修 cleaned.md 後重出版。
+
+### S6.14 連結語法殘留(2026-08-09 引入)
+
+**問題**:`md_to_html.py` 的 `inline_md()` 只處理 `**粗體**` 與**裸網址自動連結**兩件事,
+沒有 `[文字](網址)` 規則。寫成 bracket 形式的連結會**原封渲染成字面可見文字**
+(頁面上直接看到 `[講者的簡報](https://…)`),而在本次引入前**沒有任何檢查會抓到**——
+出版前不擋、出版後不驗,破掉的連結會靜默上線。全書 corpus 至今零使用該語法,
+是慣例上的僥倖而非制度上的保障。
+
+**正解(唯一支援的寫法)**:**空格包夾的裸網址**,需要括號時用**全形**`（ ）`
+(先例 `build/genai2026-july-meetup/publish.md:352`):
+
+```
+…他示範的工具是 Heptabase（ https://heptabase.com/ ),可以…
+講者的簡報： https://example.com/slides/deck
+```
+
+理由:`_URL_RE` 的終止字元集含 `）)，。、；！？`,全形括號與前後空格能讓網址乾淨結束;
+全形標點也不會被 Phase C 再動一次。**額外注意**:`normalize_punctuation` 對裸網址只保護
+`.`(英數之間)、`,`(數字之間)、`:`(後接 `/`),但 `; ! ? ( )` **無條件全形化** ——
+含 query string 或括號的網址請獨立成行(該行無 CJK 時 `normalize_line` 會整行短路跳過)。
+另:行首不得是 `-` / `>` / `|` / `---`,否則 `build_book_master` 的 self_assert 會擋。
+
+**雙側守門**:
+- 出版前 `prepublish_gate.py`:被出版的 md 任一行含 `[文字](網址)` → 擋並報行號。
+  比對用 `(?<!!)\[[^\]]*\]\(`,lookbehind 放在整個 `[…](` 的開頭 `[` 之前
+  ——放在 `](` 之前會誤判,因為 `![](x.png)` 的 `](` 前一字是 `[` 而不是 `!`。
+- 出版後 `publish_qaqc.py` § S6.14:已部署 HTML 的 `<p>/<h2>/<h3>` 內文出現 `[..](` → fail。
+  圖片在此階段已是 `<img>`,不會誤判。
+
 ### S6.10 後置檢查清單
 
 - [ ] § S6.1 檔案數量正確(單篇:只有 index.html)
@@ -593,6 +646,8 @@ md 被手改、或 anchor 判斷漂移 → 修 anchor / 補描述後重出。
 - [ ] § S6.4 每個 HTML 有完整 OG/Twitter meta
 - [ ] § S6.5 圖片總量在預算內
 - [ ] § S6.6 視覺一致性(spine-card、scroll snap、hash anchor)無回歸
+- [ ] § S6.13 座談書:dialogue_report converged、線上 HTML 講者標籤覆蓋 ≥ 0.95
+- [ ] § S6.14 正文無 `[文字](網址)` 字面殘留(連結一律寫成空格包夾的裸網址)
 
 ---
 
@@ -648,3 +703,5 @@ md 被手改、或 anchor 判斷漂移 → 修 anchor / 補描述後重出。
   動機:一檔多講者(BIM_MCP_7,State B)無工具處理、直接 `--multipage` 會吞講者 `#`、
   爆成小節頁、丟主持人開場;與拆檔(State A)出版不一致。收斂到同一 canonical master
   即一致。dry-run 測試:B 端到端綠;A 結構收斂已證,實跑前須先攤放各 session 圖片。
+- 2026-07-23:新增 § S4.5.14 座談對談歸屬與順序檢核(D1 歸屬/D2 時序+筆記覆蓋/D3 混併警告)與 § S6.13 audit。新工具:`dialogue_check.py`(確定性,LIS 順序率、罕見 n-gram anchor)。起因:2026-07-22 兩場座談出版丟講者歸屬、時序被主題化重排。同步:qaqc_core_rules § R2.1 多講者專則、§ R8.2 座談順序不動。
+- 2026-08-09:新增 § S6.14 連結語法殘留(雙側守門:prepublish_gate 出版前擋、publish_qaqc 出版後 audit)。起因:COSCUP Day 2 要把簡報網址補進內文時查出 `md_to_html.inline_md()` 不支援 `[文字](網址)`,會渲染成字面文字,且前後皆無檢查。同步:本檔 § S6.14 條款與 § S6.10 清單、`scripts/prepublish_gate.py`、`scripts/publish_qaqc.py`。既有 6 本 master 與 10 本已出版書實測零命中,零誤擋。

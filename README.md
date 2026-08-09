@@ -211,9 +211,12 @@ GitHub Pages 部署版:`https://shuotao.github.io/GENAI/web/studio.html`
 - **`session.py`**: Pipeline 統籌器,一行命令跑完 Groq 轉錄 → Phase A → Phase B → Phase C → Phase D →(選)Step 3 補名詞 →(選)Step 4 筆記;偵測 host engine 決定打 API 或寫 marker 交對話 agent(原則 5)
 - **`qaqc_phase_b.py`**: Gemini-powered 校稿(merged / polish〔Phase C 冒號+Phase D hook〕/ enhance / notes / structured 模式)
 - **`normalize_punctuation.py`**: Phase C 全形化確定性工具(§ R7.1;中文句一律全形,保護小數/網址/網域/檔名/碼/markdown 連結)
-- **`prepublish_gate.py`**: 出版前強制門(原則 9)— 檢查 Phase C/D 完成戳記 + 無殘留 marker + 全形 lint
+- **`prepublish_gate.py`**: 出版前強制門(原則 9)— 檢查 Phase C/D 完成戳記 + 無殘留 marker + 全形 lint + **連結語法殘留**(§ S6.14:`[文字](網址)` 在本管線會渲染成字面文字,一律改用空格包夾的裸網址)
+- **`para_len_check.py`**: Phase B 段落長度量測(§ R2.1 目標 60~120 CJK 字)— 只量測不切段(切在哪是語意判斷);判準刻意不對稱,超長才 fail、過短僅提醒(§ R2.1 明寫「寧短勿長」)
+- **`phase_d_check.py`**: Phase D「只插入、不改寫」的機械證明(§ R8.2)— 先 `--snapshot` 存 base,事後驗段落數 1:1 + **原文字元須為新文字的子序列**(任何刪改都會被抓出位置)+ CJK 成長率上限
 - **`classify_session.py`** + **`build_book_master.py`** + **`step45_converge.py`**: Step 4.5 場次狀態分類與收斂 — 把「拆檔錄音(State A)」與「一檔多講者(State B)」都收斂成同一 canonical master,確保出版一致;`step45_converge.py` 做 dry-run 驗 `session==toc==##`(規則見 CLAUDE.md 原則 8 / prompts/publish_qaqc.md § S4.5.13;取代寫死的 `build_genai2026_day1/day2.py`)
-- **`publish_goodedunote.sh`** + **`publish_qaqc.py`**: Step 5 出版(md→HTML→壓圖→deploy;`DRY_RUN=1` 可停在部署前;拆分依講者數:單一講者一場用 `--single` 單篇連續、多講者用 `--multipage`,見 CLAUDE.md 原則 8)與 Step 6 出版後 audit
+- **`publish_goodedunote.sh`** + **`publish_qaqc.py`**: Step 5 出版(md→HTML→壓圖→deploy;`DRY_RUN=1` 可停在部署前;拆分依講者數:單一講者一場用 `--single` 單篇連續、多講者用 `--multipage`,見 CLAUDE.md 原則 8)與 Step 6 出版後 audit(S6.1–S6.6 + **S6.14 連結語法殘留**)
+- **`dialogue_check.py`**: 多講者座談對談歸屬與順序檢核(純 stdlib、確定性)— D1 講者標籤覆蓋、D2 對照 `reference_notes.md` 的 LIS 順序率/anchor 覆蓋、D3 跨講者混併警告;`prepublish_gate.py` § S4.5.14 出版前擋、`publish_qaqc.py` § S6.13 出版後 audit(規則見 prompts/publish_qaqc.md § S4.5.14 / § S6.13)
 - **`describe_images.py`** + **`dedupe_images.py`** + **`propose_anchors.py`** + **`insert_images.py`** + **`pipeline_autopilot.sh`**: 圖片理解(Antigravity headless;必跑,產 `images_readme.md` 描述伴讀供手排圖者參考)→ Haiku 自動插圖 → 閉環入口(`session.py --images <dir>`,見 prompts/publish_qaqc.md § S4.5.11)
 - **`placement_check.py`** + **`placement_supervisor.py`** + **`finalize_placement.py`**: 插圖分佈/順序監管(反塌陷、不逆位、去重間距;§ S4.5.11)
 - **`pipeline_logger.py`**: Step1~6 結構化 log(`pipeline_log.jsonl` / `build/pipeline_runs.jsonl`)+ check fail 自動進 `build/improvement_queue.jsonl` 的 return-and-improvement 迴圈

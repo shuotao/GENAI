@@ -92,6 +92,14 @@ def _seq_of(ref: str, deck_page_of: dict | None) -> int | None:
     return int(m.group(1)) if m else None
 
 
+def _deck_family(ref: str) -> str:
+    """圖片的「投影片家族」= 去掉尾端序號/副檔名後的檔名前綴(open-09.png → open、
+    s1-13.png → s1)。序號逆位只在**同一家族內**才有意義:不同講者/不同 deck 的
+    截圖各自獨立編號(open-* vs s1-*),跨家族比序號是誤判(§ S4.5.11)。"""
+    base = ref.split("/")[-1]
+    return re.sub(r"[-_]?\d{2,}\.\w+$", "", base) or base
+
+
 def order_inversions(md_text: str, deck_page_of: dict | None = None
                      ) -> list[tuple[str, int, str, int]]:
     """回傳「文件順序」中原始順序逆位的相鄰對 [(前ref, 前序, 後ref, 後序), ...]。
@@ -107,8 +115,11 @@ def order_inversions(md_text: str, deck_page_of: dict | None = None
                 s = _seq_of(ref, deck_page_of)
                 if s is not None:
                     seq.append((ref, s))
+    # 只在同一投影片家族內比序號(跨 deck 如 open-09 → s1-01 不算逆位)
     return [(seq[i][0], seq[i][1], seq[i + 1][0], seq[i + 1][1])
-            for i in range(len(seq) - 1) if seq[i + 1][1] < seq[i][1]]
+            for i in range(len(seq) - 1)
+            if _deck_family(seq[i][0]) == _deck_family(seq[i + 1][0])
+            and seq[i + 1][1] < seq[i][1]]
 
 
 def distribution_report(md_text: str, max_per_anchor: int = DEFAULT_MAX_PER_ANCHOR) -> dict:
