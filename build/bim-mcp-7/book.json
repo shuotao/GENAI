@@ -1,0 +1,37 @@
+{
+  "slug": "bim-mcp-7",
+  "title": "MCP 七月小聚 VOL.07",
+  "subtitle": "你的專業，就是第 N 個按鈕 — BIM × MCP × AI Agent 全面自動化",
+  "shelf": "reading",
+  "state": "B",
+  "recommended_mode": "multipage",
+  "sources": [
+    "2026-07-18_BIM_MCP_7"
+  ],
+  "speakers": [
+    {
+      "category": "開場",
+      "name": "江碩濤",
+      "full": "江碩濤",
+      "talk": "不再對 Prompt 不夠好而失望的 Loop 大法"
+    },
+    {
+      "category": "開發流程",
+      "name": "朱宣宇",
+      "full": "朱宣宇 老師",
+      "talk": "Vibe Coding × MCP 開發流程優化"
+    },
+    {
+      "category": "現場平台",
+      "name": "李書賢",
+      "full": "李書賢 老師",
+      "talk": "工程現場管理平台上的 AI 實作案例"
+    },
+    {
+      "category": "自動建模",
+      "name": "洪友川",
+      "full": "洪友川 老師",
+      "talk": "依 CAD 自動建柱（對應柱名）"
+    }
+  ]
+}

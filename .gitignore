@@ -96,6 +96,14 @@ MCP5/
 
 # 派生/執行期產物留本機(可由 master + scripts 重生;見 memory outward-docs 原則)
 build/
+# 例外:book.json 是整條管線唯一「手寫、不可由其他檔重生」的產物
+# (章節順序、category/name/full/talk 都是人工判斷 + 官方議程 F1 校對的結果),
+# 遺失就得重做 Step 4.5 的人工關卡 → 納入版控以保可追溯與可重建。
+!build/
+build/*
+!build/*/
+build/*/*
+!build/*/book.json
 .worktrees/
 
 # COSCUP 2026 現場素材(音檔 + context;含現場臨時憑證,絕不進版控)

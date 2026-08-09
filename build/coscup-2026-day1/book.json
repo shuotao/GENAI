@@ -1,0 +1,91 @@
+{
+  "slug": "coscup-2026-day1",
+  "title": "COSCUP 2026 · Day 1",
+  "subtitle": "十一場實錄 · 從 DevSecOps 閉環到 AI Agent 與公民科技",
+  "shelf": "seminar",
+  "state": "A",
+  "recommended_mode": "multipage",
+  "sources": [
+    "2026-08-08_coscup-d1-01-devsecops",
+    "2026-08-08_coscup-d1-02-canonical-12factor",
+    "2026-08-08_coscup-d1-03-docker-cagent",
+    "2026-08-08_coscup-d1-04-cofacts",
+    "2026-08-08_coscup-d1-05-openrefine-taigi",
+    "2026-08-08_coscup-d1-06-explainability",
+    "2026-08-08_coscup-d1-07-multi-role-agent",
+    "2026-08-08_coscup-d1-08-arch-as-constitution",
+    "2026-08-08_coscup-d1-09-nuxt-park-map",
+    "2026-08-08_coscup-d1-10-citizen-dev-governance",
+    "2026-08-08_coscup-d1-11-smart-scheduling"
+  ],
+  "speakers": [
+    {
+      "category": "資安",
+      "name": "David Su",
+      "full": "David Su · TR313",
+      "talk": "讓漏洞自己結案：純開源工具鏈打造 DevSecOps 閉環實戰"
+    },
+    {
+      "category": "雲原生",
+      "name": "Canonical",
+      "full": "Grégory Schiano Lomoriello、Swetha Swaminathan、Javier de la Puente · RB101",
+      "talk": "Deploy a 12-factor application of your choice end-to-end!"
+    },
+    {
+      "category": "AI Agent",
+      "name": "Hrittik Roy",
+      "full": "Hrittik Roy、Parth Goswami · TR212",
+      "talk": "YAML is the New Dockerfile: Building AI Agent Systems with Docker cagent"
+    },
+    {
+      "category": "公民科技",
+      "name": "Cofacts",
+      "full": "Johnson、Benson Su · TR513",
+      "talk": "抵禦資訊操弄的開源實踐：Cofacts 群眾查核平台的經驗與挑戰"
+    },
+    {
+      "category": "語言資料",
+      "name": "Dennis Chen",
+      "full": "Dennis Raylin Chen · TR409-2",
+      "talk": "以 OpenRefine 加上 Python，實作臺灣台語的地名半自動處理"
+    },
+    {
+      "category": "AI 可解釋性",
+      "name": "Martin Chang",
+      "full": "Martin Chang · TR212",
+      "talk": "可解釋性與應用：人類的最終防線"
+    },
+    {
+      "category": "AI Agent",
+      "name": "Yale Hsu",
+      "full": "Yale Hsu · TR311",
+      "talk": "AI Agent 探索：多角色任務處理 Agent"
+    },
+    {
+      "category": "網路韌性",
+      "name": "劉維人",
+      "full": "劉維人 · TR513",
+      "talk": "架構即憲法：以法定規格與可分叉性，確保身分驗證系統保障數位權利"
+    },
+    {
+      "category": "開放資料",
+      "name": "Tim Hsu",
+      "full": "許智庭 Tim Hsu · TR311",
+      "talk": "從政府 Open Data 到城市探索網站：用 Nuxt 3、Codex 與 GitHub Actions 打造北北桃中公園地圖"
+    },
+    {
+      "category": "企業治理",
+      "name": "Teemo",
+      "full": "Teemo · TR411",
+      "talk": "生成式 AI 時代的公民開發治理：從業務創新到企業納管"
+    },
+    {
+      "category": "公私協力",
+      "name": "Josh",
+      "full": "Josh 杜佳憲 · TR411",
+      "talk": "讓人力回歸前線：智慧排程系統的 AI 輔助開發與開源公私協力實錄"
+    }
+  ],
+  "venue": "國立臺灣科技大學",
+  "date": "2026-08-08"
+}

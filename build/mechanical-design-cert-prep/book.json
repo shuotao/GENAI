@@ -1,0 +1,47 @@
+{
+  "slug": "mechanical-design-cert-prep",
+  "title": "Mechanical Design Professional Certification Prep",
+  "subtitle": "Autodesk Revit MEP 機械設計專業認證預備課程（繁體中文筆記）",
+  "shelf": "reading",
+  "state": "A",
+  "recommended_mode": "multipage",
+  "sources": [
+    "sessions/2026-08-01_autodesk-mdp/merged/S1",
+    "sessions/2026-08-01_autodesk-mdp/merged/S2",
+    "sessions/2026-08-01_autodesk-mdp/merged/S3",
+    "sessions/2026-08-01_autodesk-mdp/merged/S4",
+    "sessions/2026-08-01_autodesk-mdp/merged/S5"
+  ],
+  "speakers": [
+    {
+      "category": "教學",
+      "name": "機械系統設計與分析",
+      "full": "Session 1: Mechanical system design and analysis",
+      "talk": "機械系統設計與分析"
+    },
+    {
+      "category": "教學",
+      "name": "建模概念",
+      "full": "Session 2: Modeling concepts",
+      "talk": "建模概念"
+    },
+    {
+      "category": "教學",
+      "name": "族群概念",
+      "full": "Session 3: Family concepts",
+      "talk": "族群概念"
+    },
+    {
+      "category": "教學",
+      "name": "專案管理",
+      "full": "Session 4: Project management",
+      "talk": "專案管理"
+    },
+    {
+      "category": "教學",
+      "name": "文件製作",
+      "full": "Session 5: Documentation",
+      "talk": "文件製作"
+    }
+  ]
+}

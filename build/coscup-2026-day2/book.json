@@ -1,0 +1,71 @@
+{
+  "slug": "coscup-2026-day2",
+  "title": "COSCUP 2026 · Day 2",
+  "subtitle": "實錄 · 從審查演算法、年齡驗證到模型安全與 harness",
+  "shelf": "seminar",
+  "state": "A",
+  "recommended_mode": "multipage",
+  "sources": [
+    "2026-08-09_coscup-d2-01-laravel-image-hash",
+    "2026-08-09_coscup-d2-02-wikidata-mcp",
+    "2026-08-09_coscup-d2-03-moderation-algorithm",
+    "2026-08-09_coscup-d2-04-benign-outliers",
+    "2026-08-09_coscup-d2-05-age-verification",
+    "2026-08-09_coscup-d2-06-semiconductor-jp",
+    "2026-08-09_coscup-d2-07-pdf-classifier",
+    "2026-08-09_coscup-d2-08-harness"
+  ],
+  "speakers": [
+    {
+      "category": "網頁開發",
+      "name": "TZU",
+      "full": "TZU · TR409-2",
+      "talk": "Laravel 實戰：用 hash 比對實作以圖搜圖"
+    },
+    {
+      "category": "知識圖譜",
+      "name": "Alan Ang",
+      "full": "Alan Ang · TR412-1",
+      "talk": "Wikidata MCP: accessing the world's largest free and open knowledge graph via your LLM!"
+    },
+    {
+      "category": "平台治理",
+      "name": "黃豆泥",
+      "full": "黃豆泥 mashbean、Duke Wang · TR209",
+      "talk": "揭秘審查演算法：談平台治理政策之前，先來開源平台的審查演算法吧"
+    },
+    {
+      "category": "模型安全",
+      "name": "Allen",
+      "full": "Allen、黃亮勳 · TR212",
+      "talk": "Benign Outliers 對 Twinkle AI 模型安全對齊之影響研究"
+    },
+    {
+      "category": "數位人權",
+      "name": "黃豆泥",
+      "full": "黃豆泥 mashbean、Denken Chen · TR209",
+      "talk": "年齡驗證、數位監控、隱私權，討論這些以前，不妨先開源吧"
+    },
+    {
+      "category": "開源硬體",
+      "name": "Jun-ichi OKAMURA",
+      "full": "Jun-ichi OKAMURA · TR515",
+      "talk": "Open-Source Ecosystem for Semiconductor Design Development Programs in Japan"
+    },
+    {
+      "category": "文件工程",
+      "name": "黃亮勳",
+      "full": "黃亮勳、freddy4212 · TR212",
+      "talk": "PDF 解封之後—一起動手打造 Classifier 吧"
+    },
+    {
+      "category": "AI 工具鏈",
+      "name": "voidful",
+      "full": "voidful · TR409-2",
+      "talk": "透過ClaudeCode，Gemini Cli，Codex來瞭解harness"
+    }
+  ],
+  "venue": "國立臺灣科技大學",
+  "date": "2026-08-09",
+  "note_excluded": "第 6 場「政府採購如何使用開源？為何開源」(黃豆泥、pofeng、趙式隆, TR209 12:50-13:50) 現場未錄音,依使用者裁定不收錄。"
+}

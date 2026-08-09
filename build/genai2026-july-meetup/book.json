@@ -1,0 +1,26 @@
+{
+  "slug": "genai2026-july-meetup",
+  "title": "GENAI2026・七月小聚 — Speaker Panel",
+  "subtitle": "把舞台上的分享帶回更近距離的現場",
+  "shelf": "public",
+  "state": "A",
+  "recommended_mode": "multipage",
+  "sources": [
+    "2026-07-22_genai-meetup-1",
+    "2026-07-22_genai-meetup-2"
+  ],
+  "speakers": [
+    {
+      "category": "上半場",
+      "name": "慕約 × 小馮 × Jackle",
+      "full": "慕約（主持）× 小馮 × Jackle",
+      "talk": "年會 recap × 無為・大掌櫃 × AI 打電話 × POC 到 Production"
+    },
+    {
+      "category": "下半場",
+      "name": "Sunny × Peggy × 海總理",
+      "full": "Sunny（主持）× Peggy × 海總理",
+      "talk": "快問快答 × AI 的個人 Context × 教育與繼承世代"
+    }
+  ]
+}
