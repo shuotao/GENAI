@@ -212,6 +212,7 @@ GitHub Pages 部署版:`https://shuotao.github.io/GENAI/web/studio.html`
 - **`qaqc_phase_b.py`**: Gemini-powered 校稿(merged / polish〔Phase C 冒號+Phase D hook〕/ enhance / notes / structured 模式)
 - **`normalize_punctuation.py`**: Phase C 全形化確定性工具(§ R7.1;中文句一律全形,保護小數/網址/網域/檔名/碼/markdown 連結)
 - **`prepublish_gate.py`**: 出版前強制門(原則 9)— 檢查 Phase C/D 完成戳記 + 無殘留 marker + 全形 lint + **連結語法殘留**(§ S6.14:`[文字](網址)` 在本管線會渲染成字面文字,一律改用空格包夾的裸網址)
+- **`s2t_normalize.py`**: 簡體漂移正規化(OpenCC `s2tw`,確定性;原則 6)— `GROQ_NO_PROMPT=1` 重轉(Common Gotchas #7)會同時拿掉 Whisper 的繁中語言先驗，輸出片段性漂移成簡體；本工具只換字形不換詞彙(刻意不用 `s2twp`)，並保護「台/只/了/面」等台灣正體本來就正確的同形字，對正體檔為 no-op、可安全重跑
 - **`para_len_check.py`**: Phase B 段落長度量測(§ R2.1 目標 60~120 CJK 字)— 只量測不切段(切在哪是語意判斷);判準刻意不對稱,超長才 fail、過短僅提醒(§ R2.1 明寫「寧短勿長」)
 - **`phase_d_check.py`**: Phase D「只插入、不改寫」的機械證明(§ R8.2)— 先 `--snapshot` 存 base,事後驗段落數 1:1 + **原文字元須為新文字的子序列**(任何刪改都會被抓出位置)+ CJK 成長率上限
 - **`classify_session.py`** + **`build_book_master.py`** + **`step45_converge.py`**: Step 4.5 場次狀態分類與收斂 — 把「拆檔錄音(State A)」與「一檔多講者(State B)」都收斂成同一 canonical master,確保出版一致;`step45_converge.py` 做 dry-run 驗 `session==toc==##`(規則見 CLAUDE.md 原則 8 / prompts/publish_qaqc.md § S4.5.13;取代寫死的 `build_genai2026_day1/day2.py`)

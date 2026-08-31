@@ -1,0 +1,40 @@
+{
+  "slug": "bim-mcp-8",
+  "title": "MCP 八月小聚 VOL.08",
+  "subtitle": "把判斷留給人 — 四場分享（#最後一次）",
+  "shelf": "reading",
+  "state": "A",
+  "recommended_mode": "multipage",
+  "sources": [
+    "2026-08-29_mcp8-01-lin-chia-wei",
+    "2026-08-29_mcp8-02-liu-ke",
+    "2026-08-29_mcp8-03-cho-hsin-yen",
+    "2026-08-29_mcp8-04-chen-pei-hua"
+  ],
+  "speakers": [
+    {
+      "category": "材料資料庫",
+      "name": "林家維",
+      "full": "林家維 老師",
+      "talk": "綠建材 Revit 導入工具：從採購指南到可用元件"
+    },
+    {
+      "category": "面積送審",
+      "name": "劉可",
+      "full": "劉可 老師",
+      "talk": "建照面積計算與填表系統：把時間還給設計"
+    },
+    {
+      "category": "驗證流程",
+      "name": "卓欣言",
+      "full": "卓欣言 老師",
+      "talk": "Agent 是流程顯微鏡：從「建立成功但位置錯誤」開始"
+    },
+    {
+      "category": "介面工具",
+      "name": "陳姵樺",
+      "full": "陳姵樺 老師",
+      "talk": "BIMGO AI 與 MCP 的實際應用：門窗表與窗戶細部自動化"
+    }
+  ]
+}

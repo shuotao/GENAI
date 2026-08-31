@@ -623,9 +623,11 @@ Whisper 的幻覺集中在**靜音/音樂/掌聲/休息/開場墊場**等非語�
 7. **吵雜場地的 context prompt 會被 Whisper 吐回成幻覺 —— 轉完先量化,中招就整場無 prompt 重轉**
    - **症狀**:靜音/掌聲/換場等非語音段,Whisper 照著我們給的 prompt 生成,產出「內容包含 X、Y、Z…」(中文)或「Key terms …」(英文)的整條亂碼 cue。它**不只是加噪,是蓋掉真實話語**。
    - **量化**:轉完立刻 `grep -c '內容包含\|字幕由' <srt>`(英文用 `Key terms`)。>0 就整場重來 —— 2026-08-08 COSCUP 11 場中 6 場中招,最高一場 20.8% 的 cue 是純幻覺。
+   - **⚠️ 前綴 grep 會漏抓(2026-08-29 MCP8 補充)**:echo **不一定帶「內容包含」前綴**,常見是把 context 的**尾巴逐字吐回**(實例:context 結尾「…Schedule、Python、API、搜尋、篩選、組合材料」原封出現在 cue 裡)。前綴 grep 回 0 不代表乾淨。**補一道 context 詞命中率掃描**:把 `context.txt` 切成詞、對 `cleaned.md` 逐行數命中,**單行命中 ≥4 個 context 詞**即高度可疑,逐條人工判讀。MCP8 四場前綴 grep 只抓到 1 場,補掃後發現**四場全中招**;無 prompt 重轉後 CJK 回升 +17~38%(被幻覺蓋掉的真實內容回來了)。
    - **解方(已內建)**:`GROQ_NO_PROMPT=1`(完全不送 prompt,連 base 句也不送)+ `GROQ_CHUNK_SECONDS=300`(短切段抑制迴圈),`groq_transcribe.py` 與 `groq_transcribe_en.py` 皆支援。實測 echo 歸零、**CJK 字數反增 10–18%**(被蓋掉的內容回來了)。
    - **重轉要整場重建**:`session.py` 拒絕既有目錄,且 `cleaned.md` 與 marker 的字數區間要一致重生 → 先把舊 SRT 複製出去當 Phase B 專名交叉參考,再 `rm -rf` 該 session 重跑。
    - **代價與補償**:無 prompt 會失去專名先驗(如 Open Data→「Open Beta」),改由 Phase B 依 `context.txt` + 官方議程校正(核心鐵律 F1)。**字數門要記得放行**:ASR base 被幻覺灌水時 95–105% 的分母無效,真門是 `build_book_master` 的 self_assert(≥99.5%)與 `publish_qaqc` 字數漂移(<10%)。
+   - **副作用:簡體漂移(2026-08-29 引入)**。拿掉 prompt 等於同時拿掉 Whisper 的「繁體中文」語言先驗,輸出會片段性漂移成簡體(MCP8 場 03:11,272 CJK 中 1,059 字為簡體)。這是**確定性字元對映,不該勞動 LLM 逐字改**(原則 6)→ 重轉後、進 Phase B 前跑 `python3 scripts/s2t_normalize.py sessions/<slug>/cleaned.md sessions/<slug>/cleaned.srt --in-place`(OpenCC `s2tw`,只換字形不換詞彙;`transcript.srt` 不可變,工具會自行拒絕)。
 
 ---
 
@@ -712,6 +714,7 @@ Web 使用者 git pull(或瀏覽器下次 reload)
 | **Step 5** 圖片壓縮 + EXIF 轉正 | `/scripts/compress_images.py`(出版前壓縮省流量、把手機側拍照轉正) |
 | **Step 5** 出版到 Firebase goodedunote | `/scripts/publish_goodedunote.sh`(多頁 HTML + 壓圖 + `deploy --only hosting`;自動帶 `--base-url`) |
 | **Step 5** goodedunote 部署根(累積所有筆記) | `/scripts/publish/goodedunote/`(每篇 `public/<slug>/`) |
+| **Phase B** 簡體漂移正規化(`GROQ_NO_PROMPT` 重轉後必跑) | `/scripts/s2t_normalize.py`(OpenCC `s2tw`;只換字形不換詞彙——刻意不用 `s2twp`,那會把「軟件→軟體」等用語一起改掉、等於改動講者原話;保護「台/只/了/面」等台灣正體本就正確的同形字;對正體檔 no-op、可安全重跑;拒絕處理 `transcript.srt`) |
 | **Phase B** 段落長度量測 | `/scripts/para_len_check.py`(§ R2.1 目標 60~120 CJK 字;只量測不切段——切在哪是語意判斷。判準刻意不對稱:超長才 fail、過短僅提醒,因為 § R2.1 寫的是「寧短勿長」) |
 | **Phase D** 只插入不改寫的證明 | `/scripts/phase_d_check.py`(§ R8.2;`--snapshot` 存 base → 事後驗段落數 1:1 + **原文字元須為新文字的子序列** + CJK 成長率上限。子序列比對可精確指出被刪改的位置) |
 | Standalone 轉錄 | `/SRT/transcribe.py` |
