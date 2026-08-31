@@ -62,11 +62,6 @@ def _normalize_body(lines: list[str], img_prefix: str | None) -> list[str]:
             s = "#" + s
         elif s.startswith("**講者") or s.startswith("**講題"):
             continue
-        elif s.startswith(">"):                 # 引言標記剝除,保留內容(零省略)
-            body = s[1:].strip()
-            if not body:
-                continue
-            s = body
         if img_prefix:                          # 跨 deck 圖名加前綴,避免合併撞名
             s = BARE_PNG_RE.sub(lambda m: f"{m.group(1)}{img_prefix}-{m.group(2)}{m.group(3)}", s)
         out.append(s)
@@ -88,14 +83,55 @@ def _first_h1_text(lines: list[str]) -> str:
     return ""
 
 
+# ---------- 圖檔前綴實體化 ----------
+# _normalize_body 會把 `page-01.png` 改名成 `s1-page-01.png` 以免跨 deck 撞名,
+# 但檔案本身不會自己出現 —— 不 copy 出來,出版後線上圖會全部 404。
+# (2026-08-31:此前含圖的書全是 State B〔img_prefix=None〕或舊寫死腳本,缺口從未被踩到。)
+_IMGSRC_DIRNAME = "_imgsrc"
+
+
+def _materialize_prefixed_images(src_dir: Path, blocks: list[str], prefix: str) -> None:
+    import shutil
+    out_dir = BUILD_IMGSRC[0]
+    if out_dir is None:
+        return
+    out_dir.mkdir(parents=True, exist_ok=True)
+    n = 0
+    for ln in blocks:
+        for m in BARE_PNG_RE.finditer(ln):
+            newname = m.group(2)
+            if not newname.startswith(prefix + "-"):
+                continue
+            orig = src_dir / newname[len(prefix) + 1:]
+            if orig.is_file():
+                shutil.copy2(orig, out_dir / newname)
+                n += 1
+            else:
+                print(f"[build] ⚠ 找不到來源圖 {orig}", file=sys.stderr)
+    if n:
+        print(f"[build] 圖檔前綴實體化:{n} 張 → {out_dir}")
+
+
+BUILD_IMGSRC = [None]   # build() 設定;init/其他路徑為 None
+
+
 # ---------- State A:concat-demote ----------
 def parse_state_a(dirs: list[Path], speakers: list[dict]) -> list[Chapter]:
     chapters = []
     for k, d in enumerate(dirs, start=1):
         lines = (d / "cleaned.md").read_text(encoding="utf-8").splitlines()
-        # 丟掉那一個 # 講題行(改由 ## 第N場 承載),其餘正規化
-        body = [ln for ln in lines if not H1_RE.match(ln)]
+        # 丟掉**第一個** # 講題行(改由 ## 第N場 承載);其後若還有 # (例:補述層的
+        # 「# 附錄:完整清單」)降成 ###,否則會被靜默丟掉、內容憑空消失。
+        body, dropped_title = [], False
+        for ln in lines:
+            if H1_RE.match(ln):
+                if not dropped_title:
+                    dropped_title = True
+                    continue
+                ln = "###" + ln[1:]
+            body.append(ln)
         blocks = _normalize_body(body, img_prefix=f"s{k}")
+        _materialize_prefixed_images(d, blocks, f"s{k}")
         sp = speakers[k - 1]
         chapters.append(Chapter(
             index=k, category=sp.get("category", ""),
@@ -168,8 +204,9 @@ def self_assert(md: str, toc: list[dict], expected: int, sources: list[Path]) ->
         errs.append(f"章數/toc/場數不一致: ##={n_chapters}, toc={len(toc)}, 期望={expected}")
     if n_h1 != 1:
         errs.append(f"頂層 # 應恰 1 個,實得 {n_h1}")
-    for pat, label in [(r"^#### ", "H4"), (r"^> ", "blockquote"), (r"^- ", "bullet"),
-                       (r"^\|", "table"), (r"^---$", "hr"), (r"!\[[^\]]*\]\(<", "圖檔<>包覆")]:
+    # blockquote / bullet / table / hr 自 2026-08-31 起由 md_to_html 原生渲染(補述層需求),
+    # 不再列為「不支援語法」;H4 與圖檔 <> 包覆仍是硬錯。
+    for pat, label in [(r"^#### ", "H4"), (r"!\[[^\]]*\]\(<", "圖檔<>包覆")]:
         c = sum(1 for l in lines if re.search(pat, l))
         if c:
             errs.append(f"殘留不支援語法 {label}: {c}")
@@ -241,6 +278,7 @@ def cmd_build(a) -> int:
             for d, s in zip(dirs, book["sources"])]
     c = classify(dirs)
     speakers = book["speakers"]
+    BUILD_IMGSRC[0] = ROOT / "build" / book["slug"] / _IMGSRC_DIRNAME
     if c.state == "A":
         chapters = parse_state_a(dirs, speakers)
     elif c.state == "B":

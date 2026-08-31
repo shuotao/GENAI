@@ -68,6 +68,17 @@ body { background:#fdfbf7; color:#2d2a26; font-family:'Noto Serif TC',serif; lin
 .btn:hover { background:#b34a2f; color:#fff; border-color:#b34a2f; }
 .hero { margin:1.5rem 0 2rem; }
 .hero img { display:block; width:100%; height:auto; border-radius:16px; box-shadow:0 12px 32px -16px rgba(80,40,25,.55); }
+.prose blockquote { margin:1.6rem 0; padding:.9rem 1.1rem; background:#f7f1e8; border-left:4px solid #e0a892; border-radius:0 8px 8px 0; }
+.prose blockquote p { margin:0 0 .5rem; text-align:left; font-size:.94rem; color:#4a423a; }
+.prose blockquote p:last-child { margin-bottom:0; }
+.prose ul { margin:1.2rem 0 1.4rem 1.4rem; list-style:disc; }
+.prose ul li { margin-bottom:.5rem; }
+.kc-tablewrap { overflow-x:auto; margin:1.6rem 0; }
+.kc-tablewrap table { border-collapse:collapse; width:100%; font-size:.88rem; }
+.kc-tablewrap th, .kc-tablewrap td { border:1px solid #e4d8ca; padding:.45rem .7rem; text-align:left; vertical-align:top; }
+.kc-tablewrap th { background:#f3ebe0; font-weight:700; color:#8a3f28; }
+.prose code { background:#efe7dc; padding:.1rem .35rem; border-radius:4px; font-size:.86em; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; color:#7a3a24; word-break:break-all; }
+.kc-hr { border:0; border-top:1px solid #e4d8ca; margin:2.2rem 0; }
 .kc-fig { margin:1.8rem 0; text-align:center; }
 .kc-fig img { display:block; max-width:100%; height:auto; margin:0 auto; border-radius:12px; box-shadow:0 8px 24px -14px rgba(80,40,25,.5); }
 .kc-fig figcaption { margin-top:.6rem; font-size:.85rem; color:#9c8e82; }
@@ -115,18 +126,94 @@ def _linkify(m):
     return f'<a href="{u}" target="_blank" rel="noopener noreferrer">{u}</a>{tail}'
 
 
+_CODE_RE = re.compile(r"`([^`]+)`")
+
+
 def inline_md(text):
-    """**bold** → <strong>;裸 http(s) URL → 可點超連結。esc() 之後再呼叫。
+    """`code` → <code>;**bold** → <strong>;裸 http(s) URL → 可點超連結。esc() 之後再呼叫。
+    行內碼先轉(2026-08-31 加入,補述層滿是檔案路徑/參數名),避免路徑被 URL 規則誤連。
     URL 自動連結:讓逐字稿裡貼的網址讀者能直接點(esc 後圖片 src 是 .png,不會被誤連)。
     用 [^*]+ 限制不跨越下一個 *,避免吃進巢狀。"""
+    text = _CODE_RE.sub(r"<code>\1</code>", text)
     text = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", text)
     return _URL_RE.sub(_linkify, text)
 
 
+HTML_COMMENT = re.compile(r"^\s*<!--.*-->\s*$")
+TABLE_SEP = re.compile(r"^\s*\|[\s:|-]+\|\s*$")
+
+
+def _table_cells(s):
+    return [c.strip() for c in s.strip().strip("|").split("|")]
+
+
+def payload_nws(s):
+    """行的「內容」非空白字元數 —— 剝掉結構標記(`>`、`- `、表格 `|`、`---`、HTML 註解)
+    後再數。render_blocks 的 para_chars 與 main() 的 md_chars 共用同一把尺,
+    否則含補述層/表格的書會出現假性保留率下降(E1 同口徑原則)。"""
+    s = IMG_INLINE.sub("", s)
+    if HTML_COMMENT.match(s) or s.strip() == "---" or TABLE_SEP.match(s):
+        return 0
+    s = re.sub(r"^(?:\s*>)+", "", s)
+    s = re.sub(r"^\s*-\s", "", s)
+    s = s.replace("|", "")
+    return len(re.sub(r"\s", "", s))
+
+
 def render_blocks(lines_iter, first_in_sec_start=True):
-    """把段落/圖片 lines 轉成 article 內 HTML;回傳 (blocks_html_list, para_chars, first_img_src)。"""
+    """把段落/圖片/引用/表格/清單 lines 轉成 article 內 HTML;
+    回傳 (blocks_html_list, para_chars, first_img_src)。"""
     blocks, para_chars, first_img, first_in = [], 0, None, first_in_sec_start
-    for s in lines_iter:
+    seq = list(lines_iter)
+    k = 0
+    while k < len(seq):
+        s = seq[k]
+        # HTML 註解(補述層區塊標記)不輸出
+        if HTML_COMMENT.match(s):
+            k += 1; continue
+        # 分隔線
+        if s.strip() == "---":
+            blocks.append('      <hr class="kc-hr">'); k += 1; continue
+        # 引用區塊:連續 `>` 行收成一個 <blockquote>,內部每行一個 <p>
+        if s.lstrip().startswith(">"):
+            inner = []
+            while k < len(seq) and seq[k].lstrip().startswith(">"):
+                body = seq[k].lstrip()[1:].strip()
+                if body:
+                    inner.append(f'<p>{inline_md(esc(body))}</p>')
+                    para_chars += payload_nws(body)
+                k += 1
+            blocks.append('      <blockquote>' + "".join(inner) + '</blockquote>')
+            first_in = False
+            continue
+        # 表格:表頭 + 分隔列 + 資料列
+        if s.lstrip().startswith("|") and k + 1 < len(seq) and TABLE_SEP.match(seq[k + 1]):
+            head = _table_cells(s)
+            k += 2
+            body_rows = []
+            while k < len(seq) and seq[k].lstrip().startswith("|"):
+                body_rows.append(_table_cells(seq[k])); k += 1
+            th = "".join(f"<th>{inline_md(esc(c))}</th>" for c in head)
+            tb = "".join("<tr>" + "".join(f"<td>{inline_md(esc(c))}</td>" for c in r) + "</tr>"
+                         for r in body_rows)
+            for r in body_rows:
+                para_chars += sum(payload_nws(c) for c in r)
+            para_chars += sum(payload_nws(c) for c in head)
+            blocks.append(f'      <div class="kc-tablewrap"><table><thead><tr>{th}</tr></thead>'
+                          f'<tbody>{tb}</tbody></table></div>')
+            first_in = False
+            continue
+        # 無序清單:連續 `- ` 行收成一個 <ul>
+        if s.lstrip().startswith("- "):
+            items = []
+            while k < len(seq) and seq[k].lstrip().startswith("- "):
+                body = seq[k].lstrip()[2:].strip()
+                items.append(f'<li>{inline_md(esc(body))}</li>')
+                para_chars += payload_nws(body); k += 1
+            blocks.append('      <ul>' + "".join(items) + '</ul>')
+            first_in = False
+            continue
+        k += 1
         if s.startswith("### "):
             blocks.append(f'      <h3>{inline_md(esc(s[4:].strip()))}</h3>'); continue
         if s.startswith("## "):  # 單篇連續模式:## 是文章內段落標題(h2),不是分頁邊界
@@ -346,8 +433,9 @@ def main():
 
     # QAQC
     md_lines = Path(a.md).read_text(encoding="utf-8").splitlines()
-    md_body = "".join(IMG_INLINE.sub("", l) for l in md_lines if l.strip() and not l.startswith("#") and not (l.startswith("*") and l.rstrip().endswith("*")))
-    md_chars = len(re.sub(r"\s", "", md_body))
+    md_chars = sum(payload_nws(l) for l in md_lines
+                   if l.strip() and not l.startswith("#")
+                   and not (l.startswith("*") and l.rstrip().endswith("*")))
     mode = "單篇連續" if a.single else ("多頁" if a.multipage else "單頁SPA")
     retention = total_chars / max(1, md_chars)
     unit = "段落" if a.single else "章節"

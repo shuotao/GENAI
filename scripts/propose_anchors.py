@@ -96,7 +96,8 @@ def main() -> int:
     notes = json.loads((sdir / "image_notes.json").read_text(encoding="utf-8"))
     usable = [n for n in notes if n.get("status") in ("described", "anchored")]
     md_text = (sdir / a.md).read_text(encoding="utf-8")
-    lines = [ln for _i, ln in content_lines(md_text)]
+    # 錨點空間排除補述層 blockquote,與 insert_images.cmd_apply 同構(§ S4.5.11)
+    lines = [ln for _i, ln in content_lines(md_text, skip_quote=True)]
 
     paged = sorted([n for n in usable if n.get("deck_page") is not None],
                    key=lambda n: (n["deck_page"], n["file"]))

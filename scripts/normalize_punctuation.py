@@ -52,6 +52,11 @@ def has_cjk(s: str) -> bool:
     return any(is_cjk(c) for c in s)
 
 
+_ASCII_PAREN_RE = re.compile(r"\([\x20-\x27\x2a-\x7e]+\)")   # 括號內全為 ASCII(不含括號本身)
+_HTML_COMMENT_RE = re.compile(r"^\s*<!--.*-->\s*$")
+_ORDERED_LI_RE = re.compile(r"^(?:\s*>\s*)*\s*\d+(\.)\s")   # 有序清單標記 `1. `,句點不轉
+
+
 def _spans_to_skip(line: str) -> list[tuple[int, int]]:
     """不轉的字元區間:行內碼 `...`(含反引號)+ markdown 圖片/連結整個 token
     (保護 `](url)` 的括號與檔名/網址,例如 ![alt](shot-01.png) 不被改成全形)。"""
@@ -67,6 +72,10 @@ def _spans_to_skip(line: str) -> list[tuple[int, int]]:
             i += 1
     for m in _LINK_RE.finditer(line):
         spans.append((m.start(), m.end()))
+    # 純 ASCII 內容的半形括號:技術列舉如 (Walls/Floors/Ceilings/Windows)、(v5)、
+    # (362 行) 不算 —— 括號內若含中文就照常全形化。
+    for m in _ASCII_PAREN_RE.finditer(line):
+        spans.append((m.start(), m.end()))
     return spans
 
 
@@ -77,6 +86,8 @@ def normalize_line(line: str) -> tuple[str, int]:
     時間(數字:數字)。連續 2+ 句點 = 省略號「……」。"""
     if not has_cjk(line):
         return line, 0
+    if _HTML_COMMENT_RE.match(line):
+        return line, 0        # HTML 註解是標記不是行文;轉成 `<！--` 會直接破壞註解
     skip = _spans_to_skip(line)
 
     def in_skip(idx: int) -> bool:
@@ -102,13 +113,27 @@ def normalize_line(line: str) -> tuple[str, int]:
                 out.append("……"); n += 1; i = j; continue
             if _ascii_alnum(prev_ch) and _ascii_alnum(nxt):
                 out.append("."); i = j; continue
+            # 裸副檔名 token(「另存 .rfa 備份」):前為空白/行首、後接 ASCII 英數
+            if (not prev_ch or prev_ch.isspace()) and _ascii_alnum(nxt):
+                out.append("."); i = j; continue
+            # 有序清單標記 `1. `(含 blockquote 內)
+            m_li = _ORDERED_LI_RE.match(line)
+            if m_li and m_li.start(1) == i:
+                out.append("."); i = j; continue
             out.append("。"); n += 1; i = j; continue
         if ch == ",":
-            if prev_ch.isdigit() and next_ch.isdigit():   # 千分位 1,000
+            after = line[i + 2] if i + 2 < ln else ""
+            # 千分位 1,000;以及引述的英文句內逗號(ASCII 詞, ASCII 詞)
+            if ((prev_ch.isdigit() and next_ch.isdigit())
+                    or (_ascii_alnum(prev_ch) and next_ch == " " and _ascii_alnum(after))):
                 out.append(","); i += 1; continue
             out.append("，"); n += 1; i += 1; continue
         if ch == ":":
-            if next_ch == "/" or (prev_ch.isdigit() and next_ch.isdigit()):  # 網址 / 時間
+            after = line[i + 2] if i + 2 < ln else ""
+            # 網址 / 時間 / ASCII 技術欄位(stage: done、Epic-1: TABC)—— 後者是
+            # key:value 標記,不是中文行文的冒號,轉全形會破壞可複製性
+            if (next_ch == "/" or (prev_ch.isdigit() and next_ch.isdigit())
+                    or (_ascii_alnum(prev_ch) and next_ch == " ")):
                 out.append(":"); i += 1; continue
             out.append("："); n += 1; i += 1; continue
         if ch in (";", "!", "?", "(", ")"):

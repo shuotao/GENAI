@@ -57,11 +57,14 @@
 | 段落(空行分隔) | ✅ | `<p>` | |
 | body `*italic*` | ❌ | 字面顯示 `*`,不轉斜體 | |
 | `[text](url)` | ❌ | 字面顯示 | |
-| `> blockquote` | ❌ | 字面顯示 `>` | |
-| 列表 `-` / `1.` | ❌ | 字面顯示 | |
-| 行內 `` `code` `` | ❌ | 字面顯示 backtick | |
+| `> blockquote` | ✅(2026-08-31 加入) | 連續 `>` 行 → 一個 `<blockquote>`,內部逐行 `<p>` | 補述層用(§ S4.5.15);dropcap 不套用 |
+| 表格 `\|` | ✅(2026-08-31 加入) | `<div class="kc-tablewrap"><table>` | 需表頭 + `\|---\|` 分隔列;橫向可捲 |
+| 列表 `- ` | ✅(2026-08-31 加入) | 連續 `- ` 行 → 一個 `<ul>` | |
+| `---` | ✅(2026-08-31 加入) | `<hr class="kc-hr">` | |
+| `<!-- 註解 -->` | ✅(2026-08-31 加入) | **不輸出** | 補述層區塊標記 |
+| 有序列表 `1.` | ❌ | 字面顯示(仍算 `<p>`) | |
+| 行內 `` `code` `` | ✅(2026-08-31 加入) | `<code>` | 先於 bold/URL 處理,避免路徑被誤連 |
 | 區塊 ` ``` ` | ❌ | 字面顯示 | |
-| 表格 `|` | ❌ | 字面顯示 | |
 
 ### S4.5.3 圖片規則
 
@@ -126,7 +129,9 @@
 - [ ] `## ` 標題數 == toc.json 長度
 - [ ] 所有 `![](...)` 引用的圖檔在 IMGSRC 存在
 - [ ] cleaned.md 內**沒有** `<filename>` 形式的圖檔引用
-- [ ] 沒有不支援的 markdown 語法(`>`、列表、表格、code block)
+- [ ] 沒有不支援的 markdown 語法(`####`、code block、`![](<檔名>)` 的 `<>` 包覆)
+- [ ] **每個 session 檔恰一個 `#`**(講題行)—— `#` 數是 classify 判 State A/B 的訊號,
+      補述層/附錄的標題一律從 `##` 起(多出來的 `#` 會讓 classify 直接拒絕)
 - [ ] 已決定 slug,且 slug 在 data.js SHELVES 已建好對應 entry 或預備加入
 - [ ] 已決定要傳哪一組 `--back-anchor` + `--back-label`(對照 § S4.5.7)
 - [ ] `--cover`(若有)圖檔在 IMGSRC 存在
@@ -407,6 +412,34 @@ dry-run 階段書尚未進 data.js,故不在收斂 loop 內呼叫;真正 deploy 
 產物 `sessions/<slug>/dialogue_report.json`(含 `converged` bool);exit 0=skip/收斂、1=未收斂、2=格式錯。結果進 pipeline_logger(stage `S4.5-dialogue`)+ improvement queue。
 
 **gate**:`prepublish_gate.py` 對「找得到 reference_notes.md 的 source session」要求 report 存在、比 cleaned.md 新、且 converged;master-centric 出版(build/<slug>/publish.md)經 book.json.sources 展開逐 session 驗,並對 publish.md 的 panel 章節加驗 D1 標籤覆蓋(章↔source 依 § S4.5.13 的 sources 序 == toc 序)。任一不過 → 中止出版。
+
+### S4.5.15 補述層與延伸 markdown 語法(2026-08-31 引入)
+
+**背景**:場次逐字稿之外,講者/整理者可能另做一層**補述層** —— 逐字稿一字不改,
+在講到某項技術的句子後插入引用框,標注它對應到哪張看板卡/domain/skill/檔案,
+另附完整清單附錄。先例:`bim-mcp-8` 場 01(林家維)。
+
+**已支援語法(2026-08-31 起,`md_to_html.render_blocks` 原生渲染)**:
+
+| 語法 | 渲染 | 備註 |
+|---|---|---|
+| 連續 `>` 行 | 一個 `<blockquote>`,內部每行一個 `<p>` | 補述框;dropcap 不套用 |
+| `\|…\|` + `\|---\|` | `<div class="kc-tablewrap"><table>` | 橫向可捲,不撐破版面 |
+| 連續 `- ` 行 | 一個 `<ul>` | |
+| `---` | `<hr class="kc-hr">` | |
+| `<!-- … -->` | **不輸出** | 補述層區塊標記 |
+
+`build_book_master` 的「不支援語法」硬檢核只剩 `####` 與 `![](<>)` 包覆。
+
+**錨點行空間排除補述層**(§ S4.5.11 配套):`insert_images.content_lines(skip_quote=True)`
+會略過 `>` 行與 `<!-- ▍補述層開始/結束 -->` 之間的整段 —— 圖只會插在**講者段落**之後,
+不會插進補述框中間;相關性計分也不會拿框裡的 repo/commit metadata 去比對逐字稿。
+開著這個旗標時,索引空間與同 session 的純逐字稿**逐行同構**(實證:bim-mcp-8 場 01,
+補述版 78 行 == cleaned.transcript.md 78 行)。**零省略驗證一律不開此旗標**,
+確保補述框本身也被納入「原內容行 1:1 不變」。
+
+**字數口徑**:`md_to_html.payload_nws()` 剝掉結構標記(`>`/`- `/`\|`/`---`/註解)後才數,
+`para_chars` 與 `md_chars` 共用同一把尺 —— 否則含補述層/表格的書會出現**假性保留率下降**(E1)。
 
 ---
 

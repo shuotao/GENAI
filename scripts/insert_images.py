@@ -28,12 +28,40 @@ IMG_LINE = re.compile(r"^!\[[^\]]*\]\([^)]+\)\s*$")
 IMG_REF = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
 
 
-def content_lines(md_text: str) -> list[tuple[int, str]]:
-    """回 [(原始行號, 行內容)],只含非空、非既有圖片行。"""
-    out = []
+QUOTE_LINE = re.compile(r"^\s*>")
+HTML_COMMENT_LINE = re.compile(r"^\s*<!--.*-->\s*$")
+# 補述層區塊標記(§ S4.5.11):成對出現,區塊內整段不進錨點空間
+ANNEX_OPEN = re.compile(r"^\s*<!--\s*▍補述層開始\s*-->\s*$")
+ANNEX_CLOSE = re.compile(r"^\s*<!--\s*▍補述層結束\s*-->\s*$")
+
+
+def content_lines(md_text: str, skip_quote: bool = False) -> list[tuple[int, str]]:
+    """回 [(原始行號, 行內容)],只含非空、非既有圖片行。
+
+    skip_quote=True 另外略過 blockquote(`>`)與 HTML 註解行 —— 用於**錨點行空間**:
+    補述層(§ S4.5.11)的引用框不是講者說的話,圖不該插進框中間,相關性計分也不該
+    拿框裡的 repo/commit metadata 去比對逐字稿。開著這個旗標時,索引空間會與同一
+    session 的純逐字稿 cleaned.md 完全同構。
+
+    **零省略驗證一律用 skip_quote=False**(預設),確保補述框本身也被納入「原內容行
+    1:1 不變」的比對,不會被插圖動到。
+    """
+    out, in_annex = [], False
     for i, ln in enumerate(md_text.splitlines()):
-        if ln.strip() and not IMG_LINE.match(ln):
-            out.append((i, ln))
+        if skip_quote:
+            if ANNEX_OPEN.match(ln):
+                in_annex = True
+                continue
+            if ANNEX_CLOSE.match(ln):
+                in_annex = False
+                continue
+            if in_annex:
+                continue
+        if not ln.strip() or IMG_LINE.match(ln):
+            continue
+        if skip_quote and (QUOTE_LINE.match(ln) or HTML_COMMENT_LINE.match(ln)):
+            continue
+        out.append((i, ln))
     return out
 
 
@@ -48,7 +76,7 @@ def line_type(ln: str) -> str:
 
 
 def cmd_plan(md_path: Path) -> int:
-    lines = content_lines(md_path.read_text(encoding="utf-8"))
+    lines = content_lines(md_path.read_text(encoding="utf-8"), skip_quote=True)
     plan = []
     for idx, (_orig, ln) in enumerate(lines):
         preview = ln if len(ln) <= 60 else ln[:40] + "…" + ln[-18:]
@@ -71,7 +99,7 @@ def cmd_apply(md_path: Path, notes_path: Path, anchors_path: Path, img_dir: Path
     problems = []
     skipped = []  # after_line=-1:此圖不插入(重複張/封面/無合理位置)
     to_insert = []  # (content_line_index, img_file, caption)
-    lines = content_lines(md_text)
+    lines = content_lines(md_text, skip_quote=True)   # 錨點空間排除補述層(見 content_lines)
     for a in anchors:
         f = a["file"]
         note = by_file.get(f)

@@ -42,6 +42,32 @@ def converge_distribution(paged, lines, max_per_anchor, p_start, p_max, p_step):
         picks = solve_monotonic(mat, stack_penalty=penalty)
 
 
+def enforce_cap_forward(picks: list[int], cap: int, n_lines: int) -> tuple[list[int], int]:
+    """硬上限前推(2026-08-31 引入,§ S4.5.11 spec-gap 收尾)。
+
+    `stack_penalty` 是**軟性**成本:密場(圖/內容行比高)時,升 penalty 要嘛收不掉塌陷、
+    要嘛把整個 deck 攤過頭(推進 Q&A 段、甚至丟圖)。但「max-per-anchor」其實是**硬**約束,
+    且在單調前提下常有可行解 —— 例如 5 張擠在 L2、而 L2–L7 共有 6×cap 個槽位。
+
+    本函式在 penalty loop 之後做一次確定性前推:依 deck 序掃描,每張圖從
+    max(原落點, 前一張落點) 起找第一個還沒滿 cap 的行。**只往後推、不往前拉**,
+    因此 deck_page 單調性天然保持;推動幅度最小(逐行遞增)。
+    回傳 (新落點, 被推動的張數)。
+    """
+    used: Counter = Counter()
+    out, prev, moved = [], 0, 0
+    for orig in picks:
+        j = max(orig, prev)
+        while used[j] >= cap and j + 1 < n_lines:
+            j += 1
+        used[j] += 1
+        out.append(j)
+        prev = j
+        if j != orig:
+            moved += 1
+    return out, moved
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="圖片放置監管 loop 驅動器(§ S4.5.11)")
     ap.add_argument("--session", required=True)
@@ -59,7 +85,8 @@ def main() -> int:
     sdir = Path(a.session).resolve()
     notes = json.loads((sdir / "image_notes.json").read_text(encoding="utf-8"))
     usable = [n for n in notes if n.get("status") in ("described", "anchored", "inserted")]
-    lines = [ln for _i, ln in content_lines((sdir / a.md).read_text(encoding="utf-8"))]
+    # 錨點空間排除補述層,與 propose_anchors / insert_images.cmd_apply 同構(§ S4.5.15)
+    lines = [ln for _i, ln in content_lines((sdir / a.md).read_text(encoding="utf-8"), skip_quote=True)]
 
     paged = sorted([n for n in usable if n.get("deck_page") is not None],
                    key=lambda n: (n["deck_page"], n["file"]))
@@ -70,6 +97,11 @@ def main() -> int:
     if paged:
         picks, penalty_used, worst, mat = converge_distribution(
             paged, lines, a.max_per_anchor, a.penalty_start, a.penalty_max, a.penalty_step)
+        if worst > a.max_per_anchor:      # 軟性 penalty 收不掉 → 硬上限前推(確定性)
+            picks, moved = enforce_cap_forward(picks, a.max_per_anchor, len(lines))
+            worst = max(Counter(picks).values()) if picks else 0
+            print(f"[supervisor] 硬上限前推:{moved} 張往後挪(penalty 收不掉的密場;"
+                  f"最擠 → {worst} 張)")
         for idx, (n, j) in enumerate(zip(paged, picks)):
             s = mat[idx][j]
             anchors.append({"file": n["file"], "after_line": (-1 if s <= THRESHOLD_FAIL else j),

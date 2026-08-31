@@ -404,6 +404,13 @@ Step 5 只在 `goodedunote` 專案的 hosting 上新增/更新該篇 `<slug>/`,�
 - **Why:** 2026-07-05 把單一講者一場心得硬切成 16 碎頁 / 3 章,連續敘事被切、內容跳接。
   拆分依「講者數」而非主題標題,單人一場就是一整篇。違反由 § S6.8(單篇不得有 session 檔)擋。
 
+**補述層(2026-08-31 引入,SSoT § S4.5.15):** 逐字稿之外可疊一層**補述層** —— 原文一字不改,
+在講到某項技術的句子後插入 `>` 引用框標注它對應到哪張看板卡/domain/skill/檔案,另附清單附錄
+(先例:`bim-mcp-8` 場 01)。`md_to_html` 已原生渲染 blockquote/表格/清單/`---`;
+`insert_images` 的**錨點行空間會排除補述層**,圖只插在講者段落後(零省略驗證仍涵蓋補述框)。
+**每個 session 檔仍只能有一個 `#`**(講題行)—— `#` 數是 `classify_session` 判 State A/B 的訊號,
+補述層與附錄的標題一律從 `##` 起。
+
 **Step 4.5 場次狀態分類與收斂(2026-07-19 引入,SSoT § S4.5.13):** 錄音來源有兩型態,`cleaned.md`
 heading 形狀不同,若直接出版會不一致:
 - **State A 拆檔**(N 目錄、每檔 1 個 `#`)/ **State B 一檔多講者**(單檔多個 `#` + 首個 `#` 前的
@@ -710,7 +717,7 @@ Web 使用者 git pull(或瀏覽器下次 reload)
 | **Step 4.5** 場次狀態分類 | `/scripts/classify_session.py`(確定性 A/B/C,分類後停等確認;SSoT § S4.5.13) |
 | **Step 4.5** 書本 master 收斂 | `/scripts/build_book_master.py`(取代 `build_genai2026_day1/day2.py`;A concat-demote / B split-promote 經同一 emit_canonical → 骨架位元等價;`init` 產 book.json 範本 / `build` 產 publish.md+toc.json+self-assert) |
 | **Step 4.5** 收斂 dry-run 編排 | `/scripts/step45_converge.py`(classify→build→gate→md_to_html→結構檢查 session==toc==##;`--book`;不 deploy) |
-| **Step 5** md → HTML | `/scripts/lang/en/md_to_html.py`(三模式:`--single` 單篇連續〔單一講者一場,`##`→文章內 h2、無章節卡/無「下一個」、只產 index.html、保留率 <99.5% 中止〕、`--multipage` 每場一頁〔多講者〕、預設單頁 SPA;`--cover` 封面 hero + OG 預覽圖;`--base-url` 給 OG 絕對網址;圖片大圖/並排/佔位 alt 抑制;字數 QAQC)。拆分依講者數(見原則 8 / SSoT § S4.5.0)。**hash `#fragment` 無法做各章節各自社群預覽 → 多頁模式每場獨立網址 + 各自 `og:image`(該場第一張圖,無圖用封面)** |
+| **Step 5** md → HTML | `/scripts/lang/en/md_to_html.py`(**2026-08-31 起原生支援 blockquote / 表格 / `- ` 清單 / `---` / HTML 註解**,供「補述層」使用,見 SSoT § S4.5.15;三模式:`--single` 單篇連續〔單一講者一場,`##`→文章內 h2、無章節卡/無「下一個」、只產 index.html、保留率 <99.5% 中止〕、`--multipage` 每場一頁〔多講者〕、預設單頁 SPA;`--cover` 封面 hero + OG 預覽圖;`--base-url` 給 OG 絕對網址;圖片大圖/並排/佔位 alt 抑制;字數 QAQC)。拆分依講者數(見原則 8 / SSoT § S4.5.0)。**hash `#fragment` 無法做各章節各自社群預覽 → 多頁模式每場獨立網址 + 各自 `og:image`(該場第一張圖,無圖用封面)** |
 | **Step 5** 圖片壓縮 + EXIF 轉正 | `/scripts/compress_images.py`(出版前壓縮省流量、把手機側拍照轉正) |
 | **Step 5** 出版到 Firebase goodedunote | `/scripts/publish_goodedunote.sh`(多頁 HTML + 壓圖 + `deploy --only hosting`;自動帶 `--base-url`) |
 | **Step 5** goodedunote 部署根(累積所有筆記) | `/scripts/publish/goodedunote/`(每篇 `public/<slug>/`) |

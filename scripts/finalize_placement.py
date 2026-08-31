@@ -33,7 +33,8 @@ def main() -> int:
     sdir = Path(a.session).resolve()
     anchors = json.loads(Path(a.inp or sdir / "anchors_sup.json").read_text(encoding="utf-8"))
     notes = {n["file"]: n for n in json.loads((sdir / "image_notes.json").read_text(encoding="utf-8"))}
-    lines = [(i, ln) for i, ln in content_lines((sdir / a.md).read_text(encoding="utf-8"))]
+    # 錨點空間排除補述層,與 propose_anchors / insert_images.cmd_apply 同構(§ S4.5.15)
+    lines = [(i, ln) for i, ln in content_lines((sdir / a.md).read_text(encoding="utf-8"), skip_quote=True)]
 
     def _build_stripped(ln: str) -> bool:
         """build_genai2026_* 會刪掉的行 → 不可當插入點(否則圖落在其後,build 刪行後黏成塌陷)。"""
