@@ -112,10 +112,27 @@ def og_block(title, desc, image, url):
     return "\n".join(m)
 
 
+# ── GA4 埋點 ────────────────────────────────────────────────────────────────
+# goodedunote 專案的 GA4 measurement ID(與 workshop/board/firebase-config.js 同一組)。
+# content_group 從 pathname 第一段取 slug,GA4 內建維度,不需另外註冊自訂維度。
+# 這裡是全站唯一的 <head> 產出點;既有已產出的 HTML 由 scripts/inject_ga.py 補。
+GA_ID = "G-LKR918VC0S"
+GA_SNIPPET = """<!-- GA4 · goodedunote -->
+<script async src="https://www.googletagmanager.com/gtag/js?id=G-LKR918VC0S"></script>
+<script>
+window.dataLayer = window.dataLayer || [];
+function gtag(){dataLayer.push(arguments);}
+gtag('js', new Date());
+gtag('config', 'G-LKR918VC0S', {
+  content_group: (location.pathname.split('/').filter(Boolean)[0] || 'home')
+});
+</script>"""
+
+
 def head(title, og):
     return (f'<!DOCTYPE html>\n<html lang="zh-TW">\n<head>\n<meta charset="UTF-8">\n'
             f'<meta name="viewport" content="width=device-width, initial-scale=1.0">\n'
-            f'<title>{esc(title)}</title>\n{og}\n<script src="https://cdn.tailwindcss.com"></script>\n{CSS}\n</head>\n')
+            f'<title>{esc(title)}</title>\n{og}\n{GA_SNIPPET}\n<script src="https://cdn.tailwindcss.com"></script>\n{CSS}\n</head>\n')
 
 
 _URL_RE = re.compile(r'https?://[^\s<>"\'）)，。、；！？【】「」『』]+')

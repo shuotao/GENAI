@@ -441,6 +441,39 @@ heading 形狀不同,若直接出版會不一致:
 
 ---
 
+### 原則 10 — 後台是出版層的第三個面,與名冊來源嚴格分離(2026-09-01 引入)
+
+`goodedunote.web.app/admin/` 是**營運後台**:看文章點擊統計、管電子報通訊錄。
+它跟 Step 5 出版層共用同一個 Firebase 專案與 hosting,但職責不同。
+
+| | 出版層(`public/<slug>/`) | 後台(`public/admin/`) |
+|---|---|---|
+| 內容 | 公開的逐字稿 HTML | 個資名冊 + 統計 |
+| 保護 | 無(本來就公開) | Firebase Auth Google 登入 + Firestore `admins/` 白名單 |
+| 資料 | 靜態檔 | Firestore(`subscribers` / `events` / `stats` / `blockReasons`) |
+| 更新 | `publish_goodedunote.sh` | `import_roster.py`、`sync_ga_stats.py`(皆本機執行) |
+
+**鐵律 1 — GWS 唯讀。** 名冊來源是 `~/Desktop/GWS/data/`,那個專案有 BLOCKING scope
+guard(禁止在其中引入資料庫/web service)。本專案**只讀不寫**,所有程式寫在
+`study/scripts/` 下。正規化語義(`normalize_email` / `load_blacklist` / Round 11
+雙形式保留)一律 **import GWS 的 `_common.py`**,絕不自行重寫 —— 重寫必然漂移,
+而漂移的後果是「黑名單靜默失效、被封鎖的人重新收到信」。
+
+**鐵律 2 — 個資與憑證不進 git。** `subscribers` 只存在 Firestore;
+service account 金鑰在 `.secrets/`、匯出 CSV 在 `exports/`,皆已 gitignore。
+`GWS/data/reports/*.md` 有未遮蔽的姓名+email 表格,**不要讀進任何產物**。
+
+**鐵律 3 — 分眾是查詢,不是名單。** 「MCP 歷次/當月」「演講資料」「社群申請」
+全部由 `events.category` + `eventDate` 即時算出。新增報名種類 = 在後台新增一筆事件,
+**不改程式**;當月沒場次自然為空,零人工維護。這是刻意用來取代 GWS 那種
+「每期產一份 `audience_NN.txt`」的做法。
+
+**鐵律 4 — 前端不做權限判斷。** 非白名單帳號看到的必須是 Firestore 規則回的
+`permission-denied`,不是被 CSS 藏起來的畫面。`admins/` 的 write 在規則中恆為
+`false`,只能由本機 `seed_admin.py` 寫入(否則任何登入者都能自我提權)。
+
+---
+
 ## 核心鐵律 (Critical Rules)
 
 > **以下規範適用於所有 AI 工具(Claude Code、Gemini CLI、Web Studio)處理逐字稿與筆記的場景。**
@@ -724,6 +757,13 @@ Web 使用者 git pull(或瀏覽器下次 reload)
 | **Step 5** 圖片壓縮 + EXIF 轉正 | `/scripts/compress_images.py`(出版前壓縮省流量、把手機側拍照轉正) |
 | **Step 5** 出版到 Firebase goodedunote | `/scripts/publish_goodedunote.sh`(多頁 HTML + 壓圖 + `deploy --only hosting`;自動帶 `--base-url`) |
 | **Step 5** goodedunote 部署根(累積所有筆記) | `/scripts/publish/goodedunote/`(每篇 `public/<slug>/`) |
+| **後台** 共用 Firestore 連線層 | `/scripts/gnote_db.py`(service account 憑證 + PermissionDenied 指數退避重試;三支後台工具共用) |
+| **後台** 管理員白名單 / 封鎖理由種子 | `/scripts/seed_admin.py`(admins/ 只能由本機寫入 —— firestore.rules 讓前端 write 恆為 false,防自我提權) |
+| **後台** GWS → Firestore 名冊匯入 | `/scripts/import_roster.py`(GWS 唯讀;`--dry-run` / `--reconcile` / `--rollback <batch>`;正規化直接 import GWS `_common.py`,不自行重寫) |
+| **後台** GA4 → Firestore 統計同步 | `/scripts/sync_ga_stats.py`(`--discover` 找 property ID / `--dry-run` / `--days N`;金鑰不出本機,不需 Blaze) |
+| **後台** 既有 HTML 補 GA 埋點 | `/scripts/inject_ga.py`(冪等;排除 `admin/` 免污染文章統計。未來新頁由 `md_to_html.head()` 自帶) |
+| **後台** 前端 | `/scripts/publish/goodedunote/public/admin/`(React UMD + Babel standalone,共用主站 `style.css` tokens) |
+| **後台** Firestore 規則 / 索引 | `/scripts/publish/goodedunote/firestore.rules`、`firestore.indexes.json` |
 | **Phase B** 簡體漂移正規化(`GROQ_NO_PROMPT` 重轉後必跑) | `/scripts/s2t_normalize.py`(OpenCC `s2tw`;只換字形不換詞彙——刻意不用 `s2twp`,那會把「軟件→軟體」等用語一起改掉、等於改動講者原話;保護「台/只/了/面」等台灣正體本就正確的同形字;對正體檔 no-op、可安全重跑;拒絕處理 `transcript.srt`) |
 | **Phase B** 段落長度量測 | `/scripts/para_len_check.py`(§ R2.1 目標 60~120 CJK 字;只量測不切段——切在哪是語意判斷。判準刻意不對稱:超長才 fail、過短僅提醒,因為 § R2.1 寫的是「寧短勿長」) |
 | **Phase D** 只插入不改寫的證明 | `/scripts/phase_d_check.py`(§ R8.2;`--snapshot` 存 base → 事後驗段落數 1:1 + **原文字元須為新文字的子序列** + CJK 成長率上限。子序列比對可精確指出被刪改的位置) |

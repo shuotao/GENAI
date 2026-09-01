@@ -67,6 +67,22 @@ python3 scripts/session.py new "諮詢錄音.m4a" \
 > **Phase C / Phase D(原 Step 2.2/2.5)= cleaned.md 出版前的強制門**(CLAUDE.md 原則 9):
 > 產出 cleaned.md 後,標點正規化(`scripts/normalize_punctuation.py`,§ R7)與通順/hook(§ R8)必須完成,
 > `scripts/prepublish_gate.py`(由 `publish_goodedunote.sh` 開頭呼叫)會擋下未過 Phase C/D 的出版。
+
+### 營運後台(`goodedunote.web.app/admin/`)
+
+出版之外的另一個面:**看文章點擊統計、管電子報通訊錄**。Google 登入 + Firestore
+`admins/` 白名單保護,設計沿用主站視覺。權威規範見 **CLAUDE.md 原則 10**;
+名冊來源 `~/Desktop/GWS/data/` **全程唯讀**。
+
+```bash
+python3 scripts/seed_admin.py                      # 管理員白名單 + 封鎖理由(冪等)
+python3 scripts/import_roster.py --dry-run         # 先看要匯入什麼
+python3 scripts/import_roster.py --reconcile       # 與 GWS 權威 stats 對帳
+python3 scripts/import_roster.py                   # 實際寫入(可 --rollback <batch>)
+python3 scripts/sync_ga_stats.py --discover        # 取得 GA4 property ID
+python3 scripts/sync_ga_stats.py --days 30         # 拉統計進 Firestore
+```
+
 > 與 Phase A/B 同樣操作同一份 cleaned.md;Step 3+ 才換產物。
 
 > **多場次書要先做 Step 4.5 場次狀態收斂**(CLAUDE.md 原則 8 / § S4.5.13):錄音若是「拆檔(每檔一場)」或
@@ -220,6 +236,7 @@ GitHub Pages 部署版:`https://shuotao.github.io/GENAI/web/studio.html`
 - **`classify_session.py`** + **`build_book_master.py`** + **`step45_converge.py`**: Step 4.5 場次狀態分類與收斂 — 把「拆檔錄音(State A)」與「一檔多講者(State B)」都收斂成同一 canonical master,確保出版一致;`build_book_master` 另負責**把 `s{k}-` 前綴圖檔實體化到 `build/<slug>/_imgsrc/`**(它發明前綴,就得讓檔案存在,否則 State A 含圖書出版後線上圖全 404)、並**保留 blockquote**交給 md_to_html 渲染;`step45_converge.py` 做 dry-run 驗 `session==toc==##`(規則見 CLAUDE.md 原則 8 / prompts/publish_qaqc.md § S4.5.13;取代寫死的 `build_genai2026_day1/day2.py`)
 - **`publish_goodedunote.sh`** + **`publish_qaqc.py`**: Step 5 出版(md→HTML→壓圖→deploy;`DRY_RUN=1` 可停在部署前;拆分依講者數:單一講者一場用 `--single` 單篇連續、多講者用 `--multipage`,見 CLAUDE.md 原則 8)與 Step 6 出版後 audit(S6.1–S6.6 + **S6.14 連結語法殘留**)
 - **`dialogue_check.py`**: 多講者座談對談歸屬與順序檢核(純 stdlib、確定性)— D1 講者標籤覆蓋、D2 對照 `reference_notes.md` 的 LIS 順序率/anchor 覆蓋、D3 跨講者混併警告;`prepublish_gate.py` § S4.5.14 出版前擋、`publish_qaqc.py` § S6.13 出版後 audit(規則見 prompts/publish_qaqc.md § S4.5.14 / § S6.13)
+- **`gnote_db.py`** / **`seed_admin.py`** / **`import_roster.py`** / **`sync_ga_stats.py`** / **`inject_ga.py`**: goodedunote 營運後台(`goodedunote.web.app/admin/`)的本機工具鏈 — 共用 Firestore 連線層、管理員白名單種子、GWS 名冊匯入(唯讀 GWS,`--dry-run`/`--reconcile`/`--rollback`)、GA4 統計同步、既有 HTML 補埋點。規範見 CLAUDE.md 原則 10
 - **`describe_images.py`** + **`dedupe_images.py`** + **`propose_anchors.py`** + **`insert_images.py`** + **`pipeline_autopilot.sh`**: 圖片理解(Antigravity headless;必跑,產 `images_readme.md` 描述伴讀供手排圖者參考)→ Haiku 自動插圖 → 閉環入口(`session.py --images <dir>`,見 prompts/publish_qaqc.md § S4.5.11)
 - **`placement_check.py`** + **`placement_supervisor.py`** + **`finalize_placement.py`**: 插圖分佈/順序監管(反塌陷、不逆位、去重間距;§ S4.5.11)
 - **`pipeline_logger.py`**: Step1~6 結構化 log(`pipeline_log.jsonl` / `build/pipeline_runs.jsonl`)+ check fail 自動進 `build/improvement_queue.jsonl` 的 return-and-improvement 迴圈

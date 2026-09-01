@@ -109,3 +109,23 @@ build/*/*
 # COSCUP 2026 現場素材(音檔 + context;含現場臨時憑證,絕不進版控)
 /COSCUP2026/
 /COSCUP2026_2/
+
+# ── goodedunote 後台:憑證與個資,一律不進 git ─────────────────────────────
+.secrets/
+exports/
+scripts/publish/goodedunote/public/admin/*.local.js
+
+# scripts/publish/ 整個被忽略(那是部署產物根)。但後台的原始碼與 Firebase 基礎設定
+# 是「可重用的原始碼」而非產物,弄丟就要重寫 —— 用否定規則單獨收進版控。
+!scripts/publish/
+!scripts/publish/goodedunote/
+!scripts/publish/goodedunote/firebase.json
+!scripts/publish/goodedunote/.firebaserc
+!scripts/publish/goodedunote/firestore.rules
+!scripts/publish/goodedunote/firestore.indexes.json
+!scripts/publish/goodedunote/public/
+!scripts/publish/goodedunote/public/admin/
+!scripts/publish/goodedunote/public/admin/**
+scripts/publish/goodedunote/public/*
+!scripts/publish/goodedunote/public/admin
+scripts/publish/goodedunote/.firebase/

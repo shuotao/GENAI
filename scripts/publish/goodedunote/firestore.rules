@@ -1,0 +1,53 @@
+rules_version = '2';
+
+// goodedunote 後台 —— 名冊含個資,一律 server-side 擋。
+// 前端「藏起來」不算保護:未通過本規則的請求必須在 Firestore 層被拒絕。
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 管理員白名單。文件 ID = Google 帳號 email。
+    // 只能從本機 CLI(scripts/seed_admin.py)寫入,前端永遠不得新增管理員,
+    // 否則任何登入者都能把自己加進白名單、自我提權。
+    function isAdmin() {
+      return request.auth != null
+          && request.auth.token.email_verified == true
+          && exists(/databases/$(database)/documents/admins/$(request.auth.token.email));
+    }
+
+    match /admins/{email} {
+      allow read: if isAdmin();
+      allow write: if false;          // ← 提權防線,不要放寬
+    }
+
+    // 文章點擊統計。由本機 scripts/sync_ga_stats.py 以 Admin SDK 寫入
+    // (Admin SDK 繞過規則),前端只讀。
+    match /stats/{slug} {
+      allow read:  if isAdmin();
+      allow write: if false;
+    }
+
+    // 報名事件(= 報名種類)。後台可新增,新課程種類就此就位。
+    match /events/{eventId} {
+      allow read, write: if isAdmin();
+    }
+
+    // 封鎖理由標籤字典。內建六種 + 後台可自訂。
+    match /blockReasons/{reasonId} {
+      allow read, write: if isAdmin();
+    }
+
+    // 訂閱者名冊(個資)與其底下的報名紀錄。
+    match /subscribers/{key} {
+      allow read, write: if isAdmin();
+
+      match /registrations/{regId} {
+        allow read, write: if isAdmin();
+      }
+    }
+
+    // 未列出的路徑一律拒絕。
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

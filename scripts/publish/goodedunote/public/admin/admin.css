@@ -1,0 +1,190 @@
+/* admin.css — 好學生筆記 後台
+   設計語彙沿用主站 style.css 的 tokens(--paper / --ink / 三書架色 /
+   4px 6px 0 硬偏移陰影 / EB Garamond 小型大寫 meta)。
+   這裡只寫後台專屬元件,顏色與字體一律走 var(),不另外寫死色碼。
+   ──────────────────────────────────────────────────────────────────────── */
+
+/* 主站首頁的捲動吸附與 hero 排版對表格式後台是干擾,關掉。 */
+html, body { scroll-snap-type: none !important; scroll-padding-top: 0 !important; }
+body { min-height: 100vh; }
+
+/* ─── 外框 ─────────────────────────────────────────────────────────────── */
+.admin-shell { max-width: 1180px; margin: 0 auto; padding: 96px 28px 96px; }
+
+.admin-top {
+  position: fixed; top: 0; left: 0; right: 0; z-index: 50;
+  display: flex; align-items: center; gap: 18px;
+  padding: 14px 28px;
+  background: rgba(247, 241, 228, 0.94);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid var(--rule);
+}
+.admin-brand {
+  font-family: var(--serif); font-weight: 700; font-size: 15px;
+  letter-spacing: .04em; color: var(--ink);
+  display: flex; align-items: center; gap: 9px;
+}
+.admin-brand::before {
+  content: ""; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--ink); flex: none;
+}
+.admin-who {
+  margin-left: auto; display: flex; align-items: center; gap: 14px;
+  font-family: var(--serif-en); font-style: italic; font-size: 12px;
+  letter-spacing: .08em; color: var(--ink-mute);
+}
+
+/* ─── 分頁列 ───────────────────────────────────────────────────────────── */
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; }
+.tab {
+  font-family: var(--serif-en); font-size: 12px; letter-spacing: .18em;
+  text-transform: uppercase; color: var(--ink-mute);
+  background: none; border: 1px solid transparent; border-radius: 2px;
+  padding: 7px 14px; cursor: pointer; transition: .18s;
+}
+.tab:hover { color: var(--ink); border-color: var(--rule); }
+.tab.on { color: var(--paper); background: var(--ink); border-color: var(--ink); }
+
+/* ─── 段落標題 ─────────────────────────────────────────────────────────── */
+.eyebrow {
+  font-family: var(--serif-en); font-style: italic; font-size: 12px;
+  letter-spacing: .22em; text-transform: uppercase; color: var(--ink-mute);
+  margin-bottom: 10px;
+}
+.admin-h2 {
+  font-family: var(--serif); font-weight: 700; letter-spacing: .04em;
+  font-size: clamp(26px, 3.2vw, 38px); color: var(--ink); margin-bottom: 6px;
+}
+.admin-note {
+  font-family: var(--sans); font-size: 13px; color: var(--ink-mute);
+  line-height: 1.7; margin-bottom: 28px; max-width: 68ch;
+}
+
+/* ─── 卡片(主站書卡的硬陰影語彙)────────────────────────────────────── */
+.card {
+  background: var(--paper); border: 1px solid var(--ink);
+  box-shadow: 4px 6px 0 var(--ink); padding: 20px 22px;
+}
+.card + .card { margin-top: 18px; }
+.card-title {
+  font-family: var(--serif); font-weight: 700; font-size: 15px;
+  letter-spacing: .03em; color: var(--ink);
+  padding-bottom: 10px; margin-bottom: 12px; border-bottom: 1px solid var(--rule);
+  display: flex; align-items: baseline; gap: 10px;
+}
+.card-meta {
+  font-family: var(--serif-en); font-style: italic; font-size: 11px;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute);
+}
+
+.grid { display: grid; gap: 18px; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); }
+
+/* 數字 */
+.stat-row { display: flex; gap: 26px; align-items: baseline; margin-bottom: 12px; }
+.stat-n {
+  font-family: var(--serif); font-weight: 700; font-size: 30px;
+  color: var(--ink); line-height: 1;
+}
+.stat-lab {
+  font-family: var(--serif-en); font-style: italic; font-size: 11px;
+  letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute);
+}
+
+/* 書架色條:三個 category 各自對應主站的書架色 */
+.bar { height: 3px; margin: -20px -22px 16px; }
+.bar.mcp { background: var(--olive); }
+.bar.slides { background: var(--navy); }
+.bar.community { background: var(--ochre); }
+.bar.other { background: var(--ink-faint); }
+
+/* ─── 分眾側欄 ─────────────────────────────────────────────────────────── */
+.roster { display: grid; grid-template-columns: 268px 1fr; gap: 26px; align-items: start; }
+@media (max-width: 860px) { .roster { grid-template-columns: 1fr; } }
+
+.seg {
+  width: 100%; text-align: left; cursor: pointer;
+  background: none; border: 1px solid var(--rule); border-radius: 2px;
+  padding: 11px 14px; margin-bottom: 7px;
+  font-family: var(--sans); font-size: 13.5px; color: var(--ink-soft);
+  display: flex; justify-content: space-between; align-items: center; gap: 10px;
+  transition: .16s;
+}
+.seg:hover { border-color: var(--ink); }
+.seg.on {
+  background: var(--ink); color: var(--paper); border-color: var(--ink);
+  box-shadow: 3px 4px 0 var(--ink-faint);
+}
+.seg-n { font-family: var(--mono); font-size: 12px; opacity: .8; }
+
+/* ─── 表格 ─────────────────────────────────────────────────────────────── */
+.tbl { width: 100%; border-collapse: collapse; font-family: var(--sans); font-size: 13px; }
+.tbl th {
+  text-align: left; font-family: var(--serif-en); font-style: italic;
+  font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--ink-mute); font-weight: 400;
+  padding: 9px 10px; border-bottom: 1px solid var(--ink); white-space: nowrap;
+}
+.tbl td { padding: 10px; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
+.tbl tr:hover td { background: var(--paper-soft); }
+.tbl .mono { font-family: var(--mono); font-size: 11.5px; word-break: break-all; }
+.tbl .num { text-align: right; font-family: var(--mono); font-size: 12px; }
+
+/* ─── chip / 標籤 ──────────────────────────────────────────────────────── */
+.chip {
+  display: inline-block; margin: 2px 4px 2px 0; padding: 2px 8px;
+  border: 1px solid var(--rule); border-radius: 2px;
+  font-family: var(--sans); font-size: 11px; color: var(--ink-soft);
+  white-space: nowrap;
+}
+.chip.mcp { border-color: var(--olive); color: var(--olive-deep); }
+.chip.slides { border-color: var(--navy); color: var(--navy-deep); }
+.chip.community { border-color: var(--ochre); color: var(--ochre-deep); }
+.chip.block { border-color: #8c2f1d; color: #8c2f1d; }
+
+/* ─── 按鈕 / 輸入 ──────────────────────────────────────────────────────── */
+.btn {
+  font-family: var(--serif-en); font-size: 13px; letter-spacing: .2em;
+  text-transform: uppercase; cursor: pointer;
+  background: none; color: var(--ink);
+  border: 1px solid var(--ink); border-radius: 2px; padding: 9px 20px;
+  transition: .18s;
+}
+.btn:hover { background: var(--ink); color: var(--paper); }
+.btn.small { font-size: 11px; letter-spacing: .12em; padding: 5px 11px; }
+.btn.ghost { border-color: var(--rule); color: var(--ink-mute); }
+.btn.ghost:hover { border-color: var(--ink); background: none; color: var(--ink); }
+.btn:disabled { opacity: .35; cursor: not-allowed; }
+.btn:disabled:hover { background: none; color: var(--ink); }
+
+.inp {
+  font-family: var(--sans); font-size: 13px; color: var(--ink);
+  background: var(--paper); border: 1px solid var(--rule); border-radius: 2px;
+  padding: 8px 11px; width: 100%;
+}
+.inp:focus { outline: none; border-color: var(--ink); }
+.row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+/* ─── 登入閘 ───────────────────────────────────────────────────────────── */
+.gate { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
+.gate-card {
+  background: var(--paper); border: 1px solid var(--ink);
+  box-shadow: 6px 8px 0 var(--ink);
+  padding: 46px 44px; max-width: 430px; text-align: center;
+}
+.gate-card h1 {
+  font-family: var(--serif); font-weight: 700; font-size: 24px;
+  letter-spacing: .05em; margin-bottom: 12px; color: var(--ink);
+}
+.gate-card p {
+  font-family: var(--sans); font-size: 13px; color: var(--ink-mute);
+  line-height: 1.8; margin-bottom: 26px;
+}
+.err {
+  font-family: var(--sans); font-size: 12.5px; color: #8c2f1d;
+  border: 1px solid #8c2f1d; border-radius: 2px;
+  padding: 11px 14px; margin-top: 18px; line-height: 1.7; text-align: left;
+}
+.empty {
+  font-family: var(--serif-en); font-style: italic; font-size: 14px;
+  color: var(--ink-faint); padding: 40px 0; text-align: center;
+}

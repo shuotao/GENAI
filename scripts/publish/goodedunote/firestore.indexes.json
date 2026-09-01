@@ -1,0 +1,42 @@
+{
+  "indexes": [
+    {
+      "comment": "通訊錄:依分眾(categories)列出未封鎖者,按最近活動排序",
+      "collectionGroup": "subscribers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "categories", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "blocked", "order": "ASCENDING" },
+        { "fieldPath": "lastSeenAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "comment": "通訊錄:依單一場次列出報名者",
+      "collectionGroup": "subscribers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "eventIds", "arrayConfig": "CONTAINS" },
+        { "fieldPath": "lastSeenAt", "order": "DESCENDING" }
+      ]
+    },
+    {
+      "comment": "封鎖區:依理由篩選被封鎖者",
+      "collectionGroup": "subscribers",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "blocked", "order": "ASCENDING" },
+        { "fieldPath": "blockReasons", "arrayConfig": "CONTAINS" }
+      ]
+    },
+    {
+      "comment": "MCP 當月:跨所有訂閱者查某月的報名紀錄",
+      "collectionGroup": "registrations",
+      "queryScope": "COLLECTION_GROUP",
+      "fields": [
+        { "fieldPath": "category", "order": "ASCENDING" },
+        { "fieldPath": "eventDate", "order": "DESCENDING" }
+      ]
+    }
+  ],
+  "fieldOverrides": []
+}
