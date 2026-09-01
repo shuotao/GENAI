@@ -78,6 +78,10 @@ body { background:#fdfbf7; color:#2d2a26; font-family:'Noto Serif TC',serif; lin
 .kc-tablewrap th, .kc-tablewrap td { border:1px solid #e4d8ca; padding:.45rem .7rem; text-align:left; vertical-align:top; }
 .kc-tablewrap th { background:#f3ebe0; font-weight:700; color:#8a3f28; }
 .prose code { background:#efe7dc; padding:.1rem .35rem; border-radius:4px; font-size:.86em; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; color:#7a3a24; word-break:break-all; }
+.prose a { color:#a8442a; text-decoration:underline; text-underline-offset:2px; }
+.prose a:hover { color:#7a3a24; }
+.prose pre { background:#2d2a26; color:#f1e8dc; padding:.9rem 1.1rem; border-radius:8px; overflow-x:auto; margin:1.5rem 0; font-size:.84rem; line-height:1.65; }
+.prose pre code { background:none; color:inherit; padding:0; font-family:ui-monospace,SFMono-Regular,Menlo,monospace; word-break:normal; white-space:pre; }
 .kc-hr { border:0; border-top:1px solid #e4d8ca; margin:2.2rem 0; }
 .kc-fig { margin:1.8rem 0; text-align:center; }
 .kc-fig img { display:block; max-width:100%; height:auto; margin:0 auto; border-radius:12px; box-shadow:0 8px 24px -14px rgba(80,40,25,.5); }
@@ -127,20 +131,31 @@ def _linkify(m):
 
 
 _CODE_RE = re.compile(r"`([^`]+)`")
+# [文字](網址) —— 排除圖片 ![..](..)(圖片走 render_blocks 那條路)
+_MDLINK_RE = re.compile(r"(?<!!)\[([^\]]+)\]\((https?://[^)\s]+)\)")
+
+
+def _mdlink(m):
+    return (f'<a href="{m.group(2)}" target="_blank" rel="noopener noreferrer">'
+            f'{m.group(1)}</a>')
 
 
 def inline_md(text):
-    """`code` → <code>;**bold** → <strong>;裸 http(s) URL → 可點超連結。esc() 之後再呼叫。
-    行內碼先轉(2026-08-31 加入,補述層滿是檔案路徑/參數名),避免路徑被 URL 規則誤連。
+    """`code` → <code>;[文字](網址) → <a>;**bold** → <strong>;裸 http(s) URL → 可點超連結。
+    esc() 之後再呼叫。**順序有意義**:行內碼最先(路徑不該被當連結)、markdown 連結次之
+    (2026-09-01 加入),最後才是裸網址 autolink —— 反過來的話 `](url)` 裡的網址會先被
+    linkify,產生巢狀 <a>。
     URL 自動連結:讓逐字稿裡貼的網址讀者能直接點(esc 後圖片 src 是 .png,不會被誤連)。
     用 [^*]+ 限制不跨越下一個 *,避免吃進巢狀。"""
     text = _CODE_RE.sub(r"<code>\1</code>", text)
+    text = _MDLINK_RE.sub(_mdlink, text)
     text = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", text)
     return _URL_RE.sub(_linkify, text)
 
 
 HTML_COMMENT = re.compile(r"^\s*<!--.*-->\s*$")
 TABLE_SEP = re.compile(r"^\s*\|[\s:|-]+\|\s*$")
+FENCE = re.compile(r"^\s*```")
 
 
 def _table_cells(s):
@@ -152,7 +167,7 @@ def payload_nws(s):
     後再數。render_blocks 的 para_chars 與 main() 的 md_chars 共用同一把尺,
     否則含補述層/表格的書會出現假性保留率下降(E1 同口徑原則)。"""
     s = IMG_INLINE.sub("", s)
-    if HTML_COMMENT.match(s) or s.strip() == "---" or TABLE_SEP.match(s):
+    if HTML_COMMENT.match(s) or s.strip() == "---" or TABLE_SEP.match(s) or FENCE.match(s):
         return 0
     s = re.sub(r"^(?:\s*>)+", "", s)
     s = re.sub(r"^\s*-\s", "", s)
@@ -168,6 +183,17 @@ def render_blocks(lines_iter, first_in_sec_start=True):
     k = 0
     while k < len(seq):
         s = seq[k]
+        # 圍欄碼 ```lang … ``` → <pre><code>。內容只 esc()、**不套 inline_md**
+        # (指令裡的 * 與 [ 不得被當 markdown);首行語言標記丟棄。
+        if FENCE.match(s):
+            k += 1
+            buf = []
+            while k < len(seq) and not FENCE.match(seq[k]):
+                buf.append(seq[k]); para_chars += payload_nws(seq[k]); k += 1
+            k += 1                      # 跳過收尾 ```
+            blocks.append('      <pre><code>' + esc("\n".join(buf)) + '</code></pre>')
+            first_in = False
+            continue
         # HTML 註解(補述層區塊標記)不輸出
         if HTML_COMMENT.match(s):
             k += 1; continue
@@ -176,13 +202,44 @@ def render_blocks(lines_iter, first_in_sec_start=True):
             blocks.append('      <hr class="kc-hr">'); k += 1; continue
         # 引用區塊:連續 `>` 行收成一個 <blockquote>,內部每行一個 <p>
         if s.lstrip().startswith(">"):
-            inner = []
+            inner, run = [], []
+
+            def _flush_run():
+                """連續非空 `>` 行併成同一個 <p>(以 <br> 保留斷行)。
+                markdown 的 blockquote 語意本來就是「空 `>` 才分段」;更關鍵的是
+                **粗體跨行**(補述框常把一句話斷成兩行)只有在併行後才配得起來 ——
+                逐行渲染會讓 `**` 原封留在畫面上(§ S6.6)。"""
+                if not run:
+                    return
+                joined = inline_md(esc("\n".join(run))).replace("\n", "<br>")
+                inner.append(f'<p>{joined}</p>')
+                run.clear()
+
             while k < len(seq) and seq[k].lstrip().startswith(">"):
                 body = seq[k].lstrip()[1:].strip()
+                # 圍欄碼可巢狀在補述框內(框裡放可複製的指令)。剝掉 `>` 後若是 ```,
+                # 就在 <blockquote> 內收成 <pre><code>,而不是逐行 <p>。
+                if body.startswith("```"):
+                    _flush_run()
+                    k += 1
+                    buf = []
+                    while k < len(seq) and seq[k].lstrip().startswith(">"):
+                        inner_body = seq[k].lstrip()[1:]
+                        if inner_body.strip().startswith("```"):
+                            k += 1
+                            break
+                        buf.append(inner_body[1:] if inner_body.startswith(" ") else inner_body)
+                        para_chars += payload_nws(inner_body)
+                        k += 1
+                    inner.append('<pre><code>' + esc("\n".join(buf)) + '</code></pre>')
+                    continue
                 if body:
-                    inner.append(f'<p>{inline_md(esc(body))}</p>')
+                    run.append(body)
                     para_chars += payload_nws(body)
+                else:                       # `>` 空行 = 段落分隔
+                    _flush_run()
                 k += 1
+            _flush_run()
             blocks.append('      <blockquote>' + "".join(inner) + '</blockquote>')
             first_in = False
             continue

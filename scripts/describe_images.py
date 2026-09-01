@@ -9,7 +9,7 @@ SSoT: prompts/publish_qaqc.md § S4.5.11。CLAUDE.md 原則 5/6/9 對齊:
 
 用法:
     python3 scripts/describe_images.py --session sessions/<slug> \
-        [--model "Gemini 3.5 Flash (Medium)"] [--limit N] [--max-consecutive-fails N]
+        [--model gemini-3.6-flash-medium] [--limit N] [--max-consecutive-fails N]
 
 產物: sessions/<slug>/image_notes.json(list[dict],schema 見 § S4.5.11)
 完成: 全部 described → 刪 .images_pending.json、metadata.json 記 images stats。
@@ -23,7 +23,36 @@ import sys
 import time
 from pathlib import Path
 
-DEFAULT_MODEL = "Gemini 3.5 Flash (Medium)"  # antigravity models 實機清單確認(2026-07-05)
+# 2026-09-01:Antigravity 會**下架舊 model**(「Gemini 3.5 Flash (Medium)」當天整批失效,
+# 錯誤是 `invalid model selection`,批次直接被熔斷)。改為:預設用 slug 形式的 model id,
+# 且啟動時對 `antigravity models` 做一次解析 —— 指定的 model 不在清單就依偏好序自動退而求其次,
+# 不讓一次改名擋掉整批描述。
+DEFAULT_MODEL = "gemini-3.6-flash-medium"
+MODEL_PREFERENCE = ("gemini-3.6-flash-medium", "gemini-3.7-flash-medium",
+                    "gemini-3.6-flash-low", "gemini-3.7-flash-low")
+
+
+def resolve_model(want: str) -> str:
+    """回傳一個 antigravity 現在真的認得的 model id。清單抓不到就原樣放行(不擋)。"""
+    try:
+        out = subprocess.run(["antigravity", "models"], capture_output=True,
+                             text=True, timeout=60).stdout
+    except Exception:  # noqa: BLE001 — 列不出清單就別擋路,讓後續錯誤自然浮出
+        return want
+    ids = {ln.split("\t")[0].strip() for ln in out.splitlines() if ln.strip()}
+    names = {ln.split("\t")[-1].strip() for ln in out.splitlines() if ln.strip()}
+    if want in ids or want in names:
+        return want
+    for cand in MODEL_PREFERENCE:
+        if cand in ids:
+            print(f"[images] ⚠️ model「{want}」已不在 antigravity 清單 → 改用 {cand}",
+                  file=sys.stderr)
+            return cand
+    flash = sorted(i for i in ids if "flash" in i)
+    if flash:
+        print(f"[images] ⚠️ model「{want}」不存在 → 退用 {flash[0]}", file=sys.stderr)
+        return flash[0]
+    return want
 IMG_EXTS = (".jpg", ".jpeg", ".png", ".JPG", ".JPEG", ".PNG")
 CALL_TIMEOUT_S = 480  # 照片型(非投影片)+ 完整 schema prompt 實測需 >240s 餘裕
 
@@ -229,6 +258,7 @@ def main() -> int:
     ap.add_argument("--readme-only", action="store_true",
                     help="不打 antigravity,只從既有 image_notes.json 重產 images_readme.md")
     a = ap.parse_args()
+    a.model = resolve_model(a.model)
 
     sdir = Path(a.session).resolve()
 

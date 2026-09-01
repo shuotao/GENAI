@@ -147,7 +147,10 @@ def _normalize_once(text: str) -> tuple[str, int]:
     """單趟:跳過 ``` 圍欄碼區塊,逐行轉換。"""
     lines, out, total, in_fence = text.split("\n"), [], 0, False
     for line in lines:
-        if line.lstrip().startswith("```"):
+        # 圍欄可能巢狀在 blockquote 內(補述框裡放可複製的指令),先剝掉前導 `>`
+        # 再判斷 —— 否則 `> ```` 不會被認成圍欄,指令裡的 `:` 會被誤轉成全形、
+        # 破壞複製貼上(2026-09-01 實例:/GM_import 的 [需求對齊：組合方式: …])。
+        if re.sub(r"^(?:\s*>)+", "", line).lstrip().startswith("```"):
             in_fence = not in_fence
             out.append(line)
             continue

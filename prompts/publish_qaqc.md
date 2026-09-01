@@ -63,8 +63,9 @@
 | `---` | ✅(2026-08-31 加入) | `<hr class="kc-hr">` | |
 | `<!-- 註解 -->` | ✅(2026-08-31 加入) | **不輸出** | 補述層區塊標記 |
 | 有序列表 `1.` | ❌ | 字面顯示(仍算 `<p>`) | |
-| 行內 `` `code` `` | ✅(2026-08-31 加入) | `<code>` | 先於 bold/URL 處理,避免路徑被誤連 |
-| 區塊 ` ``` ` | ❌ | 字面顯示 | |
+| 行內 `` `code` `` | ✅(2026-08-31 加入) | `<code>` | 先於 link/bold/URL 處理,避免路徑被誤連 |
+| `[文字](網址)` | ✅(2026-09-01 加入) | `<a target=_blank rel=noopener>` | 必須排在裸網址 autolink **之前**,否則 `](url)` 會先被 linkify 成巢狀 `<a>` |
+| 區塊 ` ``` ` | ✅(2026-09-01 加入) | `<pre><code>` | 內容只 `esc()`、**不套 inline_md**(指令裡的 `*`/`[` 不得被當 markdown);首行語言標記丟棄;**可巢狀在 blockquote 內**(補述框放可複製指令) |
 
 ### S4.5.3 圖片規則
 
@@ -210,13 +211,21 @@ S4.5.9 沒做好,應該回頭改文字而不是放任 grep 每次 fail。
     密場會崩(mean|Δ| 4.86)→ 密場**優先文字訊號(content_signal)或轉人工**,不硬套 deck-flow。
 
 **引擎**
-- 描述:Antigravity CLI headless — `antigravity -p --model "Gemini 3.5 Flash (Medium)"
+- 描述:Antigravity CLI headless — `antigravity -p --model gemini-3.6-flash-medium
   --add-dir <session>`(OAuth login;`agy -p` 等效)。送圖前 `exif_transpose`
   到 `.img_norm/` 暫存(原檔不動)。
+- **model 用 slug id、且啟動時自動解析(2026-09-01 引入)**:Antigravity 會**下架舊 model**
+  ——「Gemini 3.5 Flash (Medium)」在 2026-09-01 整批失效(`invalid model selection`),
+  三張連續失敗直接觸發熔斷、整批停擺。`describe_images.resolve_model()` 因此在啟動時跑一次
+  `antigravity models`:指定的 model 不在清單就依 `MODEL_PREFERENCE`
+  (`gemini-3.6-flash-medium` → `3.7-medium` → `*-low`)自動退而求其次,清單抓不到才原樣放行。
+  **一次改名不該擋掉整批描述**;現行可用清單以 `antigravity models` 為準,不要在文件裡寫死顯示名稱。
 - 失敗處理:同引擎重試 2 次(退避 5s);連續 3 張失敗即中止整批
-  (`--max-consecutive-fails`)。連續失敗先以最小指令(`antigravity -p "hi"`)單測:
-  空回應/節流(如日配額用盡,連非 Gemini model 都空)→ 冷卻等待或**改用 Opus
-  對話 agent 直接 Read 圖產同 schema 描述**(engine=opus-fallback),補完少數卡住的圖。
+  (`--max-consecutive-fails`)。連續失敗先以最小指令
+  (`antigravity -p "reply with OK only" --model <清單裡的 id>`)單測:
+  **`invalid model selection` = 改名/下架**(照上一條處理);空回應/節流(如日配額用盡,
+  連非 Gemini model 都空)→ 冷卻等待或**改用 Opus 對話 agent 直接 Read 圖產同 schema 描述**
+  (engine=opus-fallback),補完少數卡住的圖。
 - 插圖位置判斷:Claude Haiku subagent;套用與驗證:`insert_images.py`(確定性)。
 
 **描述 prompt 五要求 + 一禁令**
@@ -438,6 +447,14 @@ dry-run 階段書尚未進 data.js,故不在收斂 loop 內呼叫;真正 deploy 
 補述版 78 行 == cleaned.transcript.md 78 行)。**零省略驗證一律不開此旗標**,
 確保補述框本身也被納入「原內容行 1:1 不變」。
 
+**跨行 `**粗體**`(2026-09-01 引入)**:`inline_md` 是逐**行**套用,`**` 開在一行、收在下一行
+就配不起來,星號會原封上線(§ S6.6 事後才抓到、但那時已經 deploy)。兩層處理:
+- **blockquote 內**:`render_blocks` 把連續非空 `>` 行併成同一個 `<p>`(以 `<br>` 保留斷行,
+  空 `>` 才分段)—— 這本來就是 markdown 的 blockquote 語意。
+- **非 blockquote**:本管線的段落模型是**一段落 = 一行**(`para_len_check` / `phase_d_check`
+  都以此為準,且 `md_to_html.parse()` 會丟掉空行、無從判斷段界),軟斷行必須在來源併掉。
+  `prepublish_gate` 的 (3c) 對「非 `>` 行且 `**` 數為奇數」直接擋下。
+
 **字數口徑**:`md_to_html.payload_nws()` 剝掉結構標記(`>`/`- `/`\|`/`---`/註解)後才數,
 `para_chars` 與 `md_chars` 共用同一把尺 —— 否則含補述層/表格的書會出現**假性保留率下降**(E1)。
 
@@ -636,34 +653,14 @@ md 被手改、或 anchor 判斷漂移 → 修 anchor / 補描述後重出。
 - 已部署 HTML(panel source 對應的 session-N.html):正文 `<p>` 以 `名字：`(roster ∪ 允許標籤)開頭的比例 ≥ 0.95(排除 footer/導覽模板 <p>),確認標籤活著到線上、未被出版鏈剝除。
 失敗 → 依 § S4.5.14 重跑 dialogue_check 修 cleaned.md 後重出版。
 
-### S6.14 連結語法殘留(2026-08-09 引入)
+### S6.14 連結語法(2026-08-09 引入;2026-09-01 由「硬擋」改為「已支援」)
 
-**問題**:`md_to_html.py` 的 `inline_md()` 只處理 `**粗體**` 與**裸網址自動連結**兩件事,
-沒有 `[文字](網址)` 規則。寫成 bracket 形式的連結會**原封渲染成字面可見文字**
-(頁面上直接看到 `[講者的簡報](https://…)`),而在本次引入前**沒有任何檢查會抓到**——
-出版前不擋、出版後不驗,破掉的連結會靜默上線。全書 corpus 至今零使用該語法,
-是慣例上的僥倖而非制度上的保障。
-
-**正解(唯一支援的寫法)**:**空格包夾的裸網址**,需要括號時用**全形**`（ ）`
-(先例 `build/genai2026-july-meetup/publish.md:352`):
-
-```
-…他示範的工具是 Heptabase（ https://heptabase.com/ ),可以…
-講者的簡報： https://example.com/slides/deck
-```
-
-理由:`_URL_RE` 的終止字元集含 `）)，。、；！？`,全形括號與前後空格能讓網址乾淨結束;
-全形標點也不會被 Phase C 再動一次。**額外注意**:`normalize_punctuation` 對裸網址只保護
-`.`(英數之間)、`,`(數字之間)、`:`(後接 `/`),但 `; ! ? ( )` **無條件全形化** ——
-含 query string 或括號的網址請獨立成行(該行無 CJK 時 `normalize_line` 會整行短路跳過)。
-另:行首不得是 `-` / `>` / `|` / `---`,否則 `build_book_master` 的 self_assert 會擋。
-
-**雙側守門**:
-- 出版前 `prepublish_gate.py`:被出版的 md 任一行含 `[文字](網址)` → 擋並報行號。
-  比對用 `(?<!!)\[[^\]]*\]\(`,lookbehind 放在整個 `[…](` 的開頭 `[` 之前
-  ——放在 `](` 之前會誤判,因為 `![](x.png)` 的 `](` 前一字是 `[` 而不是 `!`。
-- 出版後 `publish_qaqc.py` § S6.14:已部署 HTML 的 `<p>/<h2>/<h3>` 內文出現 `[..](` → fail。
-  圖片在此階段已是 `<img>`,不會誤判。
+`[文字](網址)` 與 ` ``` ` 圍欄碼自 2026-09-01 起由 `md_to_html` 原生渲染
+(§ S4.5.2),不再是會靜默壞掉的語法 → `prepublish_gate` 的硬擋已解除。
+S6 事後 audit 的語意同步改成「**不得渲染成字面**」:
+- **S6.14**:HTML 正文若還看得到字面 `[..](` → 那個連結是壞的(非 http(s)、網址含空白、
+  或跨行斷開),照樣 fail。
+- **S6.14.b**:正文(扣掉真正的 `<pre>` 區塊)若還看得到字面 ` ``` ` → 圍欄沒成對,整段會爛掉。
 
 ### S6.10 後置檢查清單
 

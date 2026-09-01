@@ -626,8 +626,9 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
         f"字面 ** 殘留於: {bad_md}" if bad_md else "no literal ** in body",
     ))
 
-    # S6.14 連結語法殘留 — md_to_html 的 inline_md() 只處理 **bold** 與裸網址自動連結,
-    # `[文字](網址)` 會原封輸出成字面可見文字。出版前由 prepublish_gate 擋,這裡是事後保險。
+    # S6.14 連結語法殘留(2026-09-01 更新語意)— `[文字](網址)` 已由 inline_md() 原生
+    # 渲染成 <a>,所以渲染後**還看得到字面 `[..](`** 就代表那個連結是壞的
+    # (非 http(s) 協定、網址含空白、或跨行斷開),照樣要擋。
     bad_link = []
     for p in pages:
         html = p.read_text(encoding="utf-8")
@@ -641,6 +642,20 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
         "S6.14 無 [文字](網址) 字面殘留",
         not bad_link,
         f"破損連結: {bad_link[:3]}" if bad_link else f"all {len(pages)} pages OK",
+    ))
+
+    # S6.14.b 圍欄碼殘留(2026-09-01 引入)— ``` 已由 render_blocks 轉成 <pre><code>,
+    # 正文若還看得到字面 ``` 代表圍欄沒成對(開了沒關),整段會爛掉。
+    bad_fence = []
+    for p in pages:
+        body = p.read_text(encoding="utf-8").split("<article", 1)[-1]
+        body = re.sub(r"<pre>.*?</pre>", "", body, flags=re.S)   # 真正的碼區塊不算
+        if "```" in body:
+            bad_fence.append(p.name)
+    results.append((
+        "S6.14.b 無 ``` 圍欄碼字面殘留",
+        not bad_fence,
+        f"圍欄未成對: {bad_fence[:3]}" if bad_fence else f"all {len(pages)} pages OK",
     ))
 
     return results

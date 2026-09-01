@@ -59,21 +59,22 @@ def main() -> int:
         fails.append(f"全形 lint:{md_path.name} 仍有 {residual} 處 CJK 語境半形標點未轉"
                      f"(跑 `python3 scripts/normalize_punctuation.py {md_path.name} --in-place`)")
 
-    # (3a) 連結語法殘留(§ S6.14)— md_to_html 的 inline_md() 只處理 **粗體** 與裸網址
-    # 自動連結,`[文字](網址)` 會原封渲染成字面可見文字。全書 corpus 從未使用該語法,
-    # 也沒有任何事後檢查會抓到,破掉的連結會靜默上線 → 出版前直接擋。
-    # 正解:空格包夾的裸網址 + 全形括號(先例 build/genai2026-july-meetup/publish.md)。
-    # 注意排除圖片語法 ![..](..) —— 圖片走 img_prefix/placement 那條路,是合法的。
-    # lookbehind 要放在整個 `[…](` 的開頭 `[` 之前 —— 放在 `](` 之前會誤判,
-    # 因為 `![](x.png)` 的 `](` 前一字是 `[` 而不是 `!`。
-    link_residue = [
+    # (3a) 連結語法(§ S6.14,2026-09-01 更新):`[文字](網址)` 自本日起由
+    # md_to_html.inline_md() 原生渲染成 <a>,不再是「會靜默壞掉」的語法 → 硬擋解除。
+    # (圖片的 `![](<檔名>)` 的 `<>` 包覆仍是硬錯,由 build_book_master self-assert 擋。)
+
+    # (3c) 跨行 **粗體**(2026-09-01 引入)。md_to_html 逐「行」套 inline_md,`**` 開在
+    # 一行、收在下一行時配不起來 → 星號原封上線(§ S6.6)。blockquote 內由 render_blocks
+    # 併行處理,已支援;**非 blockquote 的軟斷行段落**則不行 —— 本管線的段落模型是
+    # 「一段落 = 一行」(para_len_check / phase_d_check 都以此為準),軟斷行本來就該併掉。
+    odd_bold = [
         (i, ln) for i, ln in enumerate(md_text_all.splitlines(), 1)
-        if re.search(r"(?<!!)\[[^\]]*\]\(", ln)
+        if ln.count("**") % 2 == 1 and not ln.lstrip().startswith(">")
     ]
-    if link_residue:
-        head = "; ".join(f"L{i}:{ln.strip()[:40]}" for i, ln in link_residue[:3])
-        fails.append(f"連結語法殘留(§ S6.14):{md_path.name} 有 {len(link_residue)} 行含 "
-                     f"`[文字](網址)`,md_to_html 會渲染成字面文字 → 改成空格包夾的裸網址。{head}")
+    if odd_bold:
+        head = "; ".join(f"L{i}:{ln.strip()[:34]}" for i, ln in odd_bold[:3])
+        fails.append(f"跨行粗體(§ S6.6):{md_path.name} 有 {len(odd_bold)} 行 `**` 未在同一行收尾"
+                     f",會渲染成字面星號 → 把該段的軟斷行併成一行。{head}")
 
     # (3b) 分佈塌陷 — 無條件驗(不依賴 session;master-centric/legacy 裸 md 也擋)。
     # 這是「連續投影片倒同一段」的硬門,與 § S6.11.b 事後 audit 同口徑。
