@@ -90,11 +90,12 @@ body { min-height: 100vh; }
   letter-spacing: .12em; text-transform: uppercase; color: var(--ink-mute);
 }
 
-/* 書架色條:三個 category 各自對應主站的書架色 */
+/* 色條。兩組來源:報名分眾的 category,以及文章統計的 shelf ——
+   shelf 一律沿用主站 style.css 對該書架的既定顏色,後台與首頁看起來才是同一個系統。 */
 .bar { height: 3px; margin: -20px -22px 16px; }
-.bar.mcp { background: var(--olive); }
-.bar.slides { background: var(--navy); }
-.bar.community { background: var(--ochre); }
+.bar.mcp,       .bar.public  { background: var(--olive); }  /* 公開活動 */
+.bar.slides,    .bar.seminar { background: var(--navy); }   /* 研討會 */
+.bar.community, .bar.reading { background: var(--ochre); }  /* 讀書會 */
 .bar.other { background: var(--ink-faint); }
 
 /* ─── 分眾側欄 ─────────────────────────────────────────────────────────── */

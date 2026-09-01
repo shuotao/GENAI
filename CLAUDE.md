@@ -468,7 +468,15 @@ service account 金鑰在 `.secrets/`、匯出 CSV 在 `exports/`,皆已 gitigno
 **不改程式**;當月沒場次自然為空,零人工維護。這是刻意用來取代 GWS 那種
 「每期產一份 `audience_NN.txt`」的做法。
 
-**鐵律 4 — 前端不做權限判斷。** 非白名單帳號看到的必須是 Firestore 規則回的
+**鐵律 4 — 報名事件與名單軌跡是兩種東西,不可互相偽裝。**
+`responses/*.jsonl` 給的是**報名事件**(有姓名、時間、報名選項)→ 進 `registrations` 子集合。
+`data/*.txt` 給的是**名單成員身分**(只有 email,無姓名/無日期/無場次)→ 進
+`subscriber.lists[]`。把名單成員偽造成一筆 registration 會污染所有以報名為基礎的分眾與統計。
+只存在於名單、從未報名過的人(實測 12 位:永久收件人、手動補入、只在黑名單上的位址等)
+仍要建成聯絡人 —— 否則封鎖區看不到他們,就無從檢視理由或解封。
+`test_audience.txt` 的位址標 `testAddress`,匯出時與封鎖者一併扣除。
+
+**鐵律 5 — 前端不做權限判斷。** 非白名單帳號看到的必須是 Firestore 規則回的
 `permission-denied`,不是被 CSS 藏起來的畫面。`admins/` 的 write 在規則中恆為
 `false`,只能由本機 `seed_admin.py` 寫入(否則任何登入者都能自我提權)。
 

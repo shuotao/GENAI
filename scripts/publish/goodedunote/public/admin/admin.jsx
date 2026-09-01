@@ -15,7 +15,9 @@ const CATS = {
   slides:    { label: '演講資料',   tone: 'slides' },
   community: { label: '社群申請',   tone: 'community' },
 };
-const tone = (c) => (CATS[c] ? CATS[c].tone : 'other');
+// 主站三道書架的 id,色條要沿用它們既定的顏色(見 style.css)。
+const SHELVES = new Set(['public', 'seminar', 'reading']);
+const tone = (c) => (CATS[c] ? CATS[c].tone : (SHELVES.has(c) ? c : 'other'));
 const catLabel = (c) => (CATS[c] ? CATS[c].label : c);
 
 /* ── 工具 ───────────────────────────────────────────────────────────────── */
@@ -64,6 +66,20 @@ function buildSegments(events, subs) {
   [...new Set(events.map((e) => e.category))].filter((c) => c && !known.has(c)).forEach((c) => {
     segs.push({ id: c, name: catLabel(c), rows: byCat(c) });
   });
+  // 名單軌跡分眾:來自 GWS 的 data/*.txt。這些不是「報名」,是「曾在哪份名單上」,
+  // 因此獨立成一組,不與報名分眾混在一起。
+  const onList = (label) => subs.filter((s) => (s.lists || []).includes(label));
+  [['永久收件人', '永久收件人'],
+   ['從未出席', '從未出席'],
+   ['手動補入', '手動補入']].forEach(([label, name]) => {
+    const rows = onList(label);
+    if (rows.length) segs.push({ id: 'list:' + label, name, rows, group: 'list' });
+  });
+  const nl = [...new Set(subs.flatMap((s) => (s.lists || [])
+    .filter((l) => l.startsWith('電子報'))))].sort();
+  nl.forEach((label) => segs.push({
+    id: 'list:' + label, name: label, rows: onList(label), group: 'list' }));
+
   segs.push({ id: 'blocked', name: '封鎖區', rows: subs.filter((s) => s.blocked) });
   return segs;
 }
@@ -189,16 +205,24 @@ function RosterTab({ segs, events, reasons, onBlock }) {
       <p className="admin-note">
         一人一筆(以正規化 email 為鍵),底下掛每一次報名紀錄。
         左側分眾全部是「查詢」而非另一份名單 —— 新增一個事件,分眾就自動反映,不需人工維護。
+        下半部的「名單軌跡」來自 GWS 的名單檔:那是<b>曾出現在哪一份名單上</b>,
+        不是報名紀錄,兩者刻意分開。
       </p>
 
       <div className="roster">
         <div>
-          {segs.map((s) => (
-            <button key={s.id} className={'seg ' + (s.id === segId ? 'on' : '')}
-                    onClick={() => { setSegId(s.id); setOpen(null); }}>
-              <span>{s.name}</span>
-              <span className="seg-n">{s.rows.length}</span>
-            </button>
+          {segs.map((s, i) => (
+            <React.Fragment key={s.id}>
+              {s.group === 'list' && (i === 0 || segs[i - 1].group !== 'list') && (
+                <div className="eyebrow" style={{ marginTop: 18, marginBottom: 6 }}>
+                  名單軌跡 · from GWS
+                </div>)}
+              <button className={'seg ' + (s.id === segId ? 'on' : '')}
+                      onClick={() => { setSegId(s.id); setOpen(null); }}>
+                <span>{s.name}</span>
+                <span className="seg-n">{s.rows.length}</span>
+              </button>
+            </React.Fragment>
           ))}
         </div>
 
@@ -228,7 +252,16 @@ function RosterTab({ segs, events, reasons, onBlock }) {
                           {(s.categories || []).map((c) => (
                             <span key={c} className={'chip ' + tone(c)}>{catLabel(c)}</span>
                           ))}
-                          <span className="card-meta"> {(s.eventIds || []).length} 場</span>
+                          {!!(s.eventIds || []).length &&
+                            <span className="card-meta"> {s.eventIds.length} 場</span>}
+                          {!(s.eventIds || []).length &&
+                            <span className="card-meta">僅名單,無報名紀錄</span>}
+                          {!!(s.lists || []).length && (
+                            <div style={{ marginTop: 4 }}>
+                              {s.lists.map((l) => (
+                                <span key={l} className="chip" style={{ fontSize: 10 }}>{l}</span>
+                              ))}
+                            </div>)}
                         </td>
                         <td>
                           {s.blocked
@@ -236,7 +269,9 @@ function RosterTab({ segs, events, reasons, onBlock }) {
                                 <span key={r} className="chip block">
                                   {(reasons.find((x) => x.id === r) || {}).label || r}
                                 </span>))
-                            : <span className="card-meta">可寄送</span>}
+                            : (s.testAddress
+                                ? <span className="chip">測試位址</span>
+                                : <span className="card-meta">可寄送</span>)}
                         </td>
                         <td style={{ whiteSpace: 'nowrap' }}>
                           <button className="btn small ghost" onClick={() => expand(s.id)}>
@@ -289,15 +324,19 @@ function RosterTab({ segs, events, reasons, onBlock }) {
 function ExportTab({ segs }) {
   const [segId, setSegId] = useState('mcp');
   const seg = segs.find((s) => s.id === segId) || segs[0];
-  // 匯出一律扣掉封鎖者 —— 封鎖區本身除外(那就是要看被擋下來的人)。
-  const rows = segId === 'blocked' ? seg.rows : seg.rows.filter((s) => !s.blocked);
+  // 匯出一律扣掉封鎖者與測試位址 —— 封鎖區本身除外(那就是要看被擋下來的人)。
+  const rows = segId === 'blocked'
+    ? seg.rows
+    : seg.rows.filter((s) => !s.blocked && !s.testAddress);
   const excluded = seg.rows.length - rows.length;
 
   const go = () => downloadCsv(
     `goodedunote_${segId}_${new Date().toISOString().slice(0, 10)}.csv`,
-    [['email', 'name', 'categories', 'events', 'firstSeenAt', 'lastSeenAt', 'blocked', 'blockReasons'],
+    [['email', 'name', 'categories', 'events', 'lists', 'firstSeenAt', 'lastSeenAt',
+      'blocked', 'blockReasons'],
      ...rows.map((s) => [s.email, s.name || '', (s.categories || []).join(' '),
-                         (s.eventIds || []).join(' '), s.firstSeenAt || '', s.lastSeenAt || '',
+                         (s.eventIds || []).join(' '), (s.lists || []).join('｜'),
+                         s.firstSeenAt || '', s.lastSeenAt || '',
                          s.blocked ? 'Y' : '', (s.blockReasons || []).join(' ')])]);
 
   return (
@@ -306,15 +345,21 @@ function ExportTab({ segs }) {
       <h2 className="admin-h2">匯出名單</h2>
       <p className="admin-note">
         選一個分眾匯出 CSV,貼進任何寄送平台即可。檔案帶 UTF-8 BOM,Excel 直接開不會亂碼。
-        除「封鎖區」外,匯出一律自動扣除被封鎖者。
+        除「封鎖區」外,匯出一律自動扣除<b>被封鎖者</b>與<b>測試位址</b>。
       </p>
       <div className="card" style={{ maxWidth: 560 }}>
         <div className="card-title">選擇分眾</div>
-        {segs.map((s) => (
-          <button key={s.id} className={'seg ' + (s.id === segId ? 'on' : '')}
-                  onClick={() => setSegId(s.id)}>
-            <span>{s.name}</span><span className="seg-n">{s.rows.length}</span>
-          </button>
+        {segs.map((s, i) => (
+          <React.Fragment key={s.id}>
+            {s.group === 'list' && (i === 0 || segs[i - 1].group !== 'list') && (
+              <div className="eyebrow" style={{ marginTop: 18, marginBottom: 6 }}>
+                名單軌跡 · from GWS
+              </div>)}
+            <button className={'seg ' + (s.id === segId ? 'on' : '')}
+                    onClick={() => setSegId(s.id)}>
+              <span>{s.name}</span><span className="seg-n">{s.rows.length}</span>
+            </button>
+          </React.Fragment>
         ))}
         <div className="stat-row" style={{ marginTop: 22 }}>
           <div>
@@ -324,7 +369,7 @@ function ExportTab({ segs }) {
           {excluded > 0 && (
             <div>
               <div className="stat-n" style={{ color: 'var(--ink-faint)' }}>{excluded}</div>
-              <div className="stat-lab">已扣除封鎖</div>
+              <div className="stat-lab">已扣除封鎖 / 測試</div>
             </div>)}
         </div>
         <button className="btn" onClick={go} disabled={!rows.length}>下載 CSV</button>

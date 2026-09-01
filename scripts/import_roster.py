@@ -111,6 +111,40 @@ TICKET_PREFIXES = [
 ]
 
 
+# ── 名單檔來源 ──────────────────────────────────────────────────────────────
+# responses/*.jsonl 給的是「報名事件」;data/*.txt 給的是另一種東西 ——
+# 「這個人曾出現在哪一份名單上」。兩者不可混為一談:名單成員不是報名紀錄。
+# 因此名單以 subscriber.lists[] 記錄軌跡,而不是偽造一筆 registration。
+#
+# 刻意排除的檔案:
+#   union_audience.txt / derived_audience.txt —— 純機器推導的中間產物,
+#     成員身分不帶新資訊(且 derived 的表頭就寫著它是算出來的)。
+#   exclude_829_registered.txt —— 一次性的客戶指示,不是名單屬性。
+LIST_SOURCES = [  # (檔名, 標籤, 是否為測試位址)
+    ("audience_241.txt",                "電子報 nl24 名單",            False),
+    ("audience_26.txt",                 "電子報 nl26 名單",            False),
+    ("audience_27.txt",                 "電子報 nl27 名單",            False),
+    ("audience_28.txt",                 "電子報 nl28 名單",            False),
+    ("audience_28_resend.txt",          "電子報 nl28 補寄",            False),
+    ("audience_31.txt",                 "電子報 nl31 名單",            False),
+    ("audience_33.txt",                 "電子報 nl33 名單",            False),
+    ("supp_audience.txt",               "手動補入",                    False),
+    ("supp_xxzz.txt",                   "手動補入(第二批)",          False),
+    ("extra_permanent_recipients.txt",  "永久收件人",                  False),
+    ("mcp_1_to_8_emails.txt",           "MCP 1–8 月累積快照",          False),
+    ("non_participants.txt",            "從未出席",                    False),
+    # GWS 自己的 CLOSEOUT-roster.md 記載這份「雙向都錯」(多 16、少 11),
+    # 所以只留軌跡,標籤明說不可信,絕不拿它當事實做任何篩選。
+    ("clean_not_registered_emails.txt", "未報名清單(GWS 標記不可信)", False),
+    ("test_audience.txt",               "測試位址",                    True),
+    # 抑制清單也建成聯絡人:否則「只出現在黑名單、從未報名」的位址在後台
+    # 封鎖區看不到,就無從檢視理由、也無法解封。
+    ("blacklist.txt",                   "來自黑名單",                  False),
+    ("bounced.txt",                     "來自退信清單",                False),
+    ("unsubscribed.txt",                "來自退訂清單",                False),
+]
+
+
 def load_gws_common(gws: pathlib.Path):
     """載入 GWS 的 _common.py 當模組 —— 正規化語義的 SSoT。"""
     path = gws / "scripts" / "_common.py"
@@ -315,6 +349,7 @@ def write(db, events, people, batch_id, dry_run):
             "firstSeenAt": p["firstSeenAt"], "lastSeenAt": p["lastSeenAt"],
             "blocked": p["blocked"], "blockReasons": p["blockReasons"],
             "blockNote": p["blockNote"], "tags": [], "importBatch": batch_id,
+            "lists": sorted(p.get("lists", ())), "testAddress": bool(p.get("testAddress")),
         }, merge=True)
         n += 1
         for reg in p["regs"]:
@@ -330,6 +365,62 @@ def write(db, events, people, batch_id, dry_run):
             batch, n = flush(batch, n)
             wrote += 400
     flush(batch, n)
+
+
+def collected_names(gws: pathlib.Path, C) -> dict:
+    """reports/collected_contacts.json 是唯一帶乾淨 {name,email,source} 結構的報告檔,
+    拿來替「只出現在名單檔、沒有報名紀錄」的聯絡人補姓名。
+    同目錄其他 *.md 報告含未遮蔽的姓名+email 表格,一律不碰。"""
+    p = gws / "data" / "reports" / "collected_contacts.json"
+    if not p.exists():
+        return {}
+    out = {}
+    for r in json.loads(p.read_text(encoding="utf-8")):
+        e = C.normalize_email(r.get("email", ""))
+        if e and r.get("name"):
+            out.setdefault(e, C.normalize_name(r["name"]))
+    return out
+
+
+def ingest_lists(people: dict, gws: pathlib.Path, C) -> dict:
+    """把 data/*.txt 名單的成員身分併進 people。
+
+    名單檔只有 email(無姓名/無日期/無場次),所以它補的是「軌跡」不是「事件」:
+    寫進 subscriber.lists[],並為只存在於名單、從未報名過的人建立聯絡人記錄。
+    """
+    names = collected_names(gws, C)
+    tally = collections.Counter()
+    created = 0
+    for fname, label, is_test in LIST_SOURCES:
+        path = gws / "data" / fname
+        if not path.exists():
+            print(f"  [warn] 找不到名單 {fname},略過", file=sys.stderr)
+            continue
+        for token in load_tokens(path):
+            key = C.normalize_email(token)
+            if not key:
+                continue          # 黑名單那類「根本不是 email」的壞字串
+            p = people.get(key)
+            if p is None:
+                p = people[key] = {
+                    "email": key, "rawEmails": set(), "verifiedEmail": "",
+                    "name": names.get(key, ""), "eventIds": set(), "categories": set(),
+                    "regs": [], "firstSeenAt": "", "lastSeenAt": "", "lists": set(),
+                }
+                created += 1
+            p.setdefault("lists", set()).add(label)
+            p["rawEmails"].add(token)
+            if is_test:
+                p["testAddress"] = True
+            tally[label] += 1
+    for p in people.values():
+        p.setdefault("lists", set())
+        p.setdefault("testAddress", False)
+    print(f"\n=== 名單軌跡({len(LIST_SOURCES)} 份檔案)===")
+    for _, label, _ in LIST_SOURCES:
+        print(f"  {label:<30} {tally[label]:>4} 人")
+    print(f"  ── 其中只存在於名單、無報名紀錄而新建的聯絡人:{created} 人")
+    return tally
 
 
 def reconcile(gws: pathlib.Path, C, people) -> int:
@@ -443,6 +534,7 @@ def main() -> int:
     gws = pathlib.Path(args.gws).expanduser()
     C = load_gws_common(gws)
     events, people, rows = build(gws, C)
+    ingest_lists(people, gws, C)          # 名單軌跡 + 只在名單上的聯絡人
     tally = apply_blocks(people, gws, C)
 
     batch_id = dt.datetime.now().strftime("%Y%m%d-%H%M%S")
