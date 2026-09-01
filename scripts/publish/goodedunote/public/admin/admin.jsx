@@ -134,7 +134,9 @@ function AddContact({ events, existing, onDone, onCancel }) {
       const patch = {
         email: key,
         rawEmails: FV.arrayUnion(String(f.email).trim().toLowerCase()),
-        lists: FV.arrayUnion('手動補入'),
+        // 標籤刻意與 GWS supp_audience.txt 的「手動補入」區隔 —— 那是另一批人,
+        // 兩者共用同一個字串會讓「這個人怎麼來的」永遠問不清楚。
+        lists: FV.arrayUnion('後台手動新增'),
         source: 'admin-manual',
       };
       // 既有聯絡人不覆蓋既有姓名/備註,只補空的 —— 匯入來的資料比手打的可靠。

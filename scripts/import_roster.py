@@ -128,6 +128,7 @@ LIST_SOURCES = [  # (檔名, 標籤, 是否為測試位址)
     ("audience_28_resend.txt",          "電子報 nl28 補寄",            False),
     ("audience_31.txt",                 "電子報 nl31 名單",            False),
     ("audience_33.txt",                 "電子報 nl33 名單",            False),
+    ("audience_33_resend.txt",          "電子報 nl33 補寄",            False),
     ("supp_audience.txt",               "手動補入",                    False),
     ("supp_xxzz.txt",                   "手動補入(第二批)",          False),
     ("extra_permanent_recipients.txt",  "永久收件人",                  False),
@@ -322,6 +323,36 @@ def apply_blocks(people, gws, C):
     return tally
 
 
+def warn_block_divergence(db, people) -> int:
+    """比對「後台目前的封鎖狀態」與「這次匯入會寫入的封鎖狀態」,把差異印出來。
+
+    為什麼需要:GWS 的 blacklist/bounced/unsubscribed 是抑制清單的權威來源,
+    所以匯入覆寫 blocked 是刻意的。但如果有人在後台手動解封,重跑匯入會把他
+    封回去 —— 那個「回去」如果是靜默的,就會變成一個沒人知道自己按過的決定
+    被無聲推翻。這裡不阻擋,只確保它被看見。
+    """
+    current = {d.id: d.to_dict() for d in db.collection("subscribers").stream()}
+    if not current:
+        return 0
+    diffs = []
+    for key, p in people.items():
+        was = bool(current.get(key, {}).get("blocked"))
+        now = bool(p["blocked"])
+        if was != now:
+            diffs.append((key, was, now))
+    if not diffs:
+        print("  封鎖狀態:後台與本次匯入一致,無覆寫")
+        return 0
+    print(f"\n  ⚠️ 封鎖狀態有 {len(diffs)} 筆差異,匯入會以 GWS 的抑制清單為準覆寫:")
+    for key, was, now in sorted(diffs):
+        mask = f"{key[:3]}***@{key.split('@')[-1]}" if "@" in key else key[:3] + "***"
+        arrow = "解封 → 封鎖" if now else "封鎖 → 解封"
+        print(f"     {mask:<28} 後台{'封鎖' if was else '未封鎖'} / 匯入{'封鎖' if now else '未封鎖'}  ({arrow})")
+    print("     若其中有你在後台刻意做的決定,請先改 GWS 的 blacklist/bounced/unsubscribed,")
+    print("     否則這次匯入會把它推翻。")
+    return len(diffs)
+
+
 def write(db, events, people, batch_id, dry_run):
     from google.cloud import firestore as fs
     if dry_run:
@@ -342,15 +373,27 @@ def write(db, events, people, batch_id, dry_run):
 
     for key, p in people.items():
         doc = db.collection("subscribers").document(key)
-        batch.set(doc, {
-            "email": p["email"], "rawEmails": sorted(p["rawEmails"]),
-            "verifiedEmail": p["verifiedEmail"], "name": p["name"],
-            "eventIds": sorted(p["eventIds"]), "categories": sorted(p["categories"]),
+        # 後台是活的:使用者會手動新增聯絡人、貼標籤、改封鎖。整個陣列覆寫會把
+        # 那些改動靜默洗掉(2026-09-01 實例:後台手動加的 3 位,其「後台手動新增」
+        # 標籤會被匯入算出來的 lists 換掉)。所以:
+        #   lists  → ArrayUnion,只補不刪。名單軌跡本質是「曾經在某份名單上」,
+        #            是歷史事實,不會因為新的匯入而變成假,append-only 才對。
+        #   tags   → 完全不碰。那是純後台欄位,匯入沒有任何話語權。
+        #   name   → 只在匯入有值時才寫,不用空字串蓋掉後台填的姓名。
+        payload = {
+            "email": p["email"], "rawEmails": fs.ArrayUnion(sorted(p["rawEmails"])),
+            "verifiedEmail": p["verifiedEmail"],
+            "eventIds": fs.ArrayUnion(sorted(p["eventIds"])),
+            "categories": fs.ArrayUnion(sorted(p["categories"])),
             "firstSeenAt": p["firstSeenAt"], "lastSeenAt": p["lastSeenAt"],
             "blocked": p["blocked"], "blockReasons": p["blockReasons"],
-            "blockNote": p["blockNote"], "tags": [], "importBatch": batch_id,
-            "lists": sorted(p.get("lists", ())), "testAddress": bool(p.get("testAddress")),
-        }, merge=True)
+            "blockNote": p["blockNote"], "importBatch": batch_id,
+            "lists": fs.ArrayUnion(sorted(p.get("lists", ()))),
+            "testAddress": bool(p.get("testAddress")),
+        }
+        if p["name"]:
+            payload["name"] = p["name"]
+        batch.set(doc, payload, merge=True)
         n += 1
         for reg in p["regs"]:
             # 冪等鍵:同一人同一場同一筆回覆只會有一份
@@ -568,8 +611,10 @@ def main() -> int:
         print(f"\n[import_roster] dry-run,未寫入 Firestore。")
         return 0
 
+    db = gnote_db.client()
+    warn_block_divergence(db, people)
     print(f"\n[import_roster] 寫入中(batch {batch_id})…")
-    write(gnote_db.client(), events, people, batch_id, dry_run=False)
+    write(db, events, people, batch_id, dry_run=False)
     print(f"[import_roster] 完成。回滾指令:python3 scripts/import_roster.py --rollback {batch_id}")
     return 0
 
