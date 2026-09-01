@@ -9,7 +9,16 @@ html, body { scroll-snap-type: none !important; scroll-padding-top: 0 !important
 body { min-height: 100vh; }
 
 /* ─── 外框 ─────────────────────────────────────────────────────────────── */
-.admin-shell { max-width: 1180px; margin: 0 auto; padding: 96px 28px 96px; }
+/* --admin-top-h 由 admin.jsx 的 ResizeObserver 實測 .admin-top 真實高度後
+   寫入 documentElement(見 App() 內該 effect)。固定頂欄的高度會隨斷點、
+   分頁列是否換行而變 —— 寫死一個 padding-top 數字遲早會再對不齊(回歸 C
+   的成因就是分頁列在 681–900px 換成三行,但 padding-top 還停在桌機數字)。
+   74px / 96px 只是 JS 尚未跑到時的 fallback,不是最終依據。
+   sticky 表頭(.tbl th)也吃同一個變數,理由見下方註解。 */
+.admin-shell { max-width: 1180px; margin: 0 auto; padding: calc(var(--admin-top-h, 96px) + 22px) 28px 96px; }
+@media (max-width: 680px) {
+  .admin-shell { padding-top: calc(var(--admin-top-h, 74px) + 22px); padding-left: 16px; padding-right: 16px; }
+}
 
 .admin-top {
   position: fixed; top: 0; left: 0; right: 0; z-index: 50;
@@ -23,6 +32,7 @@ body { min-height: 100vh; }
   font-family: var(--serif); font-weight: 700; font-size: 15px;
   letter-spacing: .04em; color: var(--ink);
   display: flex; align-items: center; gap: 9px;
+  flex: none;
 }
 .admin-brand::before {
   content: ""; width: 8px; height: 8px; border-radius: 50%;
@@ -32,9 +42,20 @@ body { min-height: 100vh; }
   margin-left: auto; display: flex; align-items: center; gap: 14px;
   font-family: var(--serif-en); font-style: italic; font-size: 12px;
   letter-spacing: .08em; color: var(--ink-mute);
+  flex: none;
+}
+@media (max-width: 680px) {
+  .admin-top { padding: 10px 14px; gap: 10px; }
+  .admin-brand { font-size: 13px; gap: 6px; }
+  .admin-brand span { display: none; }   /* 手機只留品牌小圓點,名稱太長會擠掉分頁 */
+  .admin-who { gap: 8px; }
 }
 
-/* ─── 分頁列 ───────────────────────────────────────────────────────────── */
+/* ─── 分頁列 ─────────────────────────────────────────────────────────────
+   斷點故意不讓分頁換行(換行會把頂欄撐高,即回歸 C 的成因),改成單行水平
+   捲動;隱藏捲軸是純美觀,不影響鍵盤/輔助技術操作。
+   斷點訂在 900px(不是 680px)——757px 這種中間寬度分頁字數/寬度加總已經
+   放不下一行,不提前處理會在那裡先換行、把頂欄撐成三行。 */
 .tabs { display: flex; gap: 4px; flex-wrap: wrap; }
 .tab {
   font-family: var(--serif-en); font-size: 12px; letter-spacing: .18em;
@@ -44,6 +65,22 @@ body { min-height: 100vh; }
 }
 .tab:hover { color: var(--ink); border-color: var(--rule); }
 .tab.on { color: var(--paper); background: var(--ink); border-color: var(--ink); }
+/* 分頁列一律單行捲動 —— 實測 950px 時五個分頁仍會折成兩行,把頂欄撐高。
+   高度變化本身由 ResizeObserver 吸收(內容不會被蓋住),但兩行的頂欄很醜
+   又吃掉垂直空間,不如讓它單行橫捲。 */
+@media (max-width: 1180px) {
+  .tabs {
+    flex: 1 1 auto; min-width: 0; flex-wrap: nowrap;
+    overflow-x: auto; -webkit-overflow-scrolling: touch;
+    scrollbar-width: none; -ms-overflow-style: none;
+  }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab { white-space: nowrap; flex: none; }
+}
+/* 帳號 email 較晚才讓位:1000px 的桌機視窗沒必要把身分藏起來。 */
+@media (max-width: 900px) {
+  .admin-who .who-email { display: none; }
+}
 
 /* ─── 段落標題 ─────────────────────────────────────────────────────────── */
 .eyebrow {
@@ -100,7 +137,25 @@ body { min-height: 100vh; }
 
 /* ─── 分眾側欄 ─────────────────────────────────────────────────────────── */
 .roster { display: grid; grid-template-columns: 268px 1fr; gap: 26px; align-items: start; }
+/* CSS Grid 的子項預設 min-width:auto —— 不會縮到比內容小。表格一旦有
+   min-width,右欄就會撐破軌道、被主站的 body{overflow-x:hidden} 裁掉,
+   「狀態」與操作欄變成點不到也捲不到。min-width:0 才讓 .table-scroll
+   真的拿到一個有限寬度、自己產生橫向捲軸。 */
+.roster > * { min-width: 0; }
 @media (max-width: 860px) { .roster { grid-template-columns: 1fr; } }
+
+/* 手機版分眾清單改用 <select>——一長串 .seg 按鈕要捲很久才看到表格,
+   下拉選單一步到位。兩者只留一個,靠斷點互斥顯示,不是重複資訊。 */
+.roster-select-wrap { display: none; margin-bottom: 16px; }
+@media (max-width: 680px) {
+  .roster-nav { display: none; }
+  .roster-select-wrap { display: block; }
+}
+.roster-meta {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 12px; margin-bottom: 10px; flex-wrap: wrap;
+}
+.roster-meta .eyebrow { margin-bottom: 0; }
 
 .seg {
   width: 100%; text-align: left; cursor: pointer;
@@ -118,17 +173,54 @@ body { min-height: 100vh; }
 .seg-n { font-family: var(--mono); font-size: 12px; opacity: .8; }
 
 /* ─── 表格 ─────────────────────────────────────────────────────────────── */
+/* 主站 style.css 的 body 是 overflow-x:hidden(首頁用來擋 hero 動畫溢出),
+   表格在窄螢幕一定會比畫面寬,所以每張表都要自己包一層 .table-scroll
+   開捲動,不能指望繼承外層的 overflow 設定。
+   桌機刻意維持 overflow:visible —— overflow-x:auto 會讓這層變成 sticky
+   表頭的捲動祖先,sticky 的 top 就變成相對這層容器位移,而不是相對頁面,
+   結果是表頭視覺上掉到第一列資料中間(回歸 A)。頁面級 sticky 與「容器內
+   橫向捲動」是兩種捲動座標系,無法在同一層兼得,所以窄螢幕改成放棄
+   sticky、只保留橫向捲動(表格本來就可捲,sticky 表頭在窄螢幕價值本來就低)。 */
+.table-scroll { overflow: visible; }
 .tbl { width: 100%; border-collapse: collapse; font-family: var(--sans); font-size: 13px; }
 .tbl th {
   text-align: left; font-family: var(--serif-en); font-style: italic;
   font-size: 11px; letter-spacing: .14em; text-transform: uppercase;
   color: var(--ink-mute); font-weight: 400;
   padding: 9px 10px; border-bottom: 1px solid var(--ink); white-space: nowrap;
+  /* top 吃 --admin-top-h(JS 實測頂欄高度,見 admin.jsx App() 的
+     ResizeObserver),表頭才會不管頂欄實際變多高都貼齊頂欄下緣。 */
+  position: sticky; top: var(--admin-top-h, 96px); background: var(--paper); z-index: 5;
 }
 .tbl td { padding: 10px; border-bottom: 1px solid var(--rule-soft); vertical-align: top; }
 .tbl tr:hover td { background: var(--paper-soft); }
 .tbl .mono { font-family: var(--mono); font-size: 11.5px; word-break: break-all; }
 .tbl .num { text-align: right; font-family: var(--mono); font-size: 12px; }
+.roster-range { font-family: var(--serif-en); font-style: italic; font-size: 11px;
+  letter-spacing: .1em; color: var(--ink-mute); }
+
+/* 門檻是算出來的,不是猜的:.admin-shell 最大 1180、左右內距 56,
+   .roster 側欄 268 + 間距 26 → 表格可用寬 = min(viewport,1180) − 350。
+   要容納 min-width:780 需要 viewport ≥ 1130。取 1180(= shell 的 max-width)
+   當斷點,比 1130 保守一點,而且是個自我說明的數字。
+   1180 以上表格有 830px 可用、不會被壓扁,才留頁面級 sticky 表頭。 */
+@media (max-width: 1180px) {
+  /* 表格塞不下時放棄 sticky 表頭(見上方 .table-scroll 註解),改開橫向捲動。 */
+  .table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .tbl th { position: static; top: auto; }
+
+  /* 通訊錄表格是五欄定寬,不給 min-width 的話 width:100% 只會把每欄壓扁
+     (回歸 B:email 截斷、姓名折兩行),而不是產生可橫向捲動的溢位。
+     只鎖定 .tbl-contacts,不影響其他欄數不同的表格(事件表、封鎖表)。 */
+  .tbl-contacts { min-width: 780px; table-layout: auto; }
+  .tbl-contacts th:nth-child(1) { width: 280px; }
+  .tbl-contacts th:nth-child(2) { width: 110px; }
+  .tbl-contacts th:nth-child(3) { width: 220px; }
+  .tbl-contacts th:nth-child(4) { width: 80px; }
+  .tbl-contacts th:nth-child(5) { width: 90px; }
+  .tbl-contacts td:nth-child(1),
+  .tbl-contacts td:nth-child(2) { white-space: nowrap; word-break: normal; }
+}
 
 /* ─── chip / 標籤 ──────────────────────────────────────────────────────── */
 .chip {
@@ -141,6 +233,11 @@ body { min-height: 100vh; }
 .chip.slides { border-color: var(--navy); color: var(--navy-deep); }
 .chip.community { border-color: var(--ochre); color: var(--ochre-deep); }
 .chip.block { border-color: #8c2f1d; color: #8c2f1d; }
+/* 封鎖理由 chip 兼作可點選的多選按鈕(BlockConfirmPanel) —— <button> 預設有
+   自己的字體/背景,要重置成跟 <span>.chip 視覺一致;未選取的理由用透明度
+   降低表示「可點但尚未選」,避免另外造一種色碼。 */
+button.chip { font: inherit; cursor: pointer; background: none; appearance: none; }
+.chip-off { opacity: .45; }
 
 /* ─── 按鈕 / 輸入 ──────────────────────────────────────────────────────── */
 .btn {
@@ -162,8 +259,22 @@ body { min-height: 100vh; }
   background: var(--paper); border: 1px solid var(--rule); border-radius: 2px;
   padding: 8px 11px; width: 100%;
 }
-.inp:focus { outline: none; border-color: var(--ink); }
+.inp:focus { border-color: var(--ink); }
+/* 滑鼠點擊仍然不要外框(視覺雜訊),但鍵盤/輔助技術移入焦點時一定要有
+   高對比指示,否則螢幕上完全看不出目前焦點在哪一格。 */
+.inp:focus:not(:focus-visible) { outline: none; }
+.inp:focus-visible, .btn:focus-visible, .tab:focus-visible, .seg:focus-visible {
+  outline: 2px solid var(--ink); outline-offset: 2px;
+}
 .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+
+/* ─── 表單欄位標籤 ─────────────────────────────────────────────────────── */
+.field { display: flex; flex-direction: column; gap: 4px; flex: 1 1 auto; min-width: 0; }
+.field-label {
+  display: block; font-family: var(--serif-en); font-style: italic;
+  font-size: 10.5px; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--ink-mute);
+}
 
 /* ─── 登入閘 ───────────────────────────────────────────────────────────── */
 .gate { min-height: 100vh; display: grid; place-items: center; padding: 24px; }
@@ -186,6 +297,32 @@ body { min-height: 100vh; }
   padding: 11px 14px; margin-top: 18px; line-height: 1.7; text-align: left;
 }
 .empty {
+  /* 這裡顯示的是「載入中／此分眾沒有人」等操作性狀態,不是裝飾文字,
+     ink-faint 對比太低,改用 ink-mute。 */
   font-family: var(--serif-en); font-style: italic; font-size: 14px;
-  color: var(--ink-faint); padding: 40px 0; text-align: center;
+  color: var(--ink-mute); padding: 40px 0; text-align: center;
+}
+
+/* ─── 匯出頁:左選分眾 / 右放 Email Only ────────────────────────────────── */
+.export-grid {
+  display: grid; gap: 22px; align-items: start;
+  grid-template-columns: minmax(280px, 460px) minmax(320px, 1fr);
+}
+.export-grid > * { min-width: 0; }   /* 同 .roster:避免 email 長字串撐破軌道 */
+/* 只有左欄時不要讓它撐滿整個寬度 —— 一張孤零零的寬卡片很難讀。 */
+.export-grid:has(> .card:only-child) { grid-template-columns: minmax(280px, 460px); }
+@media (max-width: 820px) { .export-grid { grid-template-columns: 1fr; } }
+
+/* 可複製的 email 區塊。等寬字讓使用者一眼看得出分隔符與位址邊界。 */
+.mono-box {
+  font-family: var(--mono); font-size: 12px; line-height: 1.7;
+  resize: vertical; white-space: pre-wrap; word-break: break-all;
+  background: var(--paper-soft);
+}
+
+/* ─── 手機最小字級 ─────────────────────────────────────────────────────────
+   桌機上這些 10.5–11.5px 的小型大寫字是刻意的排版語彙,但在手機小螢幕、
+   常是戶外/晃動情境下閱讀,低於 12px 會難以辨識,故窄螢幕一律墊高。 */
+@media (max-width: 680px) {
+  .chip, .card-meta, .stat-lab, .tbl th, .tbl .mono, .field-label { font-size: 12px; }
 }
