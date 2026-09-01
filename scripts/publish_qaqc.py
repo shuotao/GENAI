@@ -644,6 +644,25 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
         f"破損連結: {bad_link[:3]}" if bad_link else f"all {len(pages)} pages OK",
     ))
 
+    # S6.14.c 破損 <a> 標籤(2026-09-01 引入)— markdown 連結轉成 <a href="URL" …> 之後,
+    # 若裸網址 autolink 又吃了 href 屬性裡那段 URL,會產生 `<a href="<a href=…">`,
+    # 屬性文字(target="_blank" rel="noopener…)整片露在畫面上。事後掃「文字節點裡
+    # 出現 HTML 屬性字樣」即可抓到,這是 deploy 前唯一會漏的那種破法。
+    bad_attr = []
+    for p_ in pages:
+        html_ = p_.read_text(encoding="utf-8")
+        for m in re.finditer(r"(?:<p[^>]*>|<h[23]>|<li>|<td>)(.*?)</(?:p|h[23]|li|td)>",
+                             html_, re.S):
+            txt = re.sub(r"<[^>]+>", "", m.group(1))          # 去標籤後剩下的可見文字
+            if 'target="_blank"' in txt or 'rel="noopener' in txt or "<a href=" in txt:
+                bad_attr.append(f"{p_.name}: {txt.strip()[:60]}")
+                break
+    results.append((
+        "S6.14.c 無破損 <a> 標籤(屬性外露)",
+        not bad_attr,
+        f"破損: {bad_attr[:3]}" if bad_attr else f"all {len(pages)} pages OK",
+    ))
+
     # S6.14.b 圍欄碼殘留(2026-09-01 引入)— ``` 已由 render_blocks 轉成 <pre><code>,
     # 正文若還看得到字面 ``` 代表圍欄沒成對(開了沒關),整段會爛掉。
     bad_fence = []

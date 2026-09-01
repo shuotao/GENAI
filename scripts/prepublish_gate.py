@@ -163,8 +163,18 @@ def main() -> int:
                         ctx.append(lines[j])
                 s = score(n, ctx)
                 if verdict(s) == "fail":
-                    fails.append(f"圖文相關性:{m.group(1)} score={s:.3f} < {THRESHOLD_FAIL}"
-                                 f"(描述與上下文不相關,複核 anchor;§ S4.5.11)")
+                    # 與 § S6.11 事後 audit 同一把尺(2026-09-01 對齊):執行者已複核的
+                    # 放置(anchor.engine = human / haiku-reviewed / deck-flow,或整組
+                    # human_grouped)→ **降警告不擋**。離題番外圖(產品官網、demo 截圖、
+                    # 終端機畫面)與逐字稿天生零詞彙重疊,放置正確但分數必然低;
+                    # 出版前閘門先前比 SSoT 嚴,會把手排結果整批擋掉。
+                    eng = (n.get("anchor") or {}).get("engine", "")
+                    if eng in ("haiku-reviewed", "human", "deck-flow") or n.get("human_grouped"):
+                        print(f"[gate] ⚠️ 圖文相關性低但執行者已複核,不擋:{m.group(1)}"
+                              f"(score={s:.3f}, engine={eng or 'human_grouped'})")
+                    else:
+                        fails.append(f"圖文相關性:{m.group(1)} score={s:.3f} < {THRESHOLD_FAIL}"
+                                     f"(描述與上下文不相關,複核 anchor;§ S4.5.11)")
             # (分佈塌陷已由上方 (3b) 無條件檢核涵蓋,此處不重複)
 
     # (3c) 座談對談歸屬與順序(§ S4.5.14)— 只在找得到 reference_notes.md 的

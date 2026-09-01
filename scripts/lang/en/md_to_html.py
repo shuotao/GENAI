@@ -148,9 +148,19 @@ def inline_md(text):
     URL 自動連結:讓逐字稿裡貼的網址讀者能直接點(esc 後圖片 src 是 .png,不會被誤連)。
     用 [^*]+ 限制不跨越下一個 *,避免吃進巢狀。"""
     text = _CODE_RE.sub(r"<code>\1</code>", text)
-    text = _MDLINK_RE.sub(_mdlink, text)
+    # markdown 連結先抽成哨符 —— 只調換順序**不夠**:mdlink 產生的
+    # `<a href="https://…">` 裡那段網址,之後的裸網址 autolink 還是會再吃一次,
+    # 變成 `<a href="<a href=…">`,屬性文字整片露在畫面上(2026-09-01 實例)。
+    slots: list[str] = []
+
+    def _stash(m):
+        slots.append(_mdlink(m))
+        return f"\x00{len(slots) - 1}\x00"
+
+    text = _MDLINK_RE.sub(_stash, text)
     text = re.sub(r"\*\*([^*]+)\*\*", r"<strong>\1</strong>", text)
-    return _URL_RE.sub(_linkify, text)
+    text = _URL_RE.sub(_linkify, text)
+    return re.sub(r"\x00(\d+)\x00", lambda m: slots[int(m.group(1))], text)
 
 
 HTML_COMMENT = re.compile(r"^\s*<!--.*-->\s*$")
