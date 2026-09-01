@@ -76,6 +76,20 @@ def main() -> int:
         fails.append(f"跨行粗體(§ S6.6):{md_path.name} 有 {len(odd_bold)} 行 `**` 未在同一行收尾"
                      f",會渲染成字面星號 → 把該段的軟斷行併成一行。{head}")
 
+    # (3d) 拆散的圖片語法(2026-09-01 引入)。手動搬動圖片時很容易把
+    # `![alt](file.png)` 拆成 `(file.png)` 與 `[alt]` 兩行(甚至前後對調),
+    # `!` 也掉了 —— 這樣**圖不會出現、也沒有任何檢核會抓到**:圖片行計數少一張、
+    # verify 只驗「md 內的引用」、S6.12 孤兒圖只看部署夾。實例:bim-mcp-8 場 01
+    # 的 page-35 因此靜默消失一輪。凡是「整行只有 (檔名.png)」即視為破掉的圖片語法。
+    orphan_img = [
+        (i, ln) for i, ln in enumerate(md_text_all.splitlines(), 1)
+        if re.fullmatch(r"\s*\(\s*[^)]+\.(?:png|jpe?g|webp|gif)\s*\)\s*", ln, re.I)
+    ]
+    if orphan_img:
+        head = "; ".join(f"L{i}:{ln.strip()[:34]}" for i, ln in orphan_img[:3])
+        fails.append(f"拆散的圖片語法:{md_path.name} 有 {len(orphan_img)} 行是裸的 "
+                     f"`(檔名)` —— `![alt](檔名)` 被拆成兩行,圖不會出現。{head}")
+
     # (3b) 分佈塌陷 — 無條件驗(不依賴 session;master-centric/legacy 裸 md 也擋)。
     # 這是「連續投影片倒同一段」的硬門,與 § S6.11.b 事後 audit 同口徑。
     from placement_check import overstacked, order_inversions  # noqa: E402

@@ -172,6 +172,32 @@ def _table_cells(s):
     return [c.strip() for c in s.strip().strip("|").split("|")]
 
 
+def _render_table(seq, k, get):
+    """從 seq[k] 起吃掉一張表(表頭 + `|---|` 分隔列 + 資料列)。
+    `get(line)` 把原始行轉成「表格文字」(blockquote 內要先剝掉 `>`)。
+    回傳 (html, 新的 k, 這張表的 payload 字數)。"""
+    head = _table_cells(get(seq[k])); k += 2
+    rows, chars = [], sum(payload_nws(c) for c in head)
+    while k < len(seq) and get(seq[k]).lstrip().startswith("|"):
+        r = _table_cells(get(seq[k]))
+        rows.append(r); chars += sum(payload_nws(c) for c in r); k += 1
+    th = "".join(f"<th>{inline_md(esc(c))}</th>" for c in head)
+    tb = "".join("<tr>" + "".join(f"<td>{inline_md(esc(c))}</td>" for c in r) + "</tr>"
+                 for r in rows)
+    return (f'<div class="kc-tablewrap"><table><thead><tr>{th}</tr></thead>'
+            f'<tbody>{tb}</tbody></table></div>', k, chars)
+
+
+def _render_list(seq, k, get):
+    """從 seq[k] 起吃掉連續 `- ` 行。回傳 (html, 新的 k, payload 字數)。"""
+    items, chars = [], 0
+    while k < len(seq) and get(seq[k]).lstrip().startswith("- "):
+        body = get(seq[k]).lstrip()[2:].strip()
+        items.append(f"<li>{inline_md(esc(body))}</li>")
+        chars += payload_nws(body); k += 1
+    return "<ul>" + "".join(items) + "</ul>", k, chars
+
+
 def payload_nws(s):
     """行的「內容」非空白字元數 —— 剝掉結構標記(`>`、`- `、表格 `|`、`---`、HTML 註解)
     後再數。render_blocks 的 para_chars 與 main() 的 md_chars 共用同一把尺,
@@ -243,6 +269,21 @@ def render_blocks(lines_iter, first_in_sec_start=True):
                         k += 1
                     inner.append('<pre><code>' + esc("\n".join(buf)) + '</code></pre>')
                     continue
+                _q = lambda x: x.lstrip()[1:].lstrip()      # 剝掉 `>` 後的表格文字
+                # 補述框內的表格:表頭 + `|---|` 分隔列
+                if (body.startswith("|") and k + 1 < len(seq)
+                        and seq[k + 1].lstrip().startswith(">")
+                        and TABLE_SEP.match(_q(seq[k + 1]))):
+                    _flush_run()
+                    html_, k, chars = _render_table(seq, k, _q)
+                    inner.append(html_); para_chars += chars
+                    continue
+                # 補述框內的清單
+                if body.startswith("- "):
+                    _flush_run()
+                    html_, k, chars = _render_list(seq, k, _q)
+                    inner.append(html_); para_chars += chars
+                    continue
                 if body:
                     run.append(body)
                     para_chars += payload_nws(body)
@@ -255,29 +296,16 @@ def render_blocks(lines_iter, first_in_sec_start=True):
             continue
         # 表格:表頭 + 分隔列 + 資料列
         if s.lstrip().startswith("|") and k + 1 < len(seq) and TABLE_SEP.match(seq[k + 1]):
-            head = _table_cells(s)
-            k += 2
-            body_rows = []
-            while k < len(seq) and seq[k].lstrip().startswith("|"):
-                body_rows.append(_table_cells(seq[k])); k += 1
-            th = "".join(f"<th>{inline_md(esc(c))}</th>" for c in head)
-            tb = "".join("<tr>" + "".join(f"<td>{inline_md(esc(c))}</td>" for c in r) + "</tr>"
-                         for r in body_rows)
-            for r in body_rows:
-                para_chars += sum(payload_nws(c) for c in r)
-            para_chars += sum(payload_nws(c) for c in head)
-            blocks.append(f'      <div class="kc-tablewrap"><table><thead><tr>{th}</tr></thead>'
-                          f'<tbody>{tb}</tbody></table></div>')
+            html_, k, chars = _render_table(seq, k, lambda x: x)
+            para_chars += chars
+            blocks.append("      " + html_)
             first_in = False
             continue
         # 無序清單:連續 `- ` 行收成一個 <ul>
         if s.lstrip().startswith("- "):
-            items = []
-            while k < len(seq) and seq[k].lstrip().startswith("- "):
-                body = seq[k].lstrip()[2:].strip()
-                items.append(f'<li>{inline_md(esc(body))}</li>')
-                para_chars += payload_nws(body); k += 1
-            blocks.append('      <ul>' + "".join(items) + '</ul>')
+            html_, k, chars = _render_list(seq, k, lambda x: x)
+            para_chars += chars
+            blocks.append("      " + html_)
             first_in = False
             continue
         k += 1
