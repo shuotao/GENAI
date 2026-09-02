@@ -53,7 +53,10 @@ def has_cjk(s: str) -> bool:
 
 
 _ASCII_PAREN_RE = re.compile(r"\([\x20-\x27\x2a-\x7e]+\)")   # 括號內全為 ASCII(不含括號本身)
-_HTML_COMMENT_RE = re.compile(r"^\s*<!--.*-->\s*$")
+# 註解可能巢狀在 blockquote 內(補述層的插入點標記),與圍欄碼同理先容許前導 `>`
+# —— 否則 `> <!-- … -->` 不被認成註解,`<!` 的驚嘆號會被當 CJK 語境半形標點轉成
+# `<！--`,HTML 註解失效、整行以文字漏到頁面上(2026-09-02 實例:mcp8-02 補述層)。
+_HTML_COMMENT_RE = re.compile(r"^(?:\s*>)*\s*<!--.*-->\s*$")
 _ORDERED_LI_RE = re.compile(r"^(?:\s*>\s*)*\s*\d+(\.)\s")   # 有序清單標記 `1. `,句點不轉
 
 

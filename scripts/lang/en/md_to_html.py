@@ -181,6 +181,10 @@ def inline_md(text):
 
 
 HTML_COMMENT = re.compile(r"^\s*<!--.*-->\s*$")
+# 補述層的插入點標記常寫在框內(`> <!-- … -->`)。頂層那條刻意不放寬 —— 放寬會讓
+# 框首的註解在外層就被吃掉、把一個 blockquote 切成兩個;框內的由下面的 inner loop
+# 自行處理(2026-09-02 實例:mcp8-02 補述層的 TODO 被 esc() 漏到公開頁面上)。
+HTML_COMMENT_Q = re.compile(r"^(?:\s*>)*\s*<!--.*-->\s*$")
 TABLE_SEP = re.compile(r"^\s*\|[\s:|-]+\|\s*$")
 FENCE = re.compile(r"^\s*```")
 
@@ -301,6 +305,13 @@ def render_blocks(lines_iter, first_in_sec_start=True):
                     html_, k, chars = _render_list(seq, k, _q)
                     inner.append(html_); para_chars += chars
                     continue
+                # 框內 HTML 註解(補述插入點標記)丟棄 —— 不丟會被 esc() 跳脫成
+                # `&lt;!-- … --&gt;` 的可見文字,把內部 TODO 漏到公開頁面上。
+                if HTML_COMMENT_Q.match(body):
+                    _flush_run(); k += 1; continue
+                # 框內分隔線(頂層已支援,框內漏掉會渲染成字面 `---`)
+                if body.strip() == "---":
+                    _flush_run(); inner.append('<hr class="kc-hr">'); k += 1; continue
                 if body:
                     run.append(body)
                     para_chars += payload_nws(body)
