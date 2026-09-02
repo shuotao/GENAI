@@ -648,6 +648,33 @@ md 被手改、或 anchor 判斷漂移 → 修 anchor / 補描述後重出。
 **執行者(Haiku)已複核**(anchor.engine=haiku-reviewed/human)卻低分者 → 降**警告**
 不擋(2026-09-01:`prepublish_gate` (4b) 已對齊同一把尺 —— 先前出版前閘門比本節嚴,會把手排結果整批擋掉):多為離題番外投影(產品官網等,與逐字稿零詞彙重疊),放置正確但天生低分。
 
+**⚠️ spec_gap(2026-09-02 發現,尚未修):State A 含圖書的 S6.11 / S6.11.c 會靜默跳過。**
+§ S4.5.13 的跨場前綴(`build_book_master._normalize_body` 把 `page-01.png` 改成
+`sK-page-01.png`)只作用在 master 與部署檔,**`image_notes.json` 仍存裸檔名** →
+本節的 session 選取條件兩條都不成立:
+
+1. `slug in sess.parent.name` —— slug 是 `bim-mcp-8`、session 目錄是
+   `2026-08-29_mcp8-01-lin-chia-wei`,**False**(書 slug 與 session 命名本來就不同構)。
+2. `_notes_match_slug()` 拿 notes 的裸檔名去交集部署檔名 —— `page-01.png` vs
+   `s1-page-01.png`,**交集 0**,遠低於 `max(1, len(files)//2)` 門檻。
+
+→ `notes_files` 為空 → S6.11 報「無 image_notes.json(舊書/無圖流程),跳過」;
+`notes` 連帶為空 → `dp_of` 為空 → S6.11.c 也報「無 deck_page,跳過」。
+**audit 顯示全綠,但這兩項其實沒驗到。** 實測:bim-mcp-8(場 01 35 張 + 場 02 27 張)
+兩場皆匹配失敗。
+
+修的時候要一併處理第二層,只補選取條件會換來錯誤配對:
+- **合併鍵碰撞**:`notes[n["file"]] = n` 的註解寫「跨 session 合併(檔名唯一)」,
+  但各場都用裸 `page-NN.png` → bim-mcp-8 場 01 與場 02 有 **27 個同名鍵互相覆蓋**。
+- **`endswith` 一對多**:S6.11.c 以 `deployed.endswith(notes_key)` 配對,
+  `page-01.png` 同時命中 `s1-page-01.png` 與 `s2-page-01.png`。
+
+建議方向:選取與配對都改用「book.json 的 `sources` 順序 → `sK-` 前綴」這條既有的
+權威對映(與 `build_book_master` 同一份推導),而不是猜檔名交集;notes 合併鍵改成
+加前綴後的部署檔名。**在修好之前,含圖 State A 書的順序/相關性實際把關者是
+`prepublish_gate` (3b/3c)** —— 它對 `publish.md` 無條件跑、且用 `_SEQ_RE` 從
+`s2-page-07.png` 取得序號 7、用 `_deck_family` 分場比對,不受本 gap 影響。
+
 ### S6.12 圖片去重與孤兒(2026-07-06 引入)
 
 - **無孤兒圖**:slug 目錄內每個圖檔(cover.jpg 除外)必須被至少一頁 HTML 的
@@ -750,3 +777,5 @@ S6 事後 audit 的語意同步改成「**不得渲染成字面**」:
   即一致。dry-run 測試:B 端到端綠;A 結構收斂已證,實跑前須先攤放各 session 圖片。
 - 2026-07-23:新增 § S4.5.14 座談對談歸屬與順序檢核(D1 歸屬/D2 時序+筆記覆蓋/D3 混併警告)與 § S6.13 audit。新工具:`dialogue_check.py`(確定性,LIS 順序率、罕見 n-gram anchor)。起因:2026-07-22 兩場座談出版丟講者歸屬、時序被主題化重排。同步:qaqc_core_rules § R2.1 多講者專則、§ R8.2 座談順序不動。
 - 2026-08-09:新增 § S6.14 連結語法殘留(雙側守門:prepublish_gate 出版前擋、publish_qaqc 出版後 audit)。起因:COSCUP Day 2 要把簡報網址補進內文時查出 `md_to_html.inline_md()` 不支援 `[文字](網址)`,會渲染成字面文字,且前後皆無檢查。同步:本檔 § S6.14 條款與 § S6.10 清單、`scripts/prepublish_gate.py`、`scripts/publish_qaqc.py`。既有 6 本 master 與 10 本已出版書實測零命中,零誤擋。
+- 2026-09-02:§ S6.11 記入 **spec_gap(尚未修)** —— State A 含圖書的 S6.11 圖文相關性與 S6.11.c 順序檢核會**靜默跳過**:§ S4.5.13 的 `sK-` 跨場前綴只作用在 master/部署檔,`image_notes.json` 仍存裸檔名,導致 `slug in sess.parent.name` 與 `_notes_match_slug()` 兩條選取條件皆為 False(實測 bim-mcp-8 兩場交集皆 0)。修時須一併處理「notes 合併鍵碰撞」(各場裸 `page-NN.png`,bim-mcp-8 場 01/02 有 27 個同名鍵互蓋)與「`endswith` 一對多」。在修好前,含圖 State A 書的實際把關者是 `prepublish_gate` (3b/3c)(對 publish.md 無條件跑、`_SEQ_RE` + `_deck_family` 不受前綴影響)。起因:mcp8-02 貼 27 張簡報出版後 audit 全綠,核對才發現那兩項沒真的驗到。
+- 2026-09-02:`md_to_html` 修補述框內的 **HTML 註解與 `---`** —— 框內 `> <!-- ▍補述插入點:… -->` 原本被 `esc()` 跳脫成可見文字,把內部 TODO 漏到公開頁面;框內 `---` 渲染成字面 `<p>---</p>`。兩者頂層皆已正確處理,只有巢狀在 blockquote 內漏掉(新增 `HTML_COMMENT_Q`,頂層那條刻意維持嚴格以免框首註解把 blockquote 切成兩個)。同類問題:`normalize_punctuation._HTML_COMMENT_RE` 不接受前導 `>`,會把 `<!--` 轉成 `<！--` 使註解失效 —— 這也是 `prepublish_gate` 對該檔報「2 處半形標點未轉」卻無法安全自動修的原因,一併修正。`payload_nws` 的計數尺刻意不動(改了會掀開表格分隔列/圍欄標記的既有量測不對稱,保留率跳到 100.68%)。
