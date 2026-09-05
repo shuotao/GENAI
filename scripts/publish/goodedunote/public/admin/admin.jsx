@@ -84,18 +84,34 @@ function buildSegments(events, subs) {
   // 標籤一律從資料現有的 lists[] 枚舉出來,**不寫死白名單** —— 這與上面事件分眾
   // 同一個原則:多一種名單就自動多一個分眾,不必回來改這支程式。
   // 原本寫死「永久收件人/從未出席/手動補入」三個 + 「電子報」前綴,結果
-  // 後台手動新增(4)、MCP 1–8 月累積快照(133)、未報名清單(57)、來自黑名單(17)、
-  // 來自退信清單(3)、手動補入(第二批)(2)、測試位址(1) 這些標籤全都沒有分眾,
+  // 後台手動新增、MCP 1–8 月累積快照、未報名清單、來自黑名單、來自退信清單、
+  // 手動補入(第二批)、測試位址 這些標籤全都沒有分眾,
   // 人明明在通訊錄裡卻挑不出來也匯不出來 —— 看起來就像「補進去的名單不見了」。
   const onList = (label) => subs.filter((s) => (s.lists || []).includes(label));
-  // 手動補入的幾種軌跡釘在最前面:它們是匯出時最常拿來加減的標籤,
-  // 混在一長串電子報名單裡會找不到。其餘照名稱排,電子報那一大群排最後。
-  const PINNED = ['手動補入', '手動補入(第二批)', '後台手動新增', '永久收件人', '從未出席'];
+
+  // 「手動補入」的三種軌跡合併成單一分眾。對匯出而言它們是同一件事 ——
+  // 人工加進來的人 —— 拆成三個項目只會逼使用者每次都記得三個都要勾,
+  // 漏勾一個就少寄一批。成員取聯集,同時掛在兩批的人自動只算一次。
+  //   手動補入          ← GWS supp_audience.txt
+  //   手動補入(第二批)  ← GWS 後續批次
+  //   後台手動新增      ← 後台按「手動補入聯絡人」加的(AddContact)
+  // 合併只發生在「挑選」這一層:原始標籤仍原封留在 subscriber.lists[],
+  // 通訊錄展開個人時看得到他是哪一批來的,來源軌跡沒有被抹掉。
+  const MANUAL_LABELS = ['手動補入', '手動補入(第二批)', '後台手動新增'];
+  const manualRows = subs.filter(
+    (s) => (s.lists || []).some((l) => MANUAL_LABELS.includes(l)));
+  if (manualRows.length) {
+    segs.push({ id: 'list:manual', name: '手動補入', rows: manualRows, group: 'list' });
+  }
+
+  // 其餘標籤各自成一個分眾。永久收件人/從未出席釘在前面,電子報那一大群排最後。
+  const PINNED = ['永久收件人', '從未出席'];
   const rank = (l) => {
     const i = PINNED.indexOf(l);
     return i >= 0 ? i : PINNED.length + (l.startsWith('電子報') ? 1 : 0);
   };
   [...new Set(subs.flatMap((s) => s.lists || []))]
+    .filter((l) => !MANUAL_LABELS.includes(l))
     .sort((a, b) => rank(a) - rank(b) || String(a).localeCompare(String(b), 'zh-Hant'))
     .forEach((label) => {
       const rows = onList(label);
