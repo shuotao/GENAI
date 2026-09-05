@@ -104,14 +104,26 @@ function buildSegments(events, subs) {
     segs.push({ id: 'list:manual', name: '手動補入', rows: manualRows, group: 'list' });
   }
 
-  // 其餘標籤各自成一個分眾。永久收件人/從未出席釘在前面,電子報那一大群排最後。
-  const PINNED = ['永久收件人', '從未出席'];
+  // 抑制清單的軌跡合併成單一分眾「黑名單」。黑名單與退信對匯出是同一件事:
+  // 這個位址不能寄。分兩項只是在問「他是被手動封的還是寄不出去的」——
+  // 那是個人明細該回答的問題,不是挑名單時該分心的事。
+  // 「來自退訂清單」刻意不併進來:退訂是當事人自己的意思,與被我方封鎖在
+  // 語義與合規上都不同,混在一起會讓「誰主動退訂」永遠問不清楚。
+  const SUPPRESS_LABELS = ['來自黑名單', '來自退信清單'];
+  const suppressRows = subs.filter(
+    (s) => (s.lists || []).some((l) => SUPPRESS_LABELS.includes(l)));
+  if (suppressRows.length) {
+    segs.push({ id: 'list:suppress', name: '黑名單', rows: suppressRows, group: 'list' });
+  }
+
+  // 其餘標籤各自成一個分眾。從未出席釘在前面,電子報那一大群排最後。
+  const PINNED = ['從未出席'];
   const rank = (l) => {
     const i = PINNED.indexOf(l);
     return i >= 0 ? i : PINNED.length + (l.startsWith('電子報') ? 1 : 0);
   };
   [...new Set(subs.flatMap((s) => s.lists || []))]
-    .filter((l) => !MANUAL_LABELS.includes(l))
+    .filter((l) => !MANUAL_LABELS.includes(l) && !SUPPRESS_LABELS.includes(l))
     .sort((a, b) => rank(a) - rank(b) || String(a).localeCompare(String(b), 'zh-Hant'))
     .forEach((label) => {
       const rows = onList(label);

@@ -129,9 +129,13 @@ LIST_SOURCES = [  # (檔名, 標籤, 是否為測試位址)
     ("audience_31.txt",                 "電子報 nl31 名單",            False),
     ("audience_33.txt",                 "電子報 nl33 名單",            False),
     ("audience_33_resend.txt",          "電子報 nl33 補寄",            False),
+    ("audience_34.txt",                 "電子報 nl34 名單",            False),
     ("supp_audience.txt",               "手動補入",                    False),
     ("supp_xxzz.txt",                   "手動補入(第二批)",          False),
-    ("extra_permanent_recipients.txt",  "永久收件人",                  False),
+    # 「永久收件人」已退役(2026-09-05):那是某一次任務的臨時名單,不是長期分眾。
+    # 來源檔 extra_permanent_recipients.txt 仍留在 GWS(那邊唯讀、不動它),
+    # 這裡不再攝取 —— 否則每次匯入都會把這個標籤重新貼回 Firestore。
+    # 既有的 5 筆標籤已由 scripts/retire_list_label.py 一次性移除。
     ("mcp_1_to_8_emails.txt",           "MCP 1–8 月累積快照",          False),
     ("non_participants.txt",            "從未出席",                    False),
     # GWS 自己的 CLOSEOUT-roster.md 記載這份「雙向都錯」(多 16、少 11),
@@ -364,6 +368,15 @@ def write(db, events, people, batch_id, dry_run):
             gnote_db.commit(batch)
         return db.batch(), 0
 
+    def union(values):
+        """ArrayUnion 不接受空集合(ValueError: 'values' must be non-empty)。
+        空集合的語義本來就是「這次沒有要補任何值」——回 None,由呼叫端略過該欄位,
+        而不是寫成 [] 把後台既有的陣列洗掉。
+        實例:2026-09-03 匯入時,一位只有報名紀錄、從未出現在任何名單檔的訂閱者
+        讓 lists 為空,整批寫入在中途炸掉。"""
+        vals = sorted(values or ())
+        return fs.ArrayUnion(vals) if vals else None
+
     batch, n = db.batch(), 0
     for eid, ev in events.items():
         batch.set(db.collection("events").document(eid),
@@ -381,16 +394,20 @@ def write(db, events, people, batch_id, dry_run):
         #   tags   → 完全不碰。那是純後台欄位,匯入沒有任何話語權。
         #   name   → 只在匯入有值時才寫,不用空字串蓋掉後台填的姓名。
         payload = {
-            "email": p["email"], "rawEmails": fs.ArrayUnion(sorted(p["rawEmails"])),
+            "email": p["email"],
             "verifiedEmail": p["verifiedEmail"],
-            "eventIds": fs.ArrayUnion(sorted(p["eventIds"])),
-            "categories": fs.ArrayUnion(sorted(p["categories"])),
             "firstSeenAt": p["firstSeenAt"], "lastSeenAt": p["lastSeenAt"],
             "blocked": p["blocked"], "blockReasons": p["blockReasons"],
             "blockNote": p["blockNote"], "importBatch": batch_id,
-            "lists": fs.ArrayUnion(sorted(p.get("lists", ()))),
             "testAddress": bool(p.get("testAddress")),
         }
+        for field, values in (("rawEmails", p["rawEmails"]),
+                              ("eventIds", p["eventIds"]),
+                              ("categories", p["categories"]),
+                              ("lists", p.get("lists", ()))):
+            merged = union(values)
+            if merged is not None:
+                payload[field] = merged
         if p["name"]:
             payload["name"] = p["name"]
         batch.set(doc, payload, merge=True)
