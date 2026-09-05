@@ -79,19 +79,28 @@ function buildSegments(events, subs) {
   [...new Set(events.map((e) => e.category))].filter((c) => c && !known.has(c)).forEach((c) => {
     segs.push({ id: c, name: catLabel(c), rows: byCat(c) });
   });
-  // 名單軌跡分眾:來自 GWS 的 data/*.txt。這些不是「報名」,是「曾在哪份名單上」,
-  // 因此獨立成一組,不與報名分眾混在一起。
+  // 名單軌跡分眾:「曾出現在哪一份名單上」,不是報名紀錄,因此獨立成一組。
+  //
+  // 標籤一律從資料現有的 lists[] 枚舉出來,**不寫死白名單** —— 這與上面事件分眾
+  // 同一個原則:多一種名單就自動多一個分眾,不必回來改這支程式。
+  // 原本寫死「永久收件人/從未出席/手動補入」三個 + 「電子報」前綴,結果
+  // 後台手動新增(4)、MCP 1–8 月累積快照(133)、未報名清單(57)、來自黑名單(17)、
+  // 來自退信清單(3)、手動補入(第二批)(2)、測試位址(1) 這些標籤全都沒有分眾,
+  // 人明明在通訊錄裡卻挑不出來也匯不出來 —— 看起來就像「補進去的名單不見了」。
   const onList = (label) => subs.filter((s) => (s.lists || []).includes(label));
-  [['永久收件人', '永久收件人'],
-   ['從未出席', '從未出席'],
-   ['手動補入', '手動補入']].forEach(([label, name]) => {
-    const rows = onList(label);
-    if (rows.length) segs.push({ id: 'list:' + label, name, rows, group: 'list' });
-  });
-  const nl = [...new Set(subs.flatMap((s) => (s.lists || [])
-    .filter((l) => l.startsWith('電子報'))))].sort();
-  nl.forEach((label) => segs.push({
-    id: 'list:' + label, name: label, rows: onList(label), group: 'list' }));
+  // 手動補入的幾種軌跡釘在最前面:它們是匯出時最常拿來加減的標籤,
+  // 混在一長串電子報名單裡會找不到。其餘照名稱排,電子報那一大群排最後。
+  const PINNED = ['手動補入', '手動補入(第二批)', '後台手動新增', '永久收件人', '從未出席'];
+  const rank = (l) => {
+    const i = PINNED.indexOf(l);
+    return i >= 0 ? i : PINNED.length + (l.startsWith('電子報') ? 1 : 0);
+  };
+  [...new Set(subs.flatMap((s) => s.lists || []))]
+    .sort((a, b) => rank(a) - rank(b) || String(a).localeCompare(String(b), 'zh-Hant'))
+    .forEach((label) => {
+      const rows = onList(label);
+      if (rows.length) segs.push({ id: 'list:' + label, name: label, rows, group: 'list' });
+    });
 
   segs.push({ id: 'blocked', name: '封鎖區', rows: subs.filter((s) => s.blocked) });
   return segs;
@@ -209,7 +218,7 @@ function AddContact({ events, existing, onDone, onCancel }) {
         <div className="admin-note" style={{ marginBottom: 12 }}>
           {dup
             ? <>ⓘ <b>{key}</b> 已經在通訊錄裡{dup.name ? `(${dup.name})` : ''}。
-                 儲存會<b>合併</b>而不是新增一筆:補上「手動補入」軌跡
+                 儲存會<b>合併</b>而不是新增一筆:補上「後台手動新增」軌跡
                  {f.eventId ? '與所選場次' : ''},既有姓名不會被覆蓋。</>
             : <>將以 <b>{key}</b> 建立新聯絡人。</>}
         </div>)}
@@ -729,7 +738,9 @@ function ExportTab({ segs, events, subs, basket, setBasket }) {
   const [sep, setSep] = useState(', ');
   const [copied, setCopied] = useState(false);
   const [visible, setVisible] = useState(EXPORT_PAGE);
-  const [collapsed, setCollapsed] = useState(() => new Set(['list']));
+  // 一組都不預設收合:名單軌跡被收起來時,使用者會以為那些名單根本不存在。
+  // 清單長度由搜尋框 + .src-list 的可捲高度處理,不靠藏東西。
+  const [collapsed, setCollapsed] = useState(() => new Set());
 
   const eventById = useMemo(
     () => Object.fromEntries(events.map((e) => [e.id, e])), [events]);
