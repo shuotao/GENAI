@@ -303,15 +303,93 @@ button.chip { font: inherit; cursor: pointer; background: none; appearance: none
   color: var(--ink-mute); padding: 40px 0; text-align: center;
 }
 
-/* ─── 匯出頁:左選分眾 / 右放 Email Only ────────────────────────────────── */
+/* ─── 匯出頁:左選來源 / 右放運算籃 + 流水帳 + 結果 ─────────────────────── */
 .export-grid {
   display: grid; gap: 22px; align-items: start;
-  grid-template-columns: minmax(280px, 460px) minmax(320px, 1fr);
+  grid-template-columns: minmax(300px, 440px) minmax(320px, 1fr);
 }
 .export-grid > * { min-width: 0; }   /* 同 .roster:避免 email 長字串撐破軌道 */
-/* 只有左欄時不要讓它撐滿整個寬度 —— 一張孤零零的寬卡片很難讀。 */
-.export-grid:has(> .card:only-child) { grid-template-columns: minmax(280px, 460px); }
 @media (max-width: 820px) { .export-grid { grid-template-columns: 1fr; } }
+
+/* 右軌是一疊卡(運算籃 / 流水帳 / 結果清單 / Email Only),用 flex column 而不是
+   再開一層 grid —— 卡片數量會隨狀態增減,列數寫死遲早對不上。 */
+.export-col { display: flex; flex-direction: column; gap: 22px; min-width: 0; }
+
+/* 來源清單只會愈長(每辦一場就多一列),固定一個可捲高度,右軌的結果才不會被
+   推到螢幕外。窄螢幕已是單欄堆疊,再限高只會變成「捲軸中的捲軸」,故解除。 */
+.src-list { max-height: 60vh; overflow-y: auto; padding-right: 4px; }
+@media (max-width: 820px) { .src-list { max-height: none; overflow-y: visible; } }
+.src-group { margin-bottom: 14px; }
+.src-head {
+  width: 100%; display: flex; justify-content: space-between; align-items: baseline;
+  gap: 10px; background: none; border: 0; border-bottom: 1px solid var(--rule);
+  padding: 0 0 6px; margin-bottom: 8px; cursor: pointer;
+  font: inherit; color: inherit; text-align: left;
+}
+
+/* 來源列 = 沿用 .seg 的名字鈕(點下去 = 只選這個)+ ＋／－ 兩顆小鈕。 */
+.term-row { display: flex; align-items: stretch; gap: 5px; margin-bottom: 7px; }
+.term-row .seg { flex: 1; margin-bottom: 0; }
+.term-name { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.term-meta { font-family: var(--mono); font-size: 11px; color: var(--ink-mute); }
+/* 已在籃子裡的來源在左緣加一道粗邊。刻意不套 .seg.on 的反白 —— 那是「目前檢視」
+   的語彙;而且粗邊是形狀差異,不只靠色相,色盲也分得出來。 */
+.term-row .seg.plus  { border-left: 4px solid var(--olive); color: var(--ink); }
+.term-row .seg.minus { border-left: 4px solid #8c2f1d; color: var(--ink); }
+
+.pm-btn {
+  width: 34px; flex: none; cursor: pointer; font: inherit; font-size: 15px;
+  background: none; border: 1px solid var(--rule); border-radius: 2px;
+  color: var(--ink-mute); transition: .16s;
+}
+.pm-btn:hover { border-color: var(--ink); color: var(--ink); }
+.pm-btn.on-plus  { background: var(--olive); border-color: var(--olive); color: var(--paper); }
+.pm-btn.on-minus { background: #8c2f1d; border-color: #8c2f1d; color: var(--paper); }
+.pm-btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+
+.paste-box {
+  border: 1px dashed var(--rule); border-radius: 2px;
+  padding: 10px; margin-bottom: 10px;
+}
+
+/* 籃子 chip。＋／－ 符號寫在文字裡,不是只靠顏色分辨。 */
+.chip-row { display: flex; flex-wrap: wrap; gap: 2px; }
+.chip.plus  { border-color: var(--olive); color: var(--olive-deep); }
+.chip.minus { border-color: #8c2f1d; color: #8c2f1d; }
+
+.opt-row { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--rule-soft); }
+.opt {
+  display: flex; align-items: flex-start; gap: 8px; cursor: pointer;
+  font-family: var(--sans); font-size: 12.5px; color: var(--ink-soft);
+  line-height: 1.6; margin-bottom: 8px;
+}
+.opt input { margin-top: 3px; flex: none; }
+
+/* 運算流水帳:一排可點的階段。點哪一格,下面的結果清單就換成那一階段的人 ——
+   「去重掉的是誰、被減掉的是誰」要看得見,不能只給一個數字然後默默處理掉。 */
+.pipeline {
+  display: flex; align-items: center; gap: 6px;
+  overflow-x: auto; padding-bottom: 6px; -webkit-overflow-scrolling: touch;
+}
+.pipe-step {
+  flex: none; cursor: pointer; background: none; text-align: left;
+  border: 1px solid transparent; border-radius: 2px; padding: 6px 10px;
+  font: inherit; color: inherit;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.pipe-step .stat-n { font-size: 20px; }
+.pipe-step:hover { border-color: var(--rule); }
+.pipe-step.on { border-color: var(--ink); background: var(--paper-soft); }
+.pipe-step.final .stat-n { color: var(--olive-deep); }
+.pipe-arrow { flex: none; color: var(--ink-faint); font-family: var(--mono); }
+
+/* 檢視的不是最終名單時必須講清楚 —— 否則很容易把「封鎖/測試」那一格的清單
+   複製出去寄信。用 ochre(提醒)而不是 err 的紅(那是錯誤)。 */
+.view-warn {
+  font-family: var(--sans); font-size: 12.5px; line-height: 1.7;
+  border: 1px solid var(--ochre); color: var(--ochre-deep);
+  border-radius: 2px; padding: 10px 12px; margin: 0 0 12px;
+}
 
 /* 可複製的 email 區塊。等寬字讓使用者一眼看得出分隔符與位址邊界。 */
 .mono-box {

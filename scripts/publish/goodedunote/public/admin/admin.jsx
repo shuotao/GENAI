@@ -638,30 +638,241 @@ function RosterTab({ segs, events, reasons, subs, onBlockConfirm, reload }) {
   );
 }
 
-/* ── 分頁:匯出 ─────────────────────────────────────────────────────────── */
-function ExportTab({ segs, events }) {
-  const [segId, setSegId] = useState('mcp');
-  const [emailOnly, setEmailOnly] = useState(false);
+/* ── 匯出:集合運算 ─────────────────────────────────────────────────────────
+   匯出頁不再是「單選一個分眾」,而是一個 ＋／－ 運算籃:任意數量的場次、分眾、
+   名單軌跡、手動貼上的清單都可以相加或相減,系統負責去重,最後恆定扣掉封鎖者
+   與測試位址。
+
+   為什麼要自己做去重:實務上寄信是「8 月場 ＋ 9 月場 ＋ 永久收件人,扣掉上週
+   已經寄過的那場」。過去只能匯出多份 CSV 再到 Excel 手工去重 —— 而手工去重
+   正是漏寄/重複寄的來源。
+
+   所有運算都在前端記憶體完成(App 已一次載入 events/subscribers),不需要任何
+   額外的 Firestore 讀取。特別注意:registrations 子集合在 firestore.rules 是
+   巢狀 match,不授予 collectionGroup 權限,前端跨訂閱者查詢會被拒 —— 因此場次
+   成員一律走 subscribers.eventIds,不查 registrations。 */
+const EXPORT_PAGE = 50;
+
+/* 一段貼上的文字 → 正規化後的 email 陣列。
+   切法刻意寬鬆(逗號/分號/空白/換行/全形標點都算分隔),因為使用者會從郵件
+   軟體、Excel、聊天訊息各種地方貼過來。正規化一律走 normalizeEmail —— 那支
+   與 import_roster.py 的 doc id 規則同源,自己另寫一份必然漂移。 */
+function parsePastedEmails(text) {
+  const out = [];
+  const seen = new Set();
+  String(text || '').split(/[\s,;、，；｜|]+/).forEach((tok) => {
+    const e = normalizeEmail(tok);
+    if (e && !seen.has(e)) { seen.add(e); out.push(e); }
+  });
+  return out;
+}
+
+/* 集合運算本體 —— 刻意寫成 component 外的純函式:
+   1. 流水帳 UI 需要「每一階段被拿掉的是誰」,不能只回一個最終陣列;
+   2. 純函式才驗得起來(可在 console 餵合成資料驗去重/差集/封鎖扣除)。
+
+   key 的定義:通訊錄裡的人用 subscriber doc id(= 正規化 email);貼上但通訊錄
+   查無此人的位址,用位址本身當 key —— 兩者天生不會相撞,因為前者就在 subs 裡。 */
+function computeBasket({ subs, sources, manualExcluded, keepBlocked, includeUnknown }) {
+  const byKey = new Map();
+  subs.forEach((s) => byKey.set(s.id, s));
+
+  const memberKeys = (src) => (includeUnknown
+    ? [...src.ids, ...src.unknownEmails]
+    : [...src.ids]);
+
+  // 2. 相加(未去重)—— 使用者說的「最後相加」就是這個機械加總,
+  //    它與去重後的數字之差,正是「重複了幾筆」。
+  const sourcesByKey = new Map();
+  let rawSum = 0;
+  const plusUnion = new Set();
+  sources.filter((s) => s.sign === 1).forEach((src) => {
+    const ks = memberKeys(src);
+    rawSum += ks.length;
+    ks.forEach((k) => {
+      plusUnion.add(k);
+      const arr = sourcesByKey.get(k);
+      if (arr) arr.push(src.name); else sourcesByKey.set(k, [src.name]);
+    });
+  });
+  const dupCount = rawSum - plusUnion.size;
+  const dupKeys = [...plusUnion].filter((k) => (sourcesByKey.get(k) || []).length >= 2);
+
+  // 4. 減去 － 項
+  const minusUnion = new Set();
+  sources.filter((s) => s.sign === -1).forEach(
+    (src) => memberKeys(src).forEach((k) => minusUnion.add(k)));
+  const removedByMinus = [...plusUnion].filter((k) => minusUnion.has(k));
+  const afterMinus = new Set([...plusUnion].filter((k) => !minusUnion.has(k)));
+
+  // 5. 結果清單上逐人勾除
+  const removedByManual = [...afterMinus].filter((k) => manualExcluded.has(k));
+  const afterManual = new Set([...afterMinus].filter((k) => !manualExcluded.has(k)));
+
+  // 6. 封鎖 / 測試位址 —— 除非明確勾了「僅供檢視」,否則永遠扣掉。
+  const isBlocked = (k) => {
+    const s = byKey.get(k);
+    return !!(s && (s.blocked || s.testAddress));
+  };
+  const removedByBlock = keepBlocked ? [] : [...afterManual].filter(isBlocked);
+  const final = keepBlocked
+    ? afterManual : new Set([...afterManual].filter((k) => !isBlocked(k)));
+
+  return { rawSum, plusUnion, dupCount, dupKeys, afterMinus, afterManual, final,
+           removedByMinus, removedByManual, removedByBlock, sourcesByKey, byKey };
+}
+
+function ExportTab({ segs, events, subs, basket, setBasket }) {
+  const { terms, excluded, keepBlocked, includeUnknown, pastes } = basket;
+  const [q, setQ] = useState('');
+  const [view, setView] = useState('final');
   const [sep, setSep] = useState(', ');
   const [copied, setCopied] = useState(false);
-  const seg = segs.find((s) => s.id === segId) || segs[0];
-  // 匯出一律扣掉封鎖者與測試位址 —— 封鎖區本身除外(那就是要看被擋下來的人)。
-  const rows = segId === 'blocked'
-    ? seg.rows
-    : seg.rows.filter((s) => !s.blocked && !s.testAddress);
-  const excluded = seg.rows.length - rows.length;
-  // categories 欄同 RosterTab,一律從 events 即時推導,不讀過期的 s.categories。
+  const [visible, setVisible] = useState(EXPORT_PAGE);
+  const [collapsed, setCollapsed] = useState(() => new Set(['list']));
+
   const eventById = useMemo(
     () => Object.fromEntries(events.map((e) => [e.id, e])), [events]);
+  const subById = useMemo(() => {
+    const m = new Map(); subs.forEach((s) => m.set(s.id, s)); return m;
+  }, [subs]);
+
+  /* ── 來源目錄 ──────────────────────────────────────────────────────────
+     場次成員與 EventsTab.regCount 同一個判準(subscribers.eventIds),分眾直接
+     沿用 buildSegments 的產物 —— 分眾定義只有一份,這裡不重新發明。 */
+  const catalog = useMemo(() => {
+    const evs = [...events]
+      .sort((a, b) => String(b.date || '').localeCompare(String(a.date || '')))
+      .map((e) => ({
+        kind: 'event', key: e.id, name: e.name || e.id, meta: e.date || '',
+        cat: e.category,
+        ids: new Set(subs.filter((s) => (s.eventIds || []).includes(e.id)).map((s) => s.id)),
+        unknownEmails: [],
+      }));
+    const mk = (s) => ({
+      kind: 'seg', key: s.id, name: s.name, meta: '', cat: null,
+      ids: new Set(s.rows.map((r) => r.id)), unknownEmails: [],
+    });
+    const segMain = segs.filter((s) => s.group !== 'list').map(mk);
+    const segList = segs.filter((s) => s.group === 'list').map(mk);
+    const pas = pastes.map((p) => {
+      const ids = new Set(); const unknown = [];
+      parsePastedEmails(p.text).forEach(
+        (e) => (subById.has(e) ? ids.add(e) : unknown.push(e)));
+      return { kind: 'paste', key: p.key, name: p.label.trim() || '貼上清單',
+               meta: '', cat: null, ids, unknownEmails: unknown, text: p.text,
+               label: p.label };
+    });
+    return { evs, segMain, segList, pas, all: [...evs, ...segMain, ...segList, ...pas] };
+  }, [events, subs, segs, pastes, subById]);
+
+  const srcOf = useCallback(
+    (kind, key) => catalog.all.find((s) => s.kind === kind && s.key === key),
+    [catalog]);
+
+  const signOf = useCallback((kind, key) => {
+    const t = terms.find((x) => x.kind === kind && x.key === key);
+    return t ? t.sign : 0;
+  }, [terms]);
+
+  /* ── 籃子操作 ─────────────────────────────────────────────────────────
+     同一個 (kind,key) 在籃子裡只能有一項:已是 ＋ 再按 － 是翻號,不是新增。 */
+  const setSign = (kind, key, sign) => setBasket((b) => {
+    const rest = b.terms.filter((t) => !(t.kind === kind && t.key === key));
+    const cur = b.terms.find((t) => t.kind === kind && t.key === key);
+    return { ...b, terms: (cur && cur.sign === sign) ? rest : [...rest, { kind, key, sign }] };
+  });
+  // 點名字本體 = 「只選這個」。保住改版前的一鍵單選行為,肌肉記憶不會壞。
+  const only = (kind, key) => setBasket(
+    (b) => ({ ...b, terms: [{ kind, key, sign: 1 }], excluded: [] }));
+  const clearAll = () => setBasket(
+    (b) => ({ ...b, terms: [], excluded: [] }));
+
+  const addPaste = () => {
+    const key = 'p' + Date.now().toString(36);
+    setBasket((b) => ({ ...b,
+      pastes: [...b.pastes, { key, label: '', text: '' }],
+      terms: [...b.terms, { kind: 'paste', key, sign: 1 }] }));
+  };
+  const patchPaste = (key, patch) => setBasket((b) => ({ ...b,
+    pastes: b.pastes.map((p) => (p.key === key ? { ...p, ...patch } : p)) }));
+  const dropPaste = (key) => setBasket((b) => ({ ...b,
+    pastes: b.pastes.filter((p) => p.key !== key),
+    terms: b.terms.filter((t) => !(t.kind === 'paste' && t.key === key)) }));
+
+  const toggleExcluded = (k) => setBasket((b) => ({ ...b,
+    excluded: b.excluded.includes(k)
+      ? b.excluded.filter((x) => x !== k) : [...b.excluded, k] }));
+
+  /* ── 運算 ─────────────────────────────────────────────────────────────── */
+  const selected = useMemo(() => terms
+    .map((t) => { const s = srcOf(t.kind, t.key); return s ? { ...s, sign: t.sign } : null; })
+    .filter(Boolean), [terms, srcOf]);
+
+  const res = useMemo(() => computeBasket({
+    subs, sources: selected, manualExcluded: new Set(excluded),
+    keepBlocked, includeUnknown,
+  }), [subs, selected, excluded, keepBlocked, includeUnknown]);
+
+  // 還原成列時一律照 subs 既有順序,不用 Set 的迭代序 —— 後者會隨操作順序
+  // 跳動,使用者會以為名單本身變了。貼上但通訊錄查無的位址併在最後。
+  const orderRows = useCallback((keys) => {
+    const set = keys instanceof Set ? keys : new Set(keys);
+    const out = [];
+    subs.forEach((s) => { if (set.has(s.id)) out.push(s); });
+    set.forEach((k) => {
+      if (!subById.has(k)) out.push({ id: k, email: k, name: '', _pasteOnly: true });
+    });
+    return out;
+  }, [subs, subById]);
+
+  const unknownTotal = useMemo(() => {
+    const u = new Set();
+    catalog.pas.forEach((p) => p.unknownEmails.forEach((e) => u.add(e)));
+    return u.size;
+  }, [catalog]);
+
+  const VIEWS = [
+    { id: 'sum',    lab: '相加(未去重)', n: res.rawSum,               keys: res.plusUnion,
+      note: '各加項的人數機械加總。同一個人報了兩場就算兩次。' },
+    { id: 'dup',    lab: '重複',         n: res.dupKeys.length,        keys: res.dupKeys,
+      note: '同時出現在 2 個以上加項的人。去重時每人只留一筆,共扣掉 ' + res.dupCount + ' 筆。' },
+    { id: 'minus',  lab: '被減項扣掉',   n: res.removedByMinus.length, keys: res.removedByMinus,
+      note: '被 － 項扣掉的人。' },
+    { id: 'manual', lab: '手動勾除',     n: res.removedByManual.length, keys: res.removedByManual,
+      note: '在結果清單上逐人勾除的人。取消勾選即可放回。' },
+    { id: 'block',  lab: '封鎖/測試',    n: res.removedByBlock.length, keys: res.removedByBlock,
+      note: '被封鎖者與測試位址,一律扣除。' },
+    { id: 'final',  lab: '最終名單',     n: res.final.size,            keys: res.final,
+      note: '這就是要寄出去的名單。' },
+  ];
+  const curView = VIEWS.find((v) => v.id === view) || VIEWS[5];
+  const rows = useMemo(() => orderRows(curView.keys), [orderRows, curView]);
+
+  useEffect(() => { setVisible(EXPORT_PAGE); }, [view, terms, excluded, keepBlocked]);
+  const shown = rows.slice(0, visible);
+
+  /* ── 匯出 ─────────────────────────────────────────────────────────────── */
+  const slug = () => {
+    const s = terms.map((t) => (t.sign === 1 ? '+' : '-') +
+      (t.kind === 'paste' ? 'paste' : t.key)).join('')
+      .replace(/[^\w+\-.一-鿿]/g, '_').replace(/^\+/, '');
+    return ((view === 'final' ? '' : view + '_') + (s || 'export')).slice(0, 80);
+  };
 
   const go = () => downloadCsv(
-    `goodedunote_${segId}_${new Date().toISOString().slice(0, 10)}.csv`,
+    `goodedunote_${slug()}_${new Date().toISOString().slice(0, 10)}.csv`,
+    // 既有 9 欄原樣保留(欄序不動,舊的下游用法不會壞),尾端加兩欄來源標註。
     [['email', 'name', 'categories', 'events', 'lists', 'firstSeenAt', 'lastSeenAt',
-      'blocked', 'blockReasons'],
-     ...rows.map((s) => [s.email, s.name || '', effectiveCats(s, eventById).join(' '),
-                         (s.eventIds || []).join(' '), (s.lists || []).join('｜'),
-                         s.firstSeenAt || '', s.lastSeenAt || '',
-                         s.blocked ? 'Y' : '', (s.blockReasons || []).join(' ')])]);
+      'blocked', 'blockReasons', 'sources', 'sourceCount'],
+     ...rows.map((s) => {
+       const src = res.sourcesByKey.get(s.id) || [];
+       return [s.email, s.name || '', effectiveCats(s, eventById).join(' '),
+               (s.eventIds || []).join(' '), (s.lists || []).join('｜'),
+               s.firstSeenAt || '', s.lastSeenAt || '',
+               s.blocked ? 'Y' : '', (s.blockReasons || []).join(' '),
+               src.join('｜'), String(src.length)];
+     })]);
 
   const emailText = rows.map((s) => s.email).join(sep);
 
@@ -678,78 +889,301 @@ function ExportTab({ segs, events }) {
     }
   };
 
+  /* ── 來源列 ───────────────────────────────────────────────────────────── */
+  const needle = q.trim().toLowerCase();
+  const match = (s) => !needle || (s.name || '').toLowerCase().includes(needle) ||
+    (s.key || '').toLowerCase().includes(needle) || (s.meta || '').includes(needle);
+
+  const toggleGroup = (g) => setCollapsed((c) => {
+    const n = new Set(c); if (n.has(g)) n.delete(g); else n.add(g); return n;
+  });
+
+  // 刻意寫成「回傳元素的函式」而不是 inline component:在 render 裡定義的
+  // component 每次都是新的型別,React 會整棵子樹 remount(輸入框失焦、捲動位置
+  // 重置)。函式呼叫則只是產生元素,沒有這個問題。
+  const srcRow = (s) => {
+    const sign = signOf(s.kind, s.key);
+    const n = s.ids.size + (includeUnknown ? s.unknownEmails.length : 0);
+    return (
+      <div className="term-row" key={s.kind + ':' + s.key}>
+        <button className={'seg' + (sign === 1 ? ' plus' : sign === -1 ? ' minus' : '')}
+                onClick={() => only(s.kind, s.key)}
+                title="只選這個(清空籃子)">
+          <span className="term-name">
+            {s.name}
+            {s.meta && <span className="term-meta">{s.meta}</span>}
+            {s.cat && <span className={'chip ' + tone(s.cat)}>{catLabel(s.cat)}</span>}
+          </span>
+          <span className="seg-n">{n}</span>
+        </button>
+        {/* ＋／－ 不能只靠顏色分辨(色盲安全),符號本身必須看得見。 */}
+        <button className={'pm-btn' + (sign === 1 ? ' on-plus' : '')}
+                aria-pressed={sign === 1} aria-label={'把「' + s.name + '」加入加項'}
+                onClick={() => setSign(s.kind, s.key, 1)}>＋</button>
+        <button className={'pm-btn' + (sign === -1 ? ' on-minus' : '')}
+                aria-pressed={sign === -1} aria-label={'把「' + s.name + '」設為減項'}
+                onClick={() => setSign(s.kind, s.key, -1)}>－</button>
+      </div>
+    );
+  };
+
+  const group = (id, title, items, hint) => {
+    const shut = collapsed.has(id);
+    const list = items.filter(match);
+    if (!list.length && needle) return null;
+    return (
+      <div className="src-group" key={id}>
+        <button className="src-head" aria-expanded={!shut} onClick={() => toggleGroup(id)}>
+          <span className="eyebrow" style={{ marginBottom: 0 }}>{title}</span>
+          <span className="seg-n">{shut ? '▸' : '▾'} {list.length}</span>
+        </button>
+        {hint && !shut && <div className="card-meta" style={{ marginBottom: 8 }}>{hint}</div>}
+        {!shut && list.map(srcRow)}
+      </div>
+    );
+  };
+
+  const chipFor = (t) => {
+    const s = srcOf(t.kind, t.key);
+    return (
+      <button key={t.kind + ':' + t.key}
+              className={'chip ' + (t.sign === 1 ? 'plus' : 'minus')}
+              onClick={() => setSign(t.kind, t.key, t.sign)}
+              aria-label={'移除' + (t.sign === 1 ? '加項' : '減項') + '「' + (s ? s.name : t.key) + '」'}>
+        {(t.sign === 1 ? '＋ ' : '－ ') + (s ? s.name : t.key)} ×
+      </button>
+    );
+  };
+
+  const plusTerms = terms.filter((t) => t.sign === 1);
+  const minusTerms = terms.filter((t) => t.sign === -1);
+  const blockedInPlus = plusTerms.some(
+    (t) => t.kind === 'seg' && t.key === 'blocked');
+
   return (
     <div>
       <div className="eyebrow">Export</div>
       <h2 className="admin-h2">匯出名單</h2>
       <p className="admin-note">
-        選一個分眾匯出 CSV,貼進任何寄送平台即可。檔案帶 UTF-8 BOM,Excel 直接開不會亂碼。
-        除「封鎖區」外,匯出一律自動扣除<b>被封鎖者</b>與<b>測試位址</b>。
+        用 <b>＋</b> 把多個場次/分眾/名單加起來,用 <b>－</b> 扣掉不想寄的那些,
+        系統自動去重。除非勾了「僅供檢視」,否則<b>封鎖者與測試位址一律扣除</b>。
+        點來源的名字 = 只選這個(清空籃子)。CSV 帶 UTF-8 BOM,Excel 直接開不會亂碼。
       </p>
-      <div className="export-grid">
-      <div className="card">
-        <div className="card-title">選擇分眾</div>
-        {segs.map((s, i) => (
-          <React.Fragment key={s.id}>
-            {s.group === 'list' && (i === 0 || segs[i - 1].group !== 'list') && (
-              <div className="eyebrow" style={{ marginTop: 18, marginBottom: 6 }}>
-                名單軌跡 · from GWS
-              </div>)}
-            <button className={'seg ' + (s.id === segId ? 'on' : '')}
-                    onClick={() => setSegId(s.id)}>
-              <span>{s.name}</span><span className="seg-n">{s.rows.length}</span>
-            </button>
-          </React.Fragment>
-        ))}
-        <div className="stat-row" style={{ marginTop: 22 }}>
-          <div>
-            <div className="stat-n">{rows.length}</div>
-            <div className="stat-lab">將匯出</div>
-          </div>
-          {excluded > 0 && (
-            <div>
-              {/* 這個數字告訴使用者「有東西被扣掉了」,是操作相關資訊,
-                  用 ink-faint 對比太低容易被忽略。 */}
-              <div className="stat-n" style={{ color: 'var(--ink-mute)' }}>{excluded}</div>
-              <div className="stat-lab">已扣除封鎖 / 測試</div>
-            </div>)}
-        </div>
-        <div className="row">
-          <button className="btn" onClick={go} disabled={!rows.length}>下載 CSV</button>
-          <button className={'btn ' + (emailOnly ? '' : 'ghost')}
-                  onClick={() => setEmailOnly(!emailOnly)} disabled={!rows.length}>
-            Email Only
-          </button>
-        </div>
-      </div>
 
-      {emailOnly && (
+      <div className="export-grid">
+        {/* ── 左軌:來源 ─────────────────────────────────────────────── */}
         <div className="card">
           <div className="card-title">
-            Email Only
-            <span className="card-meta">{rows.length} 個位址</span>
+            來源<span className="card-meta">{catalog.all.length} 項可選</span>
           </div>
-          <p className="admin-note" style={{ marginBottom: 14 }}>
-            全選複製後直接貼進郵件的收件人欄。收件人請貼在<b>密件副本(BCC)</b>,
-            否則所有人會看見彼此的 email。
-          </p>
-          <div className="row" style={{ marginBottom: 12 }}>
-            {[[', ', '逗號'], ['; ', '分號'], ['\n', '換行']].map(([v, label]) => (
-              <button key={label} className={'btn small ' + (sep === v ? '' : 'ghost')}
-                      onClick={() => setSep(v)}>{label}分隔</button>
-            ))}
+          <div className="field" style={{ marginBottom: 12 }}>
+            <label className="field-label" htmlFor="src-q">搜尋場次 / 分眾</label>
+            <input id="src-q" className="inp" placeholder="場次名稱、代碼或日期"
+                   value={q} onChange={(e) => setQ(e.target.value)} />
           </div>
-          <label className="field-label" htmlFor="email-only-box">匯出的 Email 清單（唯讀）</label>
-          <textarea id="email-only-box" className="inp mono-box" readOnly
-                    value={emailText} rows={16}
-                    onFocus={(e) => e.target.select()} />
-          <div className="row" style={{ marginTop: 12 }}>
-            <button className="btn" onClick={copy} aria-live="polite">{copied ? '已複製 ✓' : '複製全部'}</button>
-            <span className="card-meta" role="status" aria-live="polite">
-              {copied ? '已複製到剪貼簿' : `${emailText.length.toLocaleString()} 字元`}
-            </span>
+
+          <div className="src-list">
+            {group('event', '場次', catalog.evs, '依日期新到舊。人數 = 報過這一場的人。')}
+            {group('seg', '分眾', catalog.segMain)}
+            {group('list', '名單軌跡 · from GWS', catalog.segList,
+                   '曾出現在哪一份名單上,不是報名紀錄。')}
+            <div className="src-group">
+              <div className="src-head" style={{ cursor: 'default' }}>
+                <span className="eyebrow" style={{ marginBottom: 0 }}>手動貼上 email</span>
+                <span className="seg-n">{catalog.pas.length}</span>
+              </div>
+              {catalog.pas.map((p) => (
+                <div key={p.key} className="paste-box">
+                  {srcRow(p)}
+                  <input className="inp" style={{ fontSize: 12, marginBottom: 6 }}
+                         aria-label="這份貼上清單的名稱"
+                         placeholder="給這份清單一個名字(選填)"
+                         value={p.label} onChange={(e) => patchPaste(p.key, { label: e.target.value })} />
+                  <textarea className="inp mono-box" rows={4}
+                            aria-label={p.name + ' 的 email 內容'}
+                            placeholder="貼上 email,逗號/分號/換行分隔都可以"
+                            value={p.text} onChange={(e) => patchPaste(p.key, { text: e.target.value })} />
+                  <div className="row" style={{ marginTop: 6 }}>
+                    <span className="card-meta">
+                      通訊錄內 {p.ids.size} · 不在通訊錄 {p.unknownEmails.length}
+                    </span>
+                    <button className="btn small ghost" onClick={() => dropPaste(p.key)}>刪除</button>
+                  </div>
+                </div>
+              ))}
+              <button className="btn small ghost" onClick={addPaste}>＋ 新增貼上清單</button>
+            </div>
           </div>
-        </div>)}
+        </div>
+
+        {/* ── 右軌 ───────────────────────────────────────────────────── */}
+        <div className="export-col">
+          <div className="card">
+            <div className="card-title">
+              運算籃
+              <span className="card-meta">{terms.length} 項</span>
+            </div>
+            {!terms.length ? (
+              <div className="empty">左邊按 ＋ 挑第一個來源</div>
+            ) : (
+              <>
+                <div className="field-label">加項（聯集後去重）</div>
+                <div className="chip-row">
+                  {plusTerms.length ? plusTerms.map(chipFor)
+                    : <span className="card-meta">尚未選任何加項 → 結果為空</span>}
+                </div>
+                {!!minusTerms.length && (
+                  <>
+                    <div className="field-label" style={{ marginTop: 12 }}>減項（從加項中扣掉）</div>
+                    <div className="chip-row">{minusTerms.map(chipFor)}</div>
+                  </>
+                )}
+                <div className="row" style={{ marginTop: 12 }}>
+                  <button className="btn small ghost" onClick={clearAll}>清空籃子</button>
+                </div>
+              </>
+            )}
+
+            <div className="opt-row">
+              <label className="opt">
+                <input type="checkbox" checked={keepBlocked}
+                       onChange={(e) => setBasket((b) => ({ ...b, keepBlocked: e.target.checked }))} />
+                <span>不扣除封鎖／測試（僅供檢視，<b>不要拿去寄信</b>）</span>
+              </label>
+              {unknownTotal > 0 && (
+                <label className="opt">
+                  <input type="checkbox" checked={includeUnknown}
+                         onChange={(e) => setBasket((b) => ({ ...b, includeUnknown: e.target.checked }))} />
+                  <span>一併納入貼上清單中不在通訊錄的 {unknownTotal} 個位址</span>
+                </label>
+              )}
+            </div>
+          </div>
+
+          {/* ── 運算流水帳 ──────────────────────────────────────────────
+              每一格都點得開 —— 去重掉的是誰、被減掉的是誰要看得見,
+              不能只給一個數字然後默默處理掉。 */}
+          <div className="card">
+            <div className="card-title">運算流水帳</div>
+            <div className="pipeline" role="tablist" aria-label="運算階段">
+              {VIEWS.map((v, i) => (
+                <React.Fragment key={v.id}>
+                  {i > 0 && <span className="pipe-arrow" aria-hidden="true">→</span>}
+                  <button role="tab" aria-selected={view === v.id}
+                          className={'pipe-step' + (view === v.id ? ' on' : '') +
+                                     (v.id === 'final' ? ' final' : '')}
+                          onClick={() => setView(v.id)}>
+                    <span className="stat-n" aria-live="polite">
+                      {(v.id === 'sum' || v.id === 'final' ? '' : '−') + v.n}
+                    </span>
+                    <span className="stat-lab">{v.lab}</span>
+                  </button>
+                </React.Fragment>
+              ))}
+            </div>
+            <p className="admin-note" style={{ marginTop: 12, marginBottom: 0 }}>
+              {curView.note}
+            </p>
+            {blockedInPlus && !keepBlocked && (
+              <div className="err" role="status" style={{ marginTop: 10 }}>
+                加項裡有「封鎖區」,但封鎖者在最後一步會被扣光。
+                要檢視他們請勾上方的「不扣除封鎖／測試」。
+              </div>
+            )}
+          </div>
+
+          {/* ── 結果清單 ────────────────────────────────────────────── */}
+          <div className="card" style={{ padding: '6px 14px 14px' }}>
+            <div className="card-title" style={{ marginTop: 14 }}>
+              {curView.lab}
+              <span className="card-meta">{rows.length} 人</span>
+            </div>
+            {view !== 'final' && (
+              <div className="view-warn" role="status">
+                目前檢視與匯出的是〈{curView.lab}〉,<b>不是最終名單</b>。
+                <button className="btn small" style={{ marginLeft: 10 }}
+                        onClick={() => setView('final')}>回到最終名單（{res.final.size}）</button>
+              </div>
+            )}
+            {!rows.length ? <div className="empty">這一階段沒有任何人</div> : (
+              <>
+                <div className="table-scroll">
+                  <table className="tbl">
+                    <thead><tr>
+                      <th style={{ width: 34 }}>勾除</th>
+                      <th>Email</th><th>姓名</th><th>來源</th><th>狀態</th>
+                    </tr></thead>
+                    <tbody>
+                      {shown.map((s) => {
+                        const src = res.sourcesByKey.get(s.id) || [];
+                        return (
+                          <tr key={s.id}>
+                            <td>
+                              <input type="checkbox" checked={excluded.includes(s.id)}
+                                     aria-label={'排除 ' + s.email}
+                                     onChange={() => toggleExcluded(s.id)} />
+                            </td>
+                            <td className="mono">{s.email}</td>
+                            <td>{s.name || '—'}</td>
+                            <td>
+                              {src.length
+                                ? src.map((n, i) => <span key={i} className="chip">{n}</span>)
+                                : <span className="card-meta">—</span>}
+                            </td>
+                            <td>
+                              {s.blocked && <span className="chip block">封鎖</span>}
+                              {s.testAddress && <span className="chip block">測試</span>}
+                              {s._pasteOnly && <span className="chip">不在通訊錄</span>}
+                              {src.length >= 2 && <span className="chip">重複 {src.length}</span>}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="row" style={{ marginTop: 14, justifyContent: 'space-between' }}>
+                  <span className="roster-range">顯示 1–{shown.length} / 共 {rows.length}</span>
+                  {visible < rows.length && (
+                    <button className="btn small ghost" onClick={() => setVisible((v) => v + EXPORT_PAGE)}>
+                      載入更多（還有 {rows.length - visible}）
+                    </button>
+                  )}
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* ── Email Only ─────────────────────────────────────────── */}
+          <div className="card">
+            <div className="card-title">
+              Email Only
+              <span className="card-meta">{curView.lab} · {rows.length} 個位址</span>
+            </div>
+            <p className="admin-note" style={{ marginBottom: 14 }}>
+              全選複製後直接貼進郵件的收件人欄。收件人請貼在<b>密件副本(BCC)</b>,
+              否則所有人會看見彼此的 email。
+            </p>
+            <div className="row" style={{ marginBottom: 12 }}>
+              {[[', ', '逗號'], ['; ', '分號'], ['\n', '換行']].map(([v, label]) => (
+                <button key={label} className={'btn small ' + (sep === v ? '' : 'ghost')}
+                        onClick={() => setSep(v)}>{label}分隔</button>
+              ))}
+            </div>
+            <label className="field-label" htmlFor="email-only-box">匯出的 Email 清單（唯讀）</label>
+            <textarea id="email-only-box" className="inp mono-box" readOnly
+                      value={emailText} rows={12}
+                      onFocus={(e) => e.target.select()} />
+            <div className="row" style={{ marginTop: 12 }}>
+              <button className="btn" onClick={copy} disabled={!rows.length}
+                      aria-live="polite">{copied ? '已複製 ✓' : '複製全部'}</button>
+              <button className="btn ghost" onClick={go} disabled={!rows.length}>下載 CSV</button>
+              <span className="card-meta" role="status" aria-live="polite">
+                {copied ? '已複製到剪貼簿' : `${emailText.length.toLocaleString()} 字元`}
+              </span>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -976,6 +1410,11 @@ function App() {
   const [subs, setSubs] = useState([]);
   const [reasons, setReasons] = useState([]);
   const [stats, setStats] = useState([]);
+  // 匯出頁的運算籃提到這裡,而不是留在 ExportTab 裡 —— 切分頁時 ExportTab 會
+  // unmount,籃子拼到一半跑去通訊錄查個人再回來就沒了。刻意只放在 session
+  // 記憶體:不進 localStorage、不進 Firestore(名單組合牽涉個資,不落地)。
+  const [basket, setBasket] = useState(
+    { terms: [], excluded: [], keepBlocked: false, includeUnknown: true, pastes: [] });
   const [loading, setLoading] = useState(false);
   const [loadErr, setLoadErr] = useState('');
   const topRef = useRef(null);
@@ -1156,7 +1595,8 @@ function App() {
             {tab === 'roster' && <RosterTab segs={segs} events={events} reasons={reasons}
                                             subs={subs} onBlockConfirm={applyBlock} reload={load} />}
             {tab === 'stats'  && <StatsTab stats={stats} />}
-            {tab === 'export' && <ExportTab segs={segs} events={events} />}
+            {tab === 'export' && <ExportTab segs={segs} events={events} subs={subs}
+                                            basket={basket} setBasket={setBasket} />}
             {tab === 'events' && <EventsTab events={events} subs={subs} reload={load} />}
             {tab === 'block'  && <BlockTab subs={subs} reasons={reasons} reload={load} onBlockConfirm={applyBlock} />}
           </div>
