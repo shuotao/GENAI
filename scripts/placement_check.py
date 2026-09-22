@@ -69,11 +69,17 @@ def overstacked(md_text: str, max_per_anchor: int = DEFAULT_MAX_PER_ANCHOR,
 
     def _base(r):
         return r.split("/")[-1]
+    def _approved(r):
+        base = _base(r)
+        # State A canonical masters prefix each deck image with sN- to prevent
+        # cross-session filename collisions; image_notes keeps the source basename.
+        source_base = re.sub(r"^s\d+-", "", base)
+        return base in approved or source_base in approved
     out = []
     for a, refs in anchor_runs(md_text):
         if len(refs) <= max_per_anchor:
             continue
-        if all(_base(r) in approved for r in refs):
+        if all(_approved(r) for r in refs):
             continue                      # 整組人工確認 → 放行
         out.append((a, refs))
     return out

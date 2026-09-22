@@ -1,0 +1,98 @@
+{
+  "slug": "au2026",
+  "title": "AU2026 年會",
+  "subtitle": "十二場實錄 · 從 AI 驅動工程到 BIM、MCP 與代理式工作流",
+  "shelf": "seminar",
+  "state": "A",
+  "recommended_mode": "multipage",
+  "sources": [
+    "09_15__1130_BES1091",
+    "09_15__1230_BLD4108",
+    "09_15__1330_BLD1301",
+    "09_15__1500_BES1245",
+    "09_15__1630_AS4453",
+    "09_16__1115_AS4692",
+    "09_16__1500_AS2564",
+    "09_16__1630_AS4750",
+    "09_17__0830_BES3302",
+    "09_17__1000_CS3038",
+    "09_17__1130_AS2669",
+    "09_17__1500_AU4258"
+  ],
+  "speakers": [
+    {
+      "category": "AI 與 Design and Make",
+      "name": "Anthony Ruto、Andy Harris",
+      "full": "Dr. Anthony Ruto、Dr. Andy Harris（Autodesk Research）",
+      "talk": "從 AI 驅動的軟體工程學到的教訓：提升 Design and Make 生產力"
+    },
+    {
+      "category": "資料中心設計自動化",
+      "name": "Nuno Mourão",
+      "full": "Nuno Mourão（PODIUM 首席軟體架構師）",
+      "talk": "資料中心設計自動化：可行性評估與早期設計的新典範"
+    },
+    {
+      "category": "企業 AI 導入",
+      "name": "David Banyard、Stephanie Catalina、Xiaoxuan Peng",
+      "full": "David Banyard、Stephanie Catalina、Xiaoxuan Peng",
+      "talk": "揭開 AI 的面紗：用 LLM、Autodesk Assistant 與 MCP 找到公司導入 AI 的最佳起點"
+    },
+    {
+      "category": "規格驅動開發",
+      "name": "Fernando Malard",
+      "full": "Fernando Malard（ofcdesk 技術長）",
+      "talk": "AI 不失控：用規格驅動開發（SDD）開發 AutoCAD 與 Revit 外掛"
+    },
+    {
+      "category": "AI 知識庫",
+      "name": "Pravin Raijade、Peter Pincic",
+      "full": "Pravin Raijade、Peter Pincic（Neilsoft）",
+      "talk": "你的公司大腦：用 AI 驅動的知識庫，讓專案執行更聰明"
+    },
+    {
+      "category": "專案資料與脈絡",
+      "name": "Philip Townsend、Aaron Vorwerk",
+      "full": "Philip Townsend、Aaron Vorwerk（Egnyte）",
+      "talk": "你的 AI 只和你的專案資料一樣聰明"
+    },
+    {
+      "category": "跨專業 BIM 自動化",
+      "name": "Mayank Sharma、Julide Bozoglu",
+      "full": "Mayank Sharma（Mazzetti）、Julide Bozoglu（Goettsch Partners）",
+      "talk": "AI-Ready BIM 基礎：用 Revit、MCP、Dynamo 與 pyRevit 做一鍵式跨專業自動化"
+    },
+    {
+      "category": "本機代理式 AI",
+      "name": "Sean Young",
+      "full": "Sean Young（Dell × NVIDIA）",
+      "talk": "超越 Copilot：設計與工程的代理式 AI 工作流程"
+    },
+    {
+      "category": "BIM 內容管理",
+      "name": "Florencia Kossman、Valentín David",
+      "full": "Florencia Kossman、Valentín David（ENG）",
+      "talk": "從內容到控制：用 Content Catalog 建構 MEP BIM 生產流程"
+    },
+    {
+      "category": "AEC 代理式 AI",
+      "name": "Adam Sheather、Irene Won",
+      "full": "Adam Sheather（Autodesk）、Irene Won（Anthropic）",
+      "talk": "AEC 的代理式 AI：用 Autodesk 編排自主的專案交付"
+    },
+    {
+      "category": "代理式設計研究",
+      "name": "Ray Wang、Brian Lee",
+      "full": "Ray Wang、Brian Lee（Autodesk Research）",
+      "talk": "每個專案都為下一個專案奠基：代理式 AI 如何將設計專案轉化為軟體"
+    },
+    {
+      "category": "Fusion × MCP",
+      "name": "Patrick Rainsberry、Brian Frank、Luke Mihelcic",
+      "full": "Patrick Rainsberry、Brian Frank、Luke Mihelcic（Autodesk）",
+      "talk": "AI 串聯的工作流程：Fusion、Claude 與 MCP 101"
+    }
+  ],
+  "venue": "Autodesk University 2026 · Las Vegas",
+  "date": "2026-09-17"
+}

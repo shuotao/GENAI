@@ -372,9 +372,26 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
     # 多場書(如 genai2026-day1)聚合多個 session 的圖 → 合併所有相關 session 的 notes。
     sessions_root = PROJECT_ROOT / "sessions"
     import json as _json
-    notes_files = [sess for sess in
-                   (sessions_root.glob("*/image_notes.json") if sessions_root.is_dir() else [])
-                   if slug in sess.parent.name or _notes_match_slug(sess, slug_dir)]
+    book_meta_path = PROJECT_ROOT / "build" / slug / "book.json"
+    source_order: dict[str, int] = {}
+    if book_meta_path.is_file():
+        try:
+            source_order = {
+                Path(src).name: i for i, src in enumerate(
+                    _json.loads(book_meta_path.read_text(encoding="utf-8")).get("sources", []), 1
+                )
+            }
+        except Exception:  # noqa: BLE001
+            source_order = {}
+    if source_order:
+        notes_files = [
+            sessions_root / src / "image_notes.json" for src in source_order
+            if (sessions_root / src / "image_notes.json").is_file()
+        ]
+    else:
+        notes_files = [sess for sess in
+                       (sessions_root.glob("*/image_notes.json") if sessions_root.is_dir() else [])
+                       if slug in sess.parent.name or _notes_match_slug(sess, slug_dir)]
     notes: dict = {}   # 有 image_notes 時填入;無則保持空(S6.11.b/c 不依賴它)
     if not notes_files:
         results.append(("S6.11 圖文相關性", True, "無 image_notes.json(舊書/無圖流程),跳過"))
@@ -385,7 +402,9 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
         notes = {}
         for nf in notes_files:
             for n in _json.loads(nf.read_text(encoding="utf-8")):
-                notes[n["file"]] = n  # 跨 session 合併(檔名唯一)
+                source_idx = source_order.get(nf.parent.name)
+                key = f"s{source_idx}-{Path(n['file']).name}" if source_idx else n["file"]
+                notes[key] = n
         bad_corr = []
         soft_corr = []  # 執行者(Haiku)已複核卻低分:多為離題番外圖 → 警告不擋
         checked = 0

@@ -33,7 +33,10 @@ from classify_session import classify, H1_RE, H2_RE          # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
 IMG_RE = re.compile(r"!\[[^\]]*\]\(([^)]+)\)")
-BARE_PNG_RE = re.compile(r"(!\[[^\]]*\]\()([^)/]+\.(?:png|jpg|jpeg|webp))(\))", re.I)
+LOCAL_IMG_RE = re.compile(
+    r"(!\[[^\]]*\]\()((?!https?://)(?:[^)]+/)?([^/()]+\.(?:png|jpg|jpeg|webp|mp4)))(\))",
+    re.I,
+)
 
 
 @dataclass
@@ -63,7 +66,9 @@ def _normalize_body(lines: list[str], img_prefix: str | None) -> list[str]:
         elif s.startswith("**講者") or s.startswith("**講題"):
             continue
         if img_prefix:                          # 跨 deck 圖名加前綴,避免合併撞名
-            s = BARE_PNG_RE.sub(lambda m: f"{m.group(1)}{img_prefix}-{m.group(2)}{m.group(3)}", s)
+            s = LOCAL_IMG_RE.sub(
+                lambda m: f"{m.group(1)}{img_prefix}-{m.group(3)}{m.group(4)}", s
+            )
         out.append(s)
     # 收斂連續空行
     collapsed, prev_blank = [], False
@@ -90,19 +95,17 @@ def _first_h1_text(lines: list[str]) -> str:
 _IMGSRC_DIRNAME = "_imgsrc"
 
 
-def _materialize_prefixed_images(src_dir: Path, blocks: list[str], prefix: str) -> None:
+def _materialize_prefixed_images(src_dir: Path, source_lines: list[str], prefix: str) -> None:
     import shutil
     out_dir = BUILD_IMGSRC[0]
     if out_dir is None:
         return
     out_dir.mkdir(parents=True, exist_ok=True)
     n = 0
-    for ln in blocks:
-        for m in BARE_PNG_RE.finditer(ln):
-            newname = m.group(2)
-            if not newname.startswith(prefix + "-"):
-                continue
-            orig = src_dir / newname[len(prefix) + 1:]
+    for ln in source_lines:
+        for m in LOCAL_IMG_RE.finditer(ln):
+            orig = src_dir / m.group(2)
+            newname = f"{prefix}-{m.group(3)}"
             if orig.is_file():
                 shutil.copy2(orig, out_dir / newname)
                 n += 1
@@ -131,7 +134,7 @@ def parse_state_a(dirs: list[Path], speakers: list[dict]) -> list[Chapter]:
                 ln = "###" + ln[1:]
             body.append(ln)
         blocks = _normalize_body(body, img_prefix=f"s{k}")
-        _materialize_prefixed_images(d, blocks, f"s{k}")
+        _materialize_prefixed_images(d, body, f"s{k}")
         sp = speakers[k - 1]
         chapters.append(Chapter(
             index=k, category=sp.get("category", ""),
