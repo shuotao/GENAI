@@ -12,6 +12,28 @@ It is the **single authoritative specification** for all AI-assisted workflows i
 
 ---
 
+## 文件索引(2026-10-12 重構)
+
+CLAUDE.md 只留**原則、鐵律與索引**;細節在下列參考檔。每個 session 都會載入本檔,
+所以參考資料搬出去是為了讓開場成本對得起它的用處。
+
+| 檔案 | 內容 | 什麼時候讀 |
+|---|---|---|
+| [`docs/tools.md`](./docs/tools.md) | **59 支 `scripts/` 工具的唯一清單**(有閘門) | 要找某支工具、或新增工具時 |
+| [`docs/architecture.md`](./docs/architecture.md) | Web/CLI 元件、目錄職責、Runtime 依賴、開發指令 | 改架構或要跑起來時 |
+| [`docs/gotchas.md`](./docs/gotchas.md) | 實戰事故紀錄(append-only) | **動 Groq/轉錄/字典/圖片 EXIF 之前必讀** |
+| [`docs/model-routing.md`](./docs/model-routing.md) | 哪個 model/CLI 負責哪一段、實測模型清單、低階模型地雷 | 要派工給別的 CLI/模型時 |
+| [`docs/admin-backend.md`](./docs/admin-backend.md) | 營運後台(原則 10 的細節) | 碰 admin/ 或名冊時 |
+| [`docs/eval-good-student-notes.md`](./docs/eval-good-student-notes.md) | skill 評測報告(Tier 0/1 + 實跑觀察) | 要改 SKILL.md 或評測時 |
+| [`prompts/qaqc_core_rules.md`](./prompts/qaqc_core_rules.md) | **SSoT**:Phase A/B、Step 3/4 規則(§ R1–R8) | 校稿時 |
+| [`prompts/publish_qaqc.md`](./prompts/publish_qaqc.md) | **SSoT**(781 行,最大):Step 4.5 + Step 6(§ S4.5.x / § S6.x) | 出版時 |
+| [`prompts/image_notes_design.md`](./prompts/image_notes_design.md) · [`image_notes_skill.md`](./prompts/image_notes_skill.md) | 圖像視角筆記設計與流程 | 做圖像版時 |
+
+**提交前跑一次 `python3 scripts/tests/test_docs_sync.py`** —— 它斷言工具清單與
+`--stop-at` 集合跟程式一致,紅燈不得合併(§ 文件同步守則)。
+
+---
+
 ## Project Overview
 
 **"The Physics of Insight"** is a dual-purpose project:
@@ -99,9 +121,13 @@ sessions/
     notes_<identity>.md     # (選)好學生筆記
     corrections.json        # 本 session 手動校正紀錄(待人工推送至 dict/)
     metadata.json           # 字數比率、耗時、統計
-    .phase_b_pending.json   # (CLI engine 模式)Phase B 待 agent 接手的 marker
-    .step_3_pending.json    # (CLI engine 模式)Step 3 待 agent 接手的 marker
-    .step_4_pending.json    # (CLI engine 模式)Step 4 待 agent 接手的 marker
+    .phase_b_pending.json      # (CLI engine 模式)Phase B 待 agent 接手的 marker
+    .phase_c_pending.json      # Phase C 標點正規化(§ R7)
+    .phase_d_pending.json      # Phase D 通順/hook(§ R8)
+    .images_pending.json       # (--images 時)圖片理解,describe_images.py 完成後自刪
+    .image_insert_pending.json # (--images 時)自動插圖(§ S4.5.11)
+    .step_3_pending.json       # (選)Step 3 待 agent 接手的 marker
+    .step_4_pending.json       # (選)Step 4 待 agent 接手的 marker
 ```
 
 ### 原則 5 — Engine Routing(誰開的就由誰執行)
@@ -210,119 +236,8 @@ Phase A/B/C/D 都在精修同一份 cleaned.md(A/B 產出、C/D 出版前強制�
 
 ---
 
-## Architecture
-
-### Web Component (`/web`)
-
-- **`index.html`**: Main single-page interface with 13 core sections, Intersection Observer, iframe drawer
-- **`studio.html` + `studio.js`**: 好學生筆記工作室 — 4-step client-side AI pipeline
-  - Step 1: Upload audio → Groq Whisper transcription → SRT
-  - Step 2: QAQC cleanup + Gemini polish (editable preview/edit tabs)
-  - Step 3: Keyword-driven knowledge supplement
-  - Step 4: Identity-based Good Student Notes generation
-- **`dict-loader.js`**: 從 `/dict/*.json` fetch 共用字典(CLI/Web 對齊)
-- **`config.local.js`**: Local API keys (gitignored), auto-loaded on dev
-- **`config.local.example.js`**: Template for other users
-- Step 4 末端支援 **匯出 Session ZIP**,解壓後結構與 CLI 的 `sessions/<slug>/` 同構
-
-### CLI Skill (`/.claude/skills/good-student-notes`)
-
-- **`SKILL.md`**: Skill 定義,使用者透過 `/good-student-notes` 呼叫
-- **`scripts/groq_transcribe.py`**: Groq Whisper 單檔轉錄(從 `.env` 讀 key,只從輸入檔同目錄讀 context.txt)
-
-### Shared Scripts (`/scripts`)
-
-- **`session.py`**: Pipeline 統籌器 — `python3 scripts/session.py new <audio> [--context] [--domain] [--identity]`
-- **`qaqc_phase_b.py`**: Gemini-powered Phase B(支援 merged 與 structured 兩模式)
-- **`lang/`**: 多語系轉錄/清理腳本(見 `scripts/lang/README.md`)。目前有 `it/`(義大利文,歷史參考)、`en/`(英文)、`ja/`(日文);跨語系格式工具(`srt_clean_md.py`、`vtt_to_txt.py`)放 `lang/` 根
-
-### SRT Component (`/SRT`)
-
-- **`transcribe.py`**: Standalone Python transcription tool (interactive mode)
-- **`qaqc_srt.py`**: Phase A 清理 + `--structured` 模式的結構保留型校稿排程器
-- **`context.example.txt`**: Context 格式範例(僅供參考,不會自動載入)
-
-### Shared Dictionaries (`/dict`)
-
-CLI 與 Web 共用同一份資料來源:
-
-- **`typo_dict.json`**: 通用錯字(目前 3 組)
-- **`typo_dict.<domain>.json`**: 領域字典(目前有 `parenting`,19 組)
-- **`hallucination_prefixes.json`**: Whisper 幻覺段落前綴(11 組,統一基準)
-- **`load.py`**: Python 載入器(`load_typo_dict(domain=...)`)
-- **`_manifest.json`**: Web 端查可用 domain 的清單
-
-### Sessions (`/sessions`)
-
-所有處理過的音檔產物容器(見原則 4)。CLI 產出與 Web ZIP 匯出同構。
-
-### Docs (`/docs`)
-
-- **`origin-story.md`**: 專案緣起的好學生筆記,本工具的設計藍本
-
-### API Keys
-
-- Stored in project root `.env` (gitignored)
-- Format:
-  ```
-  GROQ_API_KEY=<your-key>
-  GEMINI_API_KEY=<your-key>
-  ```
-
-### Runtime Dependencies
-
-- **Python ≥ 3.10**(scripts 用了 PEP 604 `str | None` 語法)
-- **ffmpeg**(Groq 轉錄前切段所需):`brew install ffmpeg` 或 `apt install ffmpeg`
-- **Python packages**:標準庫 + `requests`(`pip install requests`)。核心腳本刻意用 `urllib` 呼叫 Gemini、`requests` 呼叫 Groq,避免 Gemini/Groq SDK 依賴
-- **網路連線**:呼叫 Groq(`api.groq.com`)與 Gemini(`generativelanguage.googleapis.com`)API
-
----
-
-## Development & Build
-
-### Web Development
-
-```bash
-# Simply open in browser (no server needed)
-open web/index.html
-
-# 或 serve on HTTP(dict-loader.js 需要 HTTP 才能 fetch /dict/*.json;
-# file:// 協議下會 fallback 到硬寫字典)
-cd web && python3 -m http.server 8080
-# 或從專案根:  python3 -m http.server 8080  → http://localhost:8080/web/studio.html
-```
-
-**Deployment**: GitHub Pages — `https://shuotao.github.io/GENAI/web/index.html`
-
-### CLI Skill Usage
-
-```bash
-# In Claude Code (推薦):
-/good-student-notes <audio_file>
-/good-student-notes <audio_file> 建築師
-/good-student-notes <audio_file> 建築師 --context "糖果家好好睡, 語嫣, RIE 教養" --domain parenting
-
-# 直接呼叫統籌器(同等效果):
-python3 scripts/session.py new <audio_file> \
-    --context "領域專名詞" \
-    --domain parenting \
-    --identity 建築師
-
-# 單純做 Phase A(不校稿):
-python3 SRT/qaqc_srt.py <in.srt> -o <out.srt> --domain parenting
-
-# 結構保留型校稿(時間軸零變動):
-python3 SRT/qaqc_srt.py <in.srt> -o <out.srt> --structured --domain parenting
-```
-
-### SRT Standalone Processing
-
-```bash
-cd SRT
-python3 transcribe.py          # Interactive mode(既有互動模式)
-```
-
----
+> **架構與開發指令**(Web/CLI 各元件、目錄職責、Runtime 依賴、本機開發與 build 指令)
+> 已移出至 [`docs/architecture.md`](./docs/architecture.md)。
 
 ## 五步驟產物定位(R6)
 
@@ -343,7 +258,10 @@ Web 的差異化定位(未來):**圖像視角好學生筆記** —— 用影像�
 **完整設計 SSoT 見 [`prompts/image_notes_design.md`](./prompts/image_notes_design.md)**
 (兩階段生成法、4 視角類比庫、prompt 模板、6 色語義系統)。
 
-目前尚未實作,列為 **P3**;實作前 Web/CLI 的 Step 4 輸出應文字面一致。**重要:此功能只能在
+**狀態(2026-10-12 更正):CLI 兩階段流程已實作** —— `scripts/image_notes_session.py`(note/notes)
++ `scripts/md_to_a4_png.py`(Playwright 產 A4 底稿)+ `.agent/workflows/`、`.gemini/commands/` 入口
++ 流程 SSoT `prompts/image_notes_skill.md` 皆在 repo 內。先前標註「P3,未實作」與事實不符。
+未實作的只剩「Web studio 內的圖像版」。**重要:生圖這一段只能在
 Web(使用者自帶 API key)+ Antigravity(IDE 可呼叫 Gemini 影像)驅動,CLI 因走 OAuth login token
 無法驅動影像 API(見原則 5 + Auth 雙軌表)**。影像引擎:主走 Gemini `gemini-2.5-flash-image`
 (banana pro),Web 另規劃 OpenAI/Codex image(gpt-image,使用者自帶 OpenAI key 才出現)選項。
@@ -435,7 +353,8 @@ heading 形狀不同,若直接出版會不一致:
 必須一步一步驅動出「該用的工具、該走的流程、該套的規範」,以確保輸出一致、可重跑、可稽核,並避免濫用 token。
 
 - **機械步驟一律走工具**(呼應原則 6),**判斷步驟走 marker 交對話 agent**(呼應原則 5);發現自己在用 LLM 重複做機械事 → 停下改用工具。
-- **marker 依賴鏈逐一清除**:`phase-b → phase-c → phase-d → step-3 → step-4`,清一個、驗一個(字數/全形/段落數等),再清下一個。
+- **marker 依賴鏈逐一清除**:`phase-b → phase-c → phase-d →(images → image-insert,帶 `--images` 時)→ step-3 → step-4`,
+  清一個、驗一個(字數/全形/段落數/圖片分佈等),再清下一個。
 - **Phase C / Phase D 是 cleaned.md 出版前的強制門**(原 Step 2.2/2.5;與 Phase A/B 同屬 Step 2 內部、精修同一份 cleaned.md):SSoT [`§ R7`](./prompts/qaqc_core_rules.md) / [`§ R8`](./prompts/qaqc_core_rules.md);由 `scripts/prepublish_gate.py` 在 `publish_goodedunote.sh` 開頭把關,未過不得進 Step 5/6。
 - **Why**:2026-06 多場校稿出版時確認,批次打包、一次跑完多步會造成品質崩壞與 token 濫用;拆成獨立可驗收的 step、各自用對工具,結果才一致。
 
@@ -443,42 +362,15 @@ heading 形狀不同,若直接出版會不一致:
 
 ### 原則 10 — 後台是出版層的第三個面,與名冊來源嚴格分離(2026-09-01 引入)
 
-`goodedunote.web.app/admin/` 是**營運後台**:看文章點擊統計、管電子報通訊錄。
-它跟 Step 5 出版層共用同一個 Firebase 專案與 hosting,但職責不同。
+`goodedunote.web.app/admin/` 是**營運後台**(文章點擊統計 + 電子報通訊錄),
+與 Step 5 出版層共用同一個 Firebase 專案與 hosting,但職責不同。四條鐵律:
 
-| | 出版層(`public/<slug>/`) | 後台(`public/admin/`) |
-|---|---|---|
-| 內容 | 公開的逐字稿 HTML | 個資名冊 + 統計 |
-| 保護 | 無(本來就公開) | Firebase Auth Google 登入 + Firestore `admins/` 白名單 |
-| 資料 | 靜態檔 | Firestore(`subscribers` / `events` / `stats` / `blockReasons`) |
-| 更新 | `publish_goodedunote.sh` | `import_roster.py`、`sync_ga_stats.py`(皆本機執行) |
+1. **GWS 唯讀** —— 名冊來源 `~/Desktop/GWS/data/` 只讀不寫;正規化語義一律 import GWS 的 `_common.py`,絕不自行重寫(重寫必漂移,漂移 = 黑名單靜默失效)。
+2. **個資與憑證不進 git** —— `subscribers` 只存 Firestore;金鑰在 `.secrets/`、匯出在 `exports/`,皆 gitignore。
+3. **分眾是查詢,不是名單** —— 由 `events.category` + `eventDate` 即時算出;新增報名種類 = 後台新增事件,**不改程式**。
+4. **報名事件與名單軌跡不可互相偽裝**;**前端不做權限判斷**(非白名單必須拿到 Firestore `permission-denied`,不是被 CSS 藏起來)。
 
-**鐵律 1 — GWS 唯讀。** 名冊來源是 `~/Desktop/GWS/data/`,那個專案有 BLOCKING scope
-guard(禁止在其中引入資料庫/web service)。本專案**只讀不寫**,所有程式寫在
-`study/scripts/` 下。正規化語義(`normalize_email` / `load_blacklist` / Round 11
-雙形式保留)一律 **import GWS 的 `_common.py`**,絕不自行重寫 —— 重寫必然漂移,
-而漂移的後果是「黑名單靜默失效、被封鎖的人重新收到信」。
-
-**鐵律 2 — 個資與憑證不進 git。** `subscribers` 只存在 Firestore;
-service account 金鑰在 `.secrets/`、匯出 CSV 在 `exports/`,皆已 gitignore。
-`GWS/data/reports/*.md` 有未遮蔽的姓名+email 表格,**不要讀進任何產物**。
-
-**鐵律 3 — 分眾是查詢,不是名單。** 「MCP 歷次/當月」「演講資料」「社群申請」
-全部由 `events.category` + `eventDate` 即時算出。新增報名種類 = 在後台新增一筆事件,
-**不改程式**;當月沒場次自然為空,零人工維護。這是刻意用來取代 GWS 那種
-「每期產一份 `audience_NN.txt`」的做法。
-
-**鐵律 4 — 報名事件與名單軌跡是兩種東西,不可互相偽裝。**
-`responses/*.jsonl` 給的是**報名事件**(有姓名、時間、報名選項)→ 進 `registrations` 子集合。
-`data/*.txt` 給的是**名單成員身分**(只有 email,無姓名/無日期/無場次)→ 進
-`subscriber.lists[]`。把名單成員偽造成一筆 registration 會污染所有以報名為基礎的分眾與統計。
-只存在於名單、從未報名過的人(實測 12 位:永久收件人、手動補入、只在黑名單上的位址等)
-仍要建成聯絡人 —— 否則封鎖區看不到他們,就無從檢視理由或解封。
-`test_audience.txt` 的位址標 `testAddress`,匯出時與封鎖者一併扣除。
-
-**鐵律 5 — 前端不做權限判斷。** 非白名單帳號看到的必須是 Firestore 規則回的
-`permission-denied`,不是被 CSS 藏起來的畫面。`admins/` 的 write 在規則中恆為
-`false`,只能由本機 `seed_admin.py` 寫入(否則任何登入者都能自我提權)。
+> 完整說明(資料表對照、三支工具、firestore.rules 設計)見 [`docs/admin-backend.md`](./docs/admin-backend.md)。
 
 ---
 
@@ -569,7 +461,7 @@ Whisper 的幻覺集中在**靜音/音樂/掌聲/休息/開場墊場**等非語�
 5. 類比必須在邏輯上合理且有意義
 6. 補充區塊上下各保留一個空行
 
-> **圖像視角版(P3,未實作)**:以上是**文字版**好學生筆記規範。另有「圖像視角版」——
+> **圖像視角版(CLI 兩階段已實作;Web 版未實作)**:以上是**文字版**好學生筆記規範。另有「圖像視角版」——
 > 把內容**不破壞地**疊上專業視角的手寫風格註解**影像**,完整設計見
 > [`prompts/image_notes_design.md`](./prompts/image_notes_design.md)。它只在 Web + Antigravity
 > 可驅動(見原則 5 + Auth 雙軌表),目前 Step 4 實作仍為文字版。
@@ -620,7 +512,9 @@ Whisper 的幻覺集中在**靜音/音樂/掌聲/休息/開場墊場**等非語�
 
 1. `python3 scripts/session.py new <audio>` → 建立 `sessions/<slug>/`
 2. 執行:symlink audio → 寫 context → Groq 轉錄 → Phase A → Phase B(選)→ Step 3(選)→ Step 4(選)→ Step 5 出版(選)
-3. 使用 `--stop-at` 控制終止點:`transcribe`、`phase-a`、`phase-b`(預設)、`enhance`、`notes`(Step 1–4)。**Step 5 出版不是 session.py 的 stop-at**,而是獨立指令 `scripts/publish_goodedunote.sh`(見原則 7)
+3. 使用 `--stop-at` 控制終止點(9 個值,以 `scripts/session.py` 的 argparse `choices` 為準):
+   `transcribe`、`phase-a`、`phase-b`(預設)、`phase-c`、`phase-d`、`images`、`image-insert`、`enhance`、`notes`。
+   其中 `images`／`image-insert` 只在有帶 `--images <dir>` 時才有意義。**Step 5 出版不是 session.py 的 stop-at**,而是獨立指令 `scripts/publish_goodedunote.sh`(見原則 7)
 4. 使用者檢視 `cleaned.md`,若發現錯字,寫入 `corrections.json`(**不直接改 `dict/`**)
 5. 數個 session 累積同樣誤判後,人工審閱把 `corrections.json` 條目 merge 進 `dict/typo_dict.<domain>.json`
 6. Session 完成後不應修改 `transcript.srt`(原則 1);可重跑 `--structured` 產額外的 `transcript.cleaned.srt`
@@ -636,51 +530,10 @@ Whisper 的幻覺集中在**靜音/音樂/掌聲/休息/開場墊場**等非語�
 
 ---
 
-## Common Gotchas(實戰踩過的坑)
-
-這幾個是本專案實際開發時踩過的坑,寫下來避免重蹈:
-
-1. **Groq Whisper prompt 有 896 字元上限**(characters,**不是 bytes**)
-   - 2026-05 實測 400 訊息:`prompt length must be 896 characters or fewer, but provided prompt contains 931 characters` → Groq 數的是**字元數**
-   - **歷史更正**:本條原寫「896 bytes / ≤290 中文字」,是 2026-04 第一次踩錯時的誤判。byte 上限只是字元上限的更嚴格子集 → 舊的 byte 裁切**不會 400**,但會把中文 context 砍到只剩 ~290 字,白白浪費 ⅔ 容量、減少送進 Whisper 的領域詞、降低辨識品質
-   - 解法:送 Groq 前確認整段 prompt(base + 內容包含 + context + 。)**≤ 896 字元**(中文用 `wc -m`,不是 `wc -c`)。CLI `groq_transcribe.py:truncate_prompt` 與 Web `studio.js:callGroqWhisper` 已統一按字元裁切
-
-2. **macOS APFS 是 case-insensitive filesystem**
-   - `Gemini.md` 與 `GEMINI.md` 視為同一 inode
-   - 要改檔名大小寫時:`mv Gemini.md _tmp.md && mv _tmp.md GEMINI.md` 兩步走,避免誤操作
-   - 2026-04-24 把 Gemini.md 重整為 GEMINI.md 時踩到
-
-3. **`dict-loader.js` 需要 HTTP 協議才能 fetch `/dict/*.json`**
-   - `file://` 下瀏覽器安全政策擋 fetch,會 fallback 到 studio.js 硬寫的 3 組通用字典
-   - 用 `cd web && python3 -m http.server 8080` 才能看到完整 22 組 parenting 詞典
-   - GitHub Pages 部署下路徑會是 `/GENAI/dict/`,`dict-loader.js` 用 `../dict/` 相對路徑正確解析
-
-4. **Gemini LLM 讀 SRT 會動時間軸** — 這是架構原則 2 的起源
-   - 產「保留時間軸的校稿 SRT」務必走 `--structured`:Python 拆結構、LLM 只看 text 陣列、Python 重組
-   - 不要讓 LLM 直接讀 SRT 產 SRT,必失敗
-
-5. **圖片進視覺 LLM 前,由送圖工具先做 EXIF 轉正**
-   - 視覺模型讀原始像素、不套 EXIF orientation;手機側拍照(常見 orientation=3/6)不轉正會導致 layout 描述鏡像錯誤
-   - 已內建:`describe_images.py` 以 `ImageOps.exif_transpose` 轉正至 `.img_norm/` 暫存(原檔不動);出版壓圖 `compress_images.py` 同樣轉正
-   - 手動轉正一律用 PIL `exif_transpose` + 存檔不寫 EXIF;`sips -r` 會留 orientation tag 造成下游二次旋轉
-
-6. **轉錄語言:預設自動偵測,翻譯是之後的獨立步驟** —— 不要在轉錄階段強制語言/順手翻
-   - **症狀**:對英文音檔強制 `language=zh` + 中文 prompt,Whisper 會逐段在「照實聽到的英文」與「被逼輸出中文」之間打架,產出**中英沙拉**:有時純中文(硬翻/誤譯,如紅綠燈 green→「藍色」)、有時純英文、有時**英文後面贈送一段中文自我翻譯**塞進同一個 cue。這是 Whisper 語言錯配下的 *translation/repeat hallucination*,**不是翻譯功能**(Whisper 的真翻譯任務只能翻成英文,翻不出中文)。
-   - **鐵律**:Step 1 轉錄**只忠實轉出原文**。預設 `language` 不指定 → Whisper 自動偵測;prompt 中性、不宣稱語言(宣稱會把偵測帶偏)。Web `studio.html` 有「音檔語言」下拉(自動/中文/English),CLI 中文走 `groq_transcribe.py`、英文走 `groq_transcribe_en.py`。
-   - **翻譯是另一道工**:EN→zh-TW 走結構保留流程 `scripts/lang/en/srt_zhtw.py`(原則 2),由 agent 親翻、1:1 對齊,**絕不**讓 Groq 在轉錄時順手翻(否則同時破壞「忠實原文/零省略」與「時間軸保護」)。
-   - **例外:Web Step 2 的 `cleaned.md` 可選「翻譯成繁體中文」**。因為 `cleaned.md` 本就**刻意丟棄時間軸**(Step 2 產物定位),翻譯合併進 Phase B(Gemini 一次「忠實翻譯+校稿」)**不違反原則 2**(沒有時間軸要保護);零省略改用 **1:1 段落對齊**驗證(E3),不用跨語言失效的字數比。**要保留時間軸的翻譯**仍須走 `srt_zhtw.py` 結構保留路徑,不可用此捷徑。
-   - **歷史假設更正**:本專案早期假設「音檔永遠是繁體中文」(`language` 寫死 zh),處理非中文音檔即壞。此假設已移除,改為自動偵測 + 可手動覆寫。
-
-7. **吵雜場地的 context prompt 會被 Whisper 吐回成幻覺 —— 轉完先量化,中招就整場無 prompt 重轉**
-   - **症狀**:靜音/掌聲/換場等非語音段,Whisper 照著我們給的 prompt 生成,產出「內容包含 X、Y、Z…」(中文)或「Key terms …」(英文)的整條亂碼 cue。它**不只是加噪,是蓋掉真實話語**。
-   - **量化**:轉完立刻 `grep -c '內容包含\|字幕由' <srt>`(英文用 `Key terms`)。>0 就整場重來 —— 2026-08-08 COSCUP 11 場中 6 場中招,最高一場 20.8% 的 cue 是純幻覺。
-   - **⚠️ 前綴 grep 會漏抓(2026-08-29 MCP8 補充)**:echo **不一定帶「內容包含」前綴**,常見是把 context 的**尾巴逐字吐回**(實例:context 結尾「…Schedule、Python、API、搜尋、篩選、組合材料」原封出現在 cue 裡)。前綴 grep 回 0 不代表乾淨。**補一道 context 詞命中率掃描**:把 `context.txt` 切成詞、對 `cleaned.md` 逐行數命中,**單行命中 ≥4 個 context 詞**即高度可疑,逐條人工判讀。MCP8 四場前綴 grep 只抓到 1 場,補掃後發現**四場全中招**;無 prompt 重轉後 CJK 回升 +17~38%(被幻覺蓋掉的真實內容回來了)。
-   - **解方(已內建)**:`GROQ_NO_PROMPT=1`(完全不送 prompt,連 base 句也不送)+ `GROQ_CHUNK_SECONDS=300`(短切段抑制迴圈),`groq_transcribe.py` 與 `groq_transcribe_en.py` 皆支援。實測 echo 歸零、**CJK 字數反增 10–18%**(被蓋掉的內容回來了)。
-   - **重轉要整場重建**:`session.py` 拒絕既有目錄,且 `cleaned.md` 與 marker 的字數區間要一致重生 → 先把舊 SRT 複製出去當 Phase B 專名交叉參考,再 `rm -rf` 該 session 重跑。
-   - **代價與補償**:無 prompt 會失去專名先驗(如 Open Data→「Open Beta」),改由 Phase B 依 `context.txt` + 官方議程校正(核心鐵律 F1)。**字數門要記得放行**:ASR base 被幻覺灌水時 95–105% 的分母無效,真門是 `build_book_master` 的 self_assert(≥99.5%)與 `publish_qaqc` 字數漂移(<10%)。
-   - **副作用:簡體漂移(2026-08-29 引入)**。拿掉 prompt 等於同時拿掉 Whisper 的「繁體中文」語言先驗,輸出會片段性漂移成簡體(MCP8 場 03:11,272 CJK 中 1,059 字為簡體)。這是**確定性字元對映,不該勞動 LLM 逐字改**(原則 6)→ 重轉後、進 Phase B 前跑 `python3 scripts/s2t_normalize.py sessions/<slug>/cleaned.md sessions/<slug>/cleaned.srt --in-place`(OpenCC `s2tw`,只換字形不換詞彙;`transcript.srt` 不可變,工具會自行拒絕)。
-
----
+> **Common Gotchas(實戰事故紀錄,append-only)** 已移出至 [`docs/gotchas.md`](./docs/gotchas.md)。
+> 內含:Groq 896 字元上限、APFS 大小寫、dict-loader 需 HTTP、LLM 讀 SRT 會動時間軸、
+> EXIF 轉正、轉錄語言不要硬指定、**吵雜場地的 prompt-echo 幻覺與兩層偵測**。
+> 動手前若涉及上述任一主題,先讀該檔。
 
 ## Git-as-Knowledge-Base 機制
 
@@ -744,47 +597,31 @@ Web 使用者 git pull(或瀏覽器下次 reload)
 
 ## Key Files & Paths
 
+> **`scripts/` 工具已移出本表** → 唯一清單在 [`docs/tools.md`](./docs/tools.md)
+> (59 支,由 `scripts/tests/test_docs_sync.py` 機械守門)。本表只留**非工具**的關鍵路徑。
+
+
 | Purpose | Path |
 |---------|------|
 | Main website | `/web/index.html` |
 | 好學生筆記工作室 | `/web/studio.html` + `/web/studio.js` |
 | Web 字典載入器 | `/web/dict-loader.js` |
 | CLI Skill 定義 | `/.claude/skills/good-student-notes/SKILL.md` |
-| Groq 轉錄腳本 | `/.claude/skills/good-student-notes/scripts/groq_transcribe.py` |
-| Pipeline 統籌器 | `/scripts/session.py` |
-| Gemini Phase B | `/scripts/qaqc_phase_b.py` |
 | 多語系腳本 | `/scripts/lang/` |
-| 英文轉錄(Groq, language=en) | `/scripts/lang/en/groq_transcribe_en.py` |
-| 結構保留型翻譯(EN→zh-TW;原則 2) | `/scripts/lang/en/srt_zhtw.py`(prep/assemble + 時間軸 byte 驗證) |
-| SRT → cleaned.md(翻譯版,讀 zh_parts) | `/scripts/lang/en/srt_to_md.py` |
-| SRT → cleaned.md(直接清理合併,zh/en) | `/scripts/lang/srt_clean_md.py` |
-| **Step 4.5** 場次狀態分類 | `/scripts/classify_session.py`(確定性 A/B/C,分類後停等確認;SSoT § S4.5.13) |
-| **Step 4.5** 書本 master 收斂 | `/scripts/build_book_master.py`(取代 `build_genai2026_day1/day2.py`;A concat-demote / B split-promote 經同一 emit_canonical → 骨架位元等價;`init` 產 book.json 範本 / `build` 產 publish.md+toc.json+self-assert) |
-| **Step 4.5** 收斂 dry-run 編排 | `/scripts/step45_converge.py`(classify→build→gate→md_to_html→結構檢查 session==toc==##;`--book`;不 deploy) |
-| **Step 5** md → HTML | `/scripts/lang/en/md_to_html.py`(**原生支援 blockquote / 表格 / `- ` 清單 / `---` / HTML 註解 / 行內 `code`〔2026-08-31〕+ `[文字](網址)` / ` ``` ` 圍欄碼〔2026-09-01,可巢狀在 blockquote 內〕**,供「補述層」使用,見 SSoT § S4.5.15;三模式:`--single` 單篇連續〔單一講者一場,`##`→文章內 h2、無章節卡/無「下一個」、只產 index.html、保留率 <99.5% 中止〕、`--multipage` 每場一頁〔多講者〕、預設單頁 SPA;`--cover` 封面 hero + OG 預覽圖;`--base-url` 給 OG 絕對網址;圖片大圖/並排/佔位 alt 抑制;字數 QAQC)。拆分依講者數(見原則 8 / SSoT § S4.5.0)。**hash `#fragment` 無法做各章節各自社群預覽 → 多頁模式每場獨立網址 + 各自 `og:image`(該場第一張圖,無圖用封面)** |
-| **Step 5** 圖片壓縮 + EXIF 轉正 | `/scripts/compress_images.py`(出版前壓縮省流量、把手機側拍照轉正) |
-| **Step 5** 出版到 Firebase goodedunote | `/scripts/publish_goodedunote.sh`(多頁 HTML + 壓圖 + `deploy --only hosting`;自動帶 `--base-url`) |
 | **Step 5** goodedunote 部署根(累積所有筆記) | `/scripts/publish/goodedunote/`(每篇 `public/<slug>/`) |
-| **後台** 共用 Firestore 連線層 | `/scripts/gnote_db.py`(service account 憑證 + PermissionDenied 指數退避重試;三支後台工具共用) |
-| **後台** 管理員白名單 / 封鎖理由種子 | `/scripts/seed_admin.py`(admins/ 只能由本機寫入 —— firestore.rules 讓前端 write 恆為 false,防自我提權) |
-| **後台** GWS → Firestore 名冊匯入 | `/scripts/import_roster.py`(GWS 唯讀;`--dry-run` / `--reconcile` / `--rollback <batch>`;正規化直接 import GWS `_common.py`,不自行重寫) |
-| **後台** GA4 → Firestore 統計同步 | `/scripts/sync_ga_stats.py`(`--discover` 找 property ID / `--dry-run` / `--days N`;金鑰不出本機,不需 Blaze) |
-| **後台** 既有 HTML 補 GA 埋點 | `/scripts/inject_ga.py`(冪等;排除 `admin/` 免污染文章統計。未來新頁由 `md_to_html.head()` 自帶) |
 | **後台** 前端 | `/scripts/publish/goodedunote/public/admin/`(React UMD + Babel standalone,共用主站 `style.css` tokens) |
 | **後台** Firestore 規則 / 索引 | `/scripts/publish/goodedunote/firestore.rules`、`firestore.indexes.json` |
-| **Phase B** 簡體漂移正規化(`GROQ_NO_PROMPT` 重轉後必跑) | `/scripts/s2t_normalize.py`(OpenCC `s2tw`;只換字形不換詞彙——刻意不用 `s2twp`,那會把「軟件→軟體」等用語一起改掉、等於改動講者原話;保護「台/只/了/面」等台灣正體本就正確的同形字;對正體檔 no-op、可安全重跑;拒絕處理 `transcript.srt`) |
-| **Phase B** 段落長度量測 | `/scripts/para_len_check.py`(§ R2.1 目標 60~120 CJK 字;只量測不切段——切在哪是語意判斷。判準刻意不對稱:超長才 fail、過短僅提醒,因為 § R2.1 寫的是「寧短勿長」) |
-| **Phase D** 只插入不改寫的證明 | `/scripts/phase_d_check.py`(§ R8.2;`--snapshot` 存 base → 事後驗段落數 1:1 + **原文字元須為新文字的子序列** + CJK 成長率上限。子序列比對可精確指出被刪改的位置) |
 | Standalone 轉錄 | `/SRT/transcribe.py` |
 | QA/QC 腳本 | `/SRT/qaqc_srt.py` |
 | Context 範例檔 | `/SRT/context.example.txt` |
 | 共用字典 | `/dict/typo_dict*.json`、`/dict/hallucination_prefixes.json`、`/dict/_manifest.json` |
 | 字典載入器 | `/dict/load.py`(Python)、`/web/dict-loader.js`(Web,cache busting 版) |
+| **工具清單(唯一家,有閘門)** | `/docs/tools.md`(59 支公開工具一行說明;由 `scripts/tests/test_docs_sync.py` 守門) |
+| **多模型角色分工 SSoT** | `/docs/model-routing.md`(哪個 model/CLI 負責哪一段、哪些 live 哪些仍是規劃) |
 | **SSoT 規則文件** | `/prompts/qaqc_core_rules.md`(Phase A/B、Step 3/4 的核心鐵律) |
-| **圖像視角筆記設計 SSoT**(P3) | `/prompts/image_notes_design.md`(Step 4 圖像版:兩階段生成、4 視角類比庫、prompt 模板、6 色系統) |
+| **出版 QAQC SSoT**(最大一份,781 行) | `/prompts/publish_qaqc.md`(Step 4.5 出版前 + Step 6 出版後;§ S4.5.x / § S6.x) |
+| **圖像視角筆記設計 SSoT** | `/prompts/image_notes_design.md`(Step 4 圖像版:兩階段生成、4 視角類比庫、prompt 模板、6 色系統) |
 | **連續圖說 skill 流程 SSoT** | `/prompts/image_notes_skill.md`(`/好學生筆記` 多頁連續圖說的 agent 流程:參考圖鎖風格、斷點續存、僅 Antigravity/Gemini CLI) |
-| 圖像版兩階段工具 | `/scripts/image_notes_session.py`(`note` 生底稿 / `notes` 生圖提示;無後端自動化) |
-| 圖像版:md → A4 白底底稿 | `/scripts/md_to_a4_png.py`(Playwright,確定性、原文保真) |
 | Antigravity 入口 | `/.agent/workflows/note.md`(/note 生底稿)、`/.agent/workflows/好學生筆記.md`(/好學生筆記 生圖) |
 | Gemini CLI 入口 | `/.gemini/commands/note.toml`、`/.gemini/commands/好學生筆記.toml`(後者生圖需 nanobanana extension) |
 | Session 容器 | `/sessions/<slug>/` |
@@ -803,7 +640,12 @@ Web 使用者 git pull(或瀏覽器下次 reload)
 - **Relative paths throughout**: All web assets use relative paths for flexibility
 - **No server required (mostly)**: Pure static site for web;但 `dict-loader.js` 需 HTTP 才能 fetch(file:// 下會 fallback 到硬寫字典)
 - **Single source of truth (規範)**: CLAUDE.md 是唯一規範。Agent.md、SRT_QA_QC_檢查清單.md 等為歷史參考
-- **文件同步守則**:`README.md` 是**非規範**的上手說明,**權威以 CLAUDE.md 為準**;規範不複製進 README,要寫就用指向(`見 CLAUDE.md § …` / `§ Rn`)。**凡變動 pipeline 階段、`--stop-at`、核心原則、或 `scripts/` 公開工具,同一次提交要一起同步 README**(stop-at 表、`/scripts` 清單、相關段落),避免再次漂移。其餘非規範文件(Agent.md、SRT_QA_QC_檢查清單.md 等)為歷史參考,允許過時、不在此同步義務內。
+- **文件同步守則(2026-10-12 改為閘門制)**:`README.md` 是**非規範**的上手說明,**權威以 CLAUDE.md 為準**;規範不複製進 README,要寫就用指向(`見 CLAUDE.md § …` / `§ Rn`)。
+  - **工具清單只有一個家:[`docs/tools.md`](./docs/tools.md)。** 新增/刪除 `scripts/` 公開工具時改那一處即可,不必同時維護 CLAUDE.md Key Files 與 README 的 `/scripts` 清單。
+  - **由 `scripts/tests/test_docs_sync.py` 機械守門**(呼應原則 6):T1 每支 `scripts/*.py|sh` 與 `scripts/lang/**/*.py` 都要在 `docs/tools.md`;T2 文件寫的 `--stop-at` 集合必須等於 `session.py` argparse 的 `choices`。**提交前跑一次,紅燈不得合併。**
+  - 變動 pipeline 階段、核心原則時,仍須同步 README 的相關段落(stop-at 表由 T2 守,其餘靠人)。
+  - **Why**:2026-10-12 盤點發現 23 支工具沒出現在任何文件清單裡(含 2026-09-05 才進 repo 的 `retire_list_label.py`),`--stop-at` 更在 CLAUDE.md 內部自相矛盾(:623 寫 5 個、:184 承認有 phase-c/d、程式實際 9 個)。一條已在 23 個檔案上靜默失效的榮譽制規則,應該換成閘門。
+  - 其餘非規範文件(Agent.md、SRT_QA_QC_檢查清單.md 等)為歷史參考,允許過時、不在此同步義務內。
 - **API keys via .env**: Never hardcode keys; `.env` is gitignored
 - **多語系擴展**:新增語言在 `scripts/lang/<ISO639-1>/`,不需改主線
 - **雙軌授權**:程式碼 MIT(`LICENSE`)+ 內容 CC BY 4.0(`LICENSE-CONTENT`)

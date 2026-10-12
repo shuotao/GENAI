@@ -1,0 +1,66 @@
+[
+  {
+    "query": "幫我把 /Users/me/Downloads/演講.m4a 轉成逐字稿",
+    "should_trigger": true
+  },
+  {
+    "query": "這個錄音檔做成好學生筆記，身份用建築師",
+    "should_trigger": true
+  },
+  {
+    "query": "我有一場 90 分鐘的研討會錄音，想要一份去時間軸、通順的文字稿",
+    "should_trigger": true
+  },
+  {
+    "query": "transcribe this interview recording and clean it up",
+    "should_trigger": true
+  },
+  {
+    "query": "把 meeting.mp4 的內容整理成文字，不要摘要，要完整保留",
+    "should_trigger": true
+  },
+  {
+    "query": "這段 podcast 音檔可以幫我做成筆記嗎",
+    "should_trigger": true
+  },
+  {
+    "query": "錄音檔在 ~/Desktop/0411.wav，跑一下管線到 phase-b 就好",
+    "should_trigger": true
+  },
+  {
+    "query": "我想把這場演講的錄音加上現場投影片，做成可以出版的逐字稿",
+    "should_trigger": true
+  },
+  {
+    "query": "把這個 mp4 轉成 mp3",
+    "should_trigger": false
+  },
+  {
+    "query": "幫我下載這支 YouTube 影片 https://youtu.be/abc123",
+    "should_trigger": false
+  },
+  {
+    "query": "幫我把這份會議記錄的重點摘要成三行",
+    "should_trigger": false
+  },
+  {
+    "query": "寫一個 Python 腳本讀取 SRT 檔並印出時間軸",
+    "should_trigger": false
+  },
+  {
+    "query": "這個單元幫我做成 5E 建構式教學的教案跟學習單",
+    "should_trigger": false
+  },
+  {
+    "query": "把這個主題做成一張知識圖譜海報",
+    "should_trigger": false
+  },
+  {
+    "query": "幫我把 Keynote 簡報轉成 PDF",
+    "should_trigger": false
+  },
+  {
+    "query": "goodedunote 上那本書的書脊高度要怎麼算",
+    "should_trigger": false
+  }
+]

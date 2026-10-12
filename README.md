@@ -60,6 +60,8 @@ python3 scripts/session.py new "諮詢錄音.m4a" \
 | **去時間軸、合併、通順的對話稿** | `phase-b` ⭐(預設) | `cleaned.md` | **大宗使用者的終點** |
 | 標點正規化(全形 + 預告語冒號) | `phase-c` | (精修 cleaned.md) | cleaned.md **出版前強制門**(§ R7) |
 | 通順 / hook(內容指涉型承接) | `phase-d` | (精修 cleaned.md) | cleaned.md **出版前強制門**(§ R8) |
+| 圖片理解(產圖片內容矩陣) | `images` | `image_notes.json` + `images_readme.md` | 帶 `--images <dir>` 時;agy 逐張讀圖產 JSON |
+| 自動插圖(錨點放置) | `image-insert` | (cleaned.md 內嵌 `![]()`) | 帶 `--images <dir>` 時(§ S4.5.11) |
 | 加專有名詞百科補充 | `enhance` | `enhanced.md` | 主題陌生的讀者 |
 | 以某立場(身份/角色)置入的好學生筆記 | `notes` | `notes_<立場>.md` | 學習者自用 |
 | 出版成可分享網頁 | (獨立指令 `publish_goodedunote.sh`,非 `--stop-at`) | `<slug>.html` + 線上網址 | 把筆記做成網頁分享(Step 5) |
@@ -195,6 +197,22 @@ GitHub Pages 部署版:`https://shuotao.github.io/GENAI/web/studio.html`
 
 使用者累積的錯字校正推進 `dict/typo_dict.<domain>.json` 後 **`git push`**,
 下次 Web 使用者頁面 reload 會自動拿到最新字典(`dict-loader.js` 用版本戳 cache busting)。
+
+---
+
+## 🗺️ 文件地圖(2026-10-12 重構後)
+
+權威規範在 [`CLAUDE.md`](./CLAUDE.md);它只留原則與索引,細節在 `docs/`:
+[`tools.md`](./docs/tools.md)(**59 支工具的唯一清單**,有閘門)、
+[`architecture.md`](./docs/architecture.md)、
+[`gotchas.md`](./docs/gotchas.md)(實戰踩坑紀錄)、
+[`model-routing.md`](./docs/model-routing.md)(多模型/跨 CLI 分工)、
+[`admin-backend.md`](./docs/admin-backend.md)(營運後台)。
+規則 SSoT 在 [`prompts/qaqc_core_rules.md`](./prompts/qaqc_core_rules.md)(§ R)與
+[`prompts/publish_qaqc.md`](./prompts/publish_qaqc.md)(§ S)。
+
+> 改了 `scripts/` 或 `--stop-at`?**提交前跑 `python3 scripts/tests/test_docs_sync.py`**
+> —— 工具清單與停點集合跟程式不同步就會紅燈。
 
 ---
 

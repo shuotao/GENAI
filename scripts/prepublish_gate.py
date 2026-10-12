@@ -130,7 +130,18 @@ def main() -> int:
             print(msg + " — --require-session 視為失敗", file=sys.stderr)
             fails.append("找不到 session metadata.json")
         else:
-            print(msg + " — legacy 裸 md 出版,跳過戳記檢查,只做全形 lint。")
+            # 2026-10-12:這條路徑是「失敗看起來像成功」的典型 —— 原本只印一行
+            # warning,結尾照樣印「✓ Phase C/D 通過,放行出版」,而實際上 Phase C/D
+            # 戳記、marker 殘留、整組圖片檢查**全部沒跑**。改成明確的多行警示,
+            # 並把降級事實帶到結尾那行(見 `where`/`degraded`)。
+            print("[gate] " + "="*58, file=sys.stderr)
+            print(msg, file=sys.stderr)
+            print("[gate] ⚠️ 降級為 legacy 模式:**未**檢查 Phase C/D 戳記、"
+                  "**未**檢查殘留 marker、**未**檢查圖片流程與圖文相關性。",
+                  file=sys.stderr)
+            print("[gate] ⚠️ 只做了全形標點 lint。要完整把關,請把 md 放在 session "
+                  "目錄下出版,或加 --require-session 強制失敗。", file=sys.stderr)
+            print("[gate] " + "="*58, file=sys.stderr)
     else:
         leftover = [m for m in PENDING_MARKERS if (root / m).exists()]
         if leftover:
@@ -301,7 +312,11 @@ def main() -> int:
         return 1
 
     where = root.name if root else "(legacy 無 session)"
-    print(f"[gate] ✓ Phase C/D 通過,放行出版({where},全形殘留=0)。")
+    if root is None:
+        print(f"[gate] ⚠️ 僅全形 lint 通過,放行出版({where},全形殘留=0)。"
+              f"**Phase C/D 與圖片檢查未執行** —— 這不是完整把關。")
+    else:
+        print(f"[gate] ✓ Phase C/D 通過,放行出版({where},全形殘留=0)。")
     try:
         sys.path.insert(0, str(Path(__file__).resolve().parent))
         from pipeline_logger import log_stage  # noqa: E402

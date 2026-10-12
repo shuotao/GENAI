@@ -1,7 +1,7 @@
 ---
 name: good-student-notes
 description: 將音訊/影片檔案轉為逐字稿，經 QAQC 清理與 AI 校稿後，生成好學生筆記。Use when user provides a media file and asks for transcription, notes, or 好學生筆記.
-argument-hint: <media_file> [identity] [--context <data-or-file>] [--domain <name>]
+argument-hint: <media_file> [identity] [--context <data-or-file>] [--domain <name>] [--images <dir>]
 allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 ---
 
@@ -48,7 +48,8 @@ allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 python3 scripts/session.py new "<media_file>" \
   [--context "<data-or-file>"] \
   [--domain <name>] \
-  [--stop-at {transcribe|phase-a|phase-b|enhance|notes}]  # default: phase-b
+  [--images <dir>] \            # 啟用圖片理解 + 自動插圖(marker 鏈多兩關)
+  [--stop-at {transcribe|phase-a|phase-b|phase-c|phase-d|images|image-insert|enhance|notes}]  # default: phase-b
   [--keywords "term1,term2"] \   # 觸發 Step 3
   [--enhance] \                  # 觸發 Step 3(自動辨識術語)
   [--identity "<立場>"]          # 觸發 Step 4(需 --stop-at notes)
@@ -64,8 +65,15 @@ python3 scripts/session.py new "<media_file>" \
 | 只要 SRT 字幕檔 | `transcribe` |
 | 要時間軸保留的錯字修正版 | `phase-a`(同 `--skip-phase-b`) |
 | 要去時間軸、合併、通順的稿 | `phase-b`(預設) |
+| 標點正規化(出版前強制門,§ R7) | `phase-c` |
+| 通順 / hook(出版前強制門,§ R8) | `phase-d` |
+| 圖片理解(產圖片內容矩陣) | `images`(需 `--images <dir>`) |
+| 自動插圖 | `image-insert`(需 `--images <dir>`) |
 | 外加專有名詞補充 | `enhance` 並提供 `--keywords` 或 `--enhance` |
 | 一路到好學生筆記 | `notes` 並提供 `--identity` |
+
+> ⚠️ `--stop-at` 共 **9** 個值,以 `scripts/session.py` 的 argparse `choices` 為準
+> (由 `scripts/tests/test_docs_sync.py` T2 機械守門)。
 
 ### 腳本自動完成
 
@@ -128,6 +136,39 @@ python3 scripts/session.py new "<media_file>" \
 ⚠  待人工確認:(若有)
   - corrections.json 候選條目:K 組(尚未推送至 dict/)
 ```
+
+---
+
+## Marker 鏈:腳本停在哪、你要接手什麼(原則 5 + 原則 9)
+
+在 Claude Code / Gemini CLI / Copilot CLI 底下,`session.py` 偵測到 host 就
+**只寫 marker、不打任何 API**。腳本跑完後 session 目錄會留下待辦 marker,**由你接手**。
+
+依賴順序(逐一清除,**清一個、驗一個**,不得打包):
+
+```
+.phase_b_pending.json  → .phase_c_pending.json → .phase_d_pending.json
+   →(.images_pending.json → .image_insert_pending.json,帶 --images 時)
+   → .step_3_pending.json → .step_4_pending.json
+```
+
+每個 marker 的處理協議:
+1. 讀 marker 的 `input_file` / `output_file` / `rules_ref` / 中文字數區間 / `instructions`
+2. 套對應規則(SSoT:`prompts/qaqc_core_rules.md`、`prompts/publish_qaqc.md`)
+3. **跑該關的驗證器**,綠了才算完成:
+
+   | marker | 驗證器 |
+   |---|---|
+   | phase-b | 字數落在 `target_chinese_chars_min`–`max`;`scripts/para_len_check.py` |
+   | phase-c | `scripts/normalize_punctuation.py <md> --check` 殘留 = 0 |
+   | phase-d | `scripts/phase_d_check.py <md> --base <快照>`(**動手前先 `--snapshot <md> --base <快照>` 存檔**) |
+   | images | `image_notes.json` 全數 `described`;**注意 exit 1 = 有圖失敗但仍寫檔,不是成功** |
+   | image-insert | `insert_images.py --verify`;分佈「最擠一行 ≤ 2 張」 |
+
+4. 寫回輸出檔 → **刪 marker** → 更新 `metadata.json` 對應區塊的 `status` 與 `actor`
+
+> `scripts/prepublish_gate.py` 會擋下「phase_c/phase_d 未 done、marker 殘留、
+> 正文仍有 CJK 語境半形標點」的出版,所以漏清 marker 一定會在 Step 5 被攔下。
 
 ---
 
