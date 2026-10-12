@@ -97,6 +97,17 @@ def main() -> int:
         fails.append(f"拆散的圖片語法:{md_path.name} 有 {len(orphan_img)} 行是裸的 "
                      f"`(檔名)` —— `![alt](檔名)` 被拆成兩行,圖不會出現。{head}")
 
+    # (3e) 校閱螢光標記殘留(2026-10-12 引入)。待辨識的 ASR 疑問會以
+    # `==字=={n}` 標進 cleaned.md 給人工辨識。那是**校閱用標記,不是內容** ——
+    # md_to_html 不認得 `==`,會原封上線變成字面等號。零省略規則也會把它算進字數。
+    # 人工改完必須把標記清掉,所以這裡硬擋,不靠記性。
+    marks = re.findall(r"==[^=\n]{1,40}=={\d+}", md_text_all)
+    if marks:
+        head = "、".join(m[:18] for m in marks[:4])
+        fails.append(f"校閱螢光標記未清除:{md_path.name} 仍有 {len(marks)} 處 "
+                     f"`==…=={{n}}`({head}…)。這是待辨識標記,不是內容 —— "
+                     f"確認用字後清掉再出版(對照 review_notes.md)。")
+
     # (3b) 分佈塌陷 — 無條件驗(不依賴 session;master-centric/legacy 裸 md 也擋)。
     # 這是「連續投影片倒同一段」的硬門,與 § S6.11.b 事後 audit 同口徑。
     from placement_check import overstacked, order_inversions  # noqa: E402
