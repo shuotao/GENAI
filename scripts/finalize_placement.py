@@ -21,6 +21,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from insert_images import content_lines, line_type  # noqa: E402
 
+# 2026-10-12:複核引擎白名單。原本三支工具各自硬寫 ("haiku-reviewed","human"),
+# 導致任何其他複核者產出的 anchor 被**靜默丟棄**(finalize_placement)或被當成
+# 未複核而擋下(prepublish_gate / publish_qaqc)。四角色鏈(§ S4.5.11)規劃讓 Codex
+# 找插入位、Opus 驗證,但那些標籤進不了白名單 —— 規劃與實作在此處對不上。
+# 現改為單一常數,新增複核者只動這一行。
+REVIEWED_ENGINES = ("haiku-reviewed", "human", "codex-reviewed", "opus-reviewed")
+
 
 def main() -> int:
     ap = argparse.ArgumentParser()
@@ -70,7 +77,7 @@ def main() -> int:
         x["after_line"] = j
         occ[j] += 1
         floor_pos = pos
-        if x.get("engine") not in ("haiku-reviewed", "human"):
+        if x.get("engine") not in REVIEWED_ENGINES:
             x["engine"] = "deck-flow"
 
     out = Path(a.out or sdir / "anchors_final.json")

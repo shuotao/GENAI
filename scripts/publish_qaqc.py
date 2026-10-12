@@ -18,6 +18,13 @@ import re
 import sys
 from pathlib import Path
 
+# 2026-10-12:複核引擎白名單。原本三支工具各自硬寫 ("haiku-reviewed","human"),
+# 導致任何其他複核者產出的 anchor 被**靜默丟棄**(finalize_placement)或被當成
+# 未複核而擋下(prepublish_gate / publish_qaqc)。四角色鏈(§ S4.5.11)規劃讓 Codex
+# 找插入位、Opus 驗證,但那些標籤進不了白名單 —— 規劃與實作在此處對不上。
+# 現改為單一常數,新增複核者只動這一行。
+REVIEWED_ENGINES = ("haiku-reviewed", "human", "codex-reviewed", "opus-reviewed")
+
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 PUB = PROJECT_ROOT / "scripts/publish/goodedunote/public"
 
@@ -405,6 +412,11 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
                 source_idx = source_order.get(nf.parent.name)
                 key = f"s{source_idx}-{Path(n['file']).name}" if source_idx else n["file"]
                 notes[key] = n
+                # 2026-10-12:單篇(single)書的部署夾不保留子目錄,HTML 的 src 是 basename,
+                # 但 image_notes 的 file 可能是 "images/IMG_x.JPG"。查詢端的
+                # `notes.get(src) or notes.get(Path(src).name)` 只救得了反方向,
+                # 這裡補上 basename 鍵才對稱,否則整本書每張圖都誤報「無描述條目」。
+                notes.setdefault(Path(n["file"]).name, n)
         bad_corr = []
         soft_corr = []  # 執行者(Haiku)已複核卻低分:多為離題番外圖 → 警告不擋
         checked = 0
@@ -438,7 +450,7 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
                     eng = (n.get("anchor") or {}).get("engine", "")
                     # 軟性(警告不擋):haiku-reviewed/human 已複核;deck-flow 依放映序流水放置;
                     # human_grouped = 使用者手動排定的位置(相關性對手排章屬建議性)。
-                    if eng in ("haiku-reviewed", "human", "deck-flow") or n.get("human_grouped"):
+                    if eng in REVIEWED_ENGINES + ("deck-flow",) or n.get("human_grouped"):
                         soft_corr.append(f"{msrc.group(1)}(score={s:.3f})")
                     else:
                         bad_corr.append(f"{msrc.group(1)}: score={s:.3f} 與上下文不相關")

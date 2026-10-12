@@ -23,6 +23,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from normalize_punctuation import count_residual  # noqa: E402
 
+# 2026-10-12:複核引擎白名單。原本三支工具各自硬寫 ("haiku-reviewed","human"),
+# 導致任何其他複核者產出的 anchor 被**靜默丟棄**(finalize_placement)或被當成
+# 未複核而擋下(prepublish_gate / publish_qaqc)。四角色鏈(§ S4.5.11)規劃讓 Codex
+# 找插入位、Opus 驗證,但那些標籤進不了白名單 —— 規劃與實作在此處對不上。
+# 現改為單一常數,新增複核者只動這一行。
+REVIEWED_ENGINES = ("haiku-reviewed", "human", "codex-reviewed", "opus-reviewed")
+
 # 新名 + 舊名(相容):任一存在即視為該階段未完成
 PENDING_MARKERS = (".phase_c_pending.json", ".phase_d_pending.json",
                    ".step_2_2_pending.json", ".step_2_5_pending.json")
@@ -145,7 +152,15 @@ def main() -> int:
             import re as _re
             notes_p = root / "image_notes.json"
             notes = json.loads(notes_p.read_text(encoding="utf-8")) if notes_p.exists() else []
-            by_file = {n["file"]: n for n in notes}
+            # 2026-10-12:索引「完整路徑」與「basename」兩種鍵。原本只索引 n["file"],
+            # 查詢端卻已經有 `by_file.get(ref) or by_file.get(Path(ref).name)` 的退路 ——
+            # 那條退路只救得了「md 寫完整路徑、notes 存 basename」,反方向(md 寫 basename、
+            # notes 存 images/xxx.jpg)照樣查不到,會誤報「image_notes.json 無條目」。
+            # 出版稿把圖攤平成 basename(部署夾不保留子目錄)時就會踩到。索引兩種鍵即對稱。
+            by_file = {}
+            for n in notes:
+                by_file[n["file"]] = n
+                by_file.setdefault(Path(n["file"]).name, n)
             md_text = md_path.read_text(encoding="utf-8")
             refs = [m for m in _re.findall(r"!\[[^\]]*\]\(([^)]+)\)", md_text)
                     if not m.startswith("http") and m != "cover.jpg"]
@@ -183,7 +198,7 @@ def main() -> int:
                     # 終端機畫面)與逐字稿天生零詞彙重疊,放置正確但分數必然低;
                     # 出版前閘門先前比 SSoT 嚴,會把手排結果整批擋掉。
                     eng = (n.get("anchor") or {}).get("engine", "")
-                    if eng in ("haiku-reviewed", "human", "deck-flow") or n.get("human_grouped"):
+                    if eng in REVIEWED_ENGINES + ("deck-flow",) or n.get("human_grouped"):
                         print(f"[gate] ⚠️ 圖文相關性低但執行者已複核,不擋:{m.group(1)}"
                               f"(score={s:.3f}, engine={eng or 'human_grouped'})")
                     else:

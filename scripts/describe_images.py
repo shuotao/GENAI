@@ -17,9 +17,12 @@ SSoT: prompts/publish_qaqc.md § S4.5.11。CLAUDE.md 原則 5/6/9 對齊:
 from __future__ import annotations
 import argparse
 import json
+import os
 import re
+import signal
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -27,17 +30,27 @@ from pathlib import Path
 # 錯誤是 `invalid model selection`,批次直接被熔斷)。改為:預設用 slug 形式的 model id,
 # 且啟動時對 `antigravity models` 做一次解析 —— 指定的 model 不在清單就依偏好序自動退而求其次,
 # 不讓一次改名擋掉整批描述。
-DEFAULT_MODEL = "gemini-3.6-flash-medium"
-MODEL_PREFERENCE = ("gemini-3.6-flash-medium", "gemini-3.7-flash-medium",
-                    "gemini-3.6-flash-low", "gemini-3.7-flash-low")
+# 2026-10-12:偏好序補上 3.8(實測 `antigravity models` 已提供 3.8/3.7/3.6 三代 flash)。
+# 原本停在 3.6/3.7,新機型上線後不會被選到,等於長期跑在舊模型上。排序一律「新→舊、
+# medium→low」,新增世代時往前插即可。
+DEFAULT_MODEL = "gemini-3.8-flash-medium"
+MODEL_PREFERENCE = ("gemini-3.8-flash-medium", "gemini-3.7-flash-medium",
+                    "gemini-3.6-flash-medium", "gemini-3.8-flash-low",
+                    "gemini-3.7-flash-low", "gemini-3.6-flash-low")
 
 
 def resolve_model(want: str) -> str:
-    """回傳一個 antigravity 現在真的認得的 model id。清單抓不到就原樣放行(不擋)。"""
+    """回傳一個 antigravity 現在真的認得的 model id。清單抓不到就原樣放行(不擋)。
+
+    2026-10-12:列不出清單時原本「靜默」原樣返回 —— 低階模型驅動時看不出自己其實
+    跑在未驗證的 model id 上,失敗要到第一張圖才爆。改成仍不擋路,但**出聲**。
+    """
     try:
         out = subprocess.run(["antigravity", "models"], capture_output=True,
                              text=True, timeout=60).stdout
-    except Exception:  # noqa: BLE001 — 列不出清單就別擋路,讓後續錯誤自然浮出
+    except Exception as e:  # noqa: BLE001 — 列不出清單就別擋路,讓後續錯誤自然浮出
+        print(f"[images] ⚠️ 無法列出 antigravity models({e.__class__.__name__}: {e})"
+              f" → 直接沿用「{want}」,未經驗證", file=sys.stderr)
         return want
     ids = {ln.split("\t")[0].strip() for ln in out.splitlines() if ln.strip()}
     names = {ln.split("\t")[-1].strip() for ln in out.splitlines() if ln.strip()}
@@ -163,14 +176,43 @@ def normalized_copy(img_path: Path, session_dir: Path) -> Path:
 
 # ── LLM 呼叫(單一引擎 Antigravity;無 fallback,見上方 docstring)──
 def call_antigravity(img_path: Path, session_dir: Path, model: str) -> str:
+    """呼叫 antigravity,輸出走「檔案」而非 pipe,並在自己的 process group 裡跑。
+
+    2026-10-12:本函式原本用 subprocess.run(capture_output=True, timeout=…)。
+    那個寫法在本 repo 已有實測事故紀錄(見 scripts/lang/en/srt_translate_zhtw.py):
+    逾時後 Python 殺掉 antigravity 本身,然後**不帶 timeout 再讀一次 pipe** 收尾 ——
+    antigravity 留下持有 stdout 的孫程序時,那一讀永遠回不來,timeout 形同虛設
+    (實測單批卡 3,891 秒)。對 12 張一批的圖片理解尤其致命:熔斷器永遠不會觸發,
+    因為它要等例外,而程序卡在 read() 上。
+    正解與 srt_translate_zhtw.py 一致:檔案重導(pipe 不會滿、不被孫程序卡住)
+    + stdin=DEVNULL + start_new_session,逾時殺整個 process group。
+    """
     prompt = PROMPT_TEMPLATE.format(img_path=img_path)
-    r = subprocess.run(
-        ["antigravity", "-p", prompt, "--add-dir", str(session_dir),
-         "--model", model, "--dangerously-skip-permissions"],
-        capture_output=True, text=True, timeout=CALL_TIMEOUT_S)
-    if r.returncode != 0:
-        raise RuntimeError(f"antigravity rc={r.returncode}: {r.stderr[:200]}")
-    return r.stdout
+    cmd = ["antigravity", "-p", prompt, "--add-dir", str(session_dir),
+           "--model", model, "--dangerously-skip-permissions"]
+    with tempfile.TemporaryDirectory(prefix="agy_img_") as td:
+        o, e = Path(td) / "out.txt", Path(td) / "err.txt"
+        with open(o, "wb") as fo, open(e, "wb") as fe:
+            proc = subprocess.Popen(cmd, stdout=fo, stderr=fe,
+                                    stdin=subprocess.DEVNULL,
+                                    start_new_session=True)
+            try:
+                rc = proc.wait(timeout=CALL_TIMEOUT_S)
+            except subprocess.TimeoutExpired:
+                try:
+                    os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+                except (ProcessLookupError, PermissionError):
+                    proc.kill()
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    pass
+                raise RuntimeError(f"antigravity timeout >{CALL_TIMEOUT_S}s "
+                                   f"(已殺整個 process group)")
+        err = e.read_text(encoding="utf-8", errors="replace")
+        if rc != 0:
+            raise RuntimeError(f"antigravity rc={rc}: {err[:300]}")
+        return o.read_text(encoding="utf-8", errors="replace")
 
 
 def describe_one(img_path: Path, session_dir: Path, model: str) -> tuple[dict, str]:
@@ -272,8 +314,17 @@ def main() -> int:
         print(f"[images] 描述伴讀已重產 → {out}({len(notes)} 節)")
         return 0
 
-    img_dir = sdir / "images"
-    scan_dir = img_dir if img_dir.is_dir() else sdir
+    # Session convention: ordinary photos live in images/, while slide decks
+    # rendered for cleaned.md live in slides/. Keep the explicit subdirectory
+    # in JSON/Markdown refs so callers can distinguish the two sources.
+    images_dir = sdir / "images"
+    slides_dir = sdir / "slides"
+    if images_dir.is_dir():
+        scan_dir, rel_prefix = images_dir, "images"
+    elif slides_dir.is_dir():
+        scan_dir, rel_prefix = slides_dir, "slides"
+    else:
+        scan_dir, rel_prefix = sdir, ""
     images = sorted(p for p in scan_dir.iterdir()
                     if p.is_file() and p.suffix in IMG_EXTS and p.name != "cover.jpg")
     if not images:
@@ -289,7 +340,7 @@ def main() -> int:
     done = errs = 0
     consecutive_fails = 0
     for i, img in enumerate(images, 1):
-        rel = img.name if scan_dir == sdir else f"images/{img.name}"
+        rel = f"{rel_prefix}/{img.name}" if rel_prefix else img.name
         existing = by_file.get(rel)
         if existing and existing.get("status") in ("described", "anchored", "inserted"):
             print(f"[{i}/{len(images)}] {rel} 已 described,跳過")
