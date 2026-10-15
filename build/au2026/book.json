@@ -1,7 +1,7 @@
 {
   "slug": "au2026",
   "title": "AU2026 年會",
-  "subtitle": "十二場實錄 · 從 AI 驅動工程到 BIM、MCP 與代理式工作流",
+  "subtitle": "十三場實錄 · 從 AI 驅動工程到 BIM、MCP 與代理式工作流",
   "shelf": "seminar",
   "state": "A",
   "recommended_mode": "multipage",
@@ -17,7 +17,8 @@
     "09_17__0830_BES3302",
     "09_17__1000_CS3038",
     "09_17__1130_AS2669",
-    "09_17__1500_AU4258"
+    "09_17__1500_AU4258",
+    "09_15__0600_AS1569"
   ],
   "speakers": [
     {
@@ -91,6 +92,12 @@
       "name": "Patrick Rainsberry、Brian Frank、Luke Mihelcic",
       "full": "Patrick Rainsberry、Brian Frank、Luke Mihelcic（Autodesk）",
       "talk": "AI 串聯的工作流程：Fusion、Claude 與 MCP 101"
+    },
+    {
+      "category": "BIM 多代理編排",
+      "name": "Phuc Le",
+      "full": "Phuc Le（Ken，Autodesk Vietnam Account Technical Lead）",
+      "talk": "多 AI 代理的 BIM 編排：為 Revit 打造自主的查詢、檢查、修正迴圈"
     }
   ],
   "venue": "Autodesk University 2026 · Las Vegas",

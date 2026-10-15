@@ -417,9 +417,14 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
                 # `notes.get(src) or notes.get(Path(src).name)` 只救得了反方向,
                 # 這裡補上 basename 鍵才對稱,否則整本書每張圖都誤報「無描述條目」。
                 notes.setdefault(Path(n["file"]).name, n)
+        # 2026-10-15:多場書只有部分 source 留有 image_notes(例 au2026:原 12 場 session
+        # 已移走,只有後接的第 13 場有描述)→ 無 notes 的那幾場同「舊書無 notes」口徑跳過,
+        # 否則它們的每張 sN- 圖都誤報「無描述條目」。有 notes 的場次照驗。
+        noted_idx = {source_order[nf.parent.name] for nf in notes_files
+                     if nf.parent.name in source_order}
         bad_corr = []
         soft_corr = []  # 執行者(Haiku)已複核卻低分:多為離題番外圖 → 警告不擋
-        checked = 0
+        checked = skipped_unnoted = 0
         for p in pages:
             html = p.read_text(encoding="utf-8")
             body = re.sub(r"<head>.*?</head>", "", html, flags=re.S)
@@ -432,6 +437,10 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
                 if not msrc or msrc.group(1) == "cover.jpg":
                     continue
                 n = notes.get(msrc.group(1)) or notes.get(Path(msrc.group(1)).name)
+                mpre = re.match(r"s(\d+)-", Path(msrc.group(1)).name)
+                if not n and noted_idx and mpre and int(mpre.group(1)) not in noted_idx:
+                    skipped_unnoted += 1
+                    continue
                 if not n:
                     bad_corr.append(f"{msrc.group(1)}: 無描述條目")
                     continue
@@ -455,6 +464,8 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
                     else:
                         bad_corr.append(f"{msrc.group(1)}: score={s:.3f} 與上下文不相關")
         detail = f"{checked} 張圖皆 ≥ fail 門檻" if not bad_corr else "; ".join(bad_corr[:4])
+        if skipped_unnoted:
+            detail += f"(另 {skipped_unnoted} 張屬無 image_notes 的場次,跳過)"
         if soft_corr:
             detail += f";⚠ 執行者已複核的低分離題圖 {len(soft_corr)}(不擋): {soft_corr[:3]}"
         results.append(("S6.11 圖文相關性(描述↔上下文)", not bad_corr, detail))
