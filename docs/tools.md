@@ -23,6 +23,7 @@
 | `scripts/img_context_score.py` | img_context_score.py — 圖文相關性計分(確定性,gate 與 Step 6 audit 共用)。 |
 | `scripts/import_roster.py` | 把 GWS 的報名資料批次匯入 goodedunote 後台的 Firestore 名冊。 |
 | `scripts/inject_ga.py` | 把 GA4 埋點補進「已經產出」的 goodedunote HTML。 |
+| `scripts/anchor_review.py` | anchor_review.py — 逐張三立場校位(packet 產對照包 / merge 機械驗收 R1–R5;§ S4.5.11)。 |
 | `scripts/insert_images.py` | insert_images.py — 自動插圖工具(plan / apply / verify 三模式,確定性)。 |
 | `scripts/lock_sessions.py` | 為某本 goodedunote 書的 session 頁加上「前端密碼軟鎖」(校稿期間用)。 |
 | `scripts/md_to_a4_png.py` | scripts/md_to_a4_png.py — 把 markdown 確定性渲染成 A4 白底 PNG(多頁),可選疊「好學生筆記」註解。 |

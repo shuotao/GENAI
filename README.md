@@ -203,7 +203,7 @@ GitHub Pages 部署版:`https://shuotao.github.io/GENAI/web/studio.html`
 ## 🗺️ 文件地圖(2026-10-12 重構後)
 
 權威規範在 [`CLAUDE.md`](./CLAUDE.md);它只留原則與索引,細節在 `docs/`:
-[`tools.md`](./docs/tools.md)(**59 支工具的唯一清單**,有閘門)、
+[`tools.md`](./docs/tools.md)(**60 支工具的唯一清單**,有閘門)、
 [`architecture.md`](./docs/architecture.md)、
 [`gotchas.md`](./docs/gotchas.md)(實戰踩坑紀錄)、
 [`model-routing.md`](./docs/model-routing.md)(多模型/跨 CLI 分工)、

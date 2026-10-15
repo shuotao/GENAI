@@ -236,6 +236,21 @@ S4.5.9 沒做好,應該回頭改文字而不是放任 grep 每次 fail。
 5. `caption`:12-20 字、含具體實體(地點/產品/主題)
 禁:拍攝 meta(顛倒/角度/反光)。
 
+**描述三立場規則(2026-10-15 引入;引擎 = Antigravity headless `agy -p`,model `gemini-3.8-flash-medium`)**
+圖面描述的三個核心欄位各有明確規則,prompt 原文在 `describe_images.py` 的 `PROMPT_TEMPLATE`:
+1. **OCR 當頁文字**(`text_in_image`):是 OCR 不是摘要 —— 抄錄當頁**所有**可見文字(標題、內文、
+   項目符號、圖表標籤與數值、程式碼、UI 截圖的按鈕/欄位、頁尾頁碼);原語言原樣、不翻譯不改寫不濃縮;
+   依閱讀順序(上→下、左→右),區塊間以「 | 」分隔;看不清寫 `[不可辨識]`,無文字寫「(無文字)」。
+2. **講者立場**(`speaker_view`):繁體中文、講者第一人稱「我」,2-3 句 —— 我放這頁要證明的論點(不是
+   複述頁面)、這頁在整場的角色(開場/章節頁/架構圖/示範/案例/總結/資源)、希望聽眾帶走的一點(須點名
+   頁面上的具體實體)。
+3. **聽眾立場**(`audience_view`):繁體中文、第一次看到這頁的台下聽眾,2-3 句 —— 視線第一眼落點、
+   看懂這頁需注意的細節(圖例、箭頭、數字、截圖關鍵欄位)、可能的疑問或值得記下的一點。
+- **Why**:原版各只要 1-2 句、未指定語言 → 英文 deck 被寫成英文視角句,與中文逐字稿的 CJK bigram 比對
+  幾乎無交集,放置只能靠少數專名。三立場寫成中文、點名實體後,才能拿來**逐張對照正文校位**(下節)。
+- **已知缺口**:agy 描述時看不到逐字稿,`content_signal` 常填投影片上的英文詞(AS1569 實測 21/50 張
+  零命中)。在補上逐字稿輸入前,錨點品質由「逐張三立場校位」把關,不靠 content_signal。
+
 **schema 補充欄位(工具確定性產生)**
 `palette_hex`(PIL median-cut top-5)、`deck_page`(投影片內印 `N/M` 頁碼;影片截圖無內印時 fallback 檔名序號 `-NNNN`)、
 `needs_review`(deck_page 為 null 時 true)、`anchor{para_index, confidence, engine}`、
@@ -253,6 +268,20 @@ S4.5.9 沒做好,應該回頭改文字而不是放任 grep 每次 fail。
   3. `insert_images.py --apply --anchors <json>` → `--verify`。
 - 實測(0704CC 20 張 ground truth):py 直接採用的 12 張 100% 可接受;
   整體 90%,含 Haiku 複核尾巴後 ≥ 95%(等同全 LLM 判斷,LLM 用量 -60%)。
+
+**逐張三立場校位(2026-10-15 引入,強制;取代「只覆核尾巴」作為定案前的最後一步)**
+- **病灶**:supervisor / propose_anchors 只把相關性 warning/fail 的少數圖交 Haiku,其餘「分數過得去」的圖
+  沒有人拿圖的內容去對照正文確認位置(AS1569:50 張只看了 2 張)。分數高 ≠ 放對段落;使用者裁定此做法草率。
+- **流程**(`scripts/anchor_review.py`,確定性外殼 + agent 判斷):
+  1. `anchor_review.py packet --session <dir> --anchors <supervisor 產出>` → 每張圖一份對照包:
+     OCR、講者立場、聽眾立場 + 目前錨點 ±6 行的**完整**正文。
+  2. **每一張**都交覆核 agent(subagent 分組平行,**不用 Haiku**):親自看圖、讀三立場、逐行讀候選段,
+     定 `keep / move / drop` 與 `after_line`,並從選定行**逐字摘錄 evidence**(≥6 字)+ 一句 reason。
+     放置原則同「人放圖規律」:錨在講者解說該圖的段尾、不錨小標下;章節頁放在引入該章的第一段後。
+  3. `anchor_review.py merge` 機械驗收 R1 完備(每張恰一筆)/ R2 視窗內且非標題行 / **R3 evidence 逐字出現在該行**
+     (證明讀過該段,不是憑分數)/ R4 不逆位 / R5 單錨 ≤2;任一不過 exit 1、不產 anchors,退回覆核者重做。
+  4. `insert_images.py --apply --anchors anchors_reviewed.json` → `--verify` → `placement_check.py`。
+- anchors 的 `engine = tri-view-reviewed`(列入 `publish_qaqc.REVIEWED_ENGINES`)。
 
 **anchors 完備性**:每張 described 圖必須出現在 anchors;`after_line=-1` = 此圖
 不插入(重複張/封面/無合理位置),apply 跳過並列入報告。

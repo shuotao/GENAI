@@ -19,7 +19,7 @@ CLAUDE.md 只留**原則、鐵律與索引**;細節在下列參考檔。每個 s
 
 | 檔案 | 內容 | 什麼時候讀 |
 |---|---|---|
-| [`docs/tools.md`](./docs/tools.md) | **59 支 `scripts/` 工具的唯一清單**(有閘門) | 要找某支工具、或新增工具時 |
+| [`docs/tools.md`](./docs/tools.md) | **60 支 `scripts/` 工具的唯一清單**(有閘門) | 要找某支工具、或新增工具時 |
 | [`docs/architecture.md`](./docs/architecture.md) | Web/CLI 元件、目錄職責、Runtime 依賴、開發指令 | 改架構或要跑起來時 |
 | [`docs/gotchas.md`](./docs/gotchas.md) | 實戰事故紀錄(append-only) | **動 Groq/轉錄/字典/圖片 EXIF 之前必讀** |
 | [`docs/model-routing.md`](./docs/model-routing.md) | 哪個 model/CLI 負責哪一段、實測模型清單、低階模型地雷 | 要派工給別的 CLI/模型時 |
@@ -598,7 +598,7 @@ Web 使用者 git pull(或瀏覽器下次 reload)
 ## Key Files & Paths
 
 > **`scripts/` 工具已移出本表** → 唯一清單在 [`docs/tools.md`](./docs/tools.md)
-> (59 支,由 `scripts/tests/test_docs_sync.py` 機械守門)。本表只留**非工具**的關鍵路徑。
+> (60 支,由 `scripts/tests/test_docs_sync.py` 機械守門)。本表只留**非工具**的關鍵路徑。
 
 
 | Purpose | Path |
@@ -616,7 +616,7 @@ Web 使用者 git pull(或瀏覽器下次 reload)
 | Context 範例檔 | `/SRT/context.example.txt` |
 | 共用字典 | `/dict/typo_dict*.json`、`/dict/hallucination_prefixes.json`、`/dict/_manifest.json` |
 | 字典載入器 | `/dict/load.py`(Python)、`/web/dict-loader.js`(Web,cache busting 版) |
-| **工具清單(唯一家,有閘門)** | `/docs/tools.md`(59 支公開工具一行說明;由 `scripts/tests/test_docs_sync.py` 守門) |
+| **工具清單(唯一家,有閘門)** | `/docs/tools.md`(60 支公開工具一行說明;由 `scripts/tests/test_docs_sync.py` 守門) |
 | **多模型角色分工 SSoT** | `/docs/model-routing.md`(哪個 model/CLI 負責哪一段、哪些 live 哪些仍是規劃) |
 | **SSoT 規則文件** | `/prompts/qaqc_core_rules.md`(Phase A/B、Step 3/4 的核心鐵律) |
 | **出版 QAQC SSoT**(最大一份,781 行) | `/prompts/publish_qaqc.md`(Step 4.5 出版前 + Step 6 出版後;§ S4.5.x / § S6.x) |
