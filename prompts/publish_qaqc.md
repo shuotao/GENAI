@@ -672,6 +672,9 @@ placeholder 路徑即 ✗ 並要求人工確認。
 - 在對應 session 的 `image_notes.json` 有條目(status=inserted);
 - 描述↔前後 prose 區塊的相關性分數(§ S4.5.11 同一把尺)≥ fail 門檻。
 
+**影片 figure(`kc-video`,`![…|poster=…](x.mp4)`)不在本節範圍** —— 它不是投影片管線的圖,
+image_notes 不會有條目(2026-10-17,au2026 第 13 場內嵌整場影片時被誤報「無描述條目」後排除)。
+
 舊書(無 image_notes.json)→ **跳過不 fail**(標註提示)。抓到 fail 代表出版後
 md 被手改、或 anchor 判斷漂移 → 修 anchor / 補描述後重出。
 **執行者(Haiku)已複核**(anchor.engine=haiku-reviewed/human)卻低分者 → 降**警告**

@@ -434,6 +434,10 @@ def audit_book(book: dict, shelf_id: str, pub_dir: Path) -> list[tuple]:
             for i, (tag, inner) in enumerate(blocks):
                 if tag != "figure":
                     continue
+                # 2026-10-17:影片 figure(kc-video)不是投影片管線的圖,image_notes 不會有它;
+                # 原本 <source src=*.mp4> 被當圖抓去比對 → 誤報「無描述條目」(au2026 s13 實測)。
+                if "<video" in inner:
+                    continue
                 msrc = re.search(r'src="([^"]+)"', inner)
                 if not msrc or msrc.group(1) == "cover.jpg":
                     continue
