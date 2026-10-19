@@ -5,6 +5,11 @@
       "firebase.json",
       "**/.*"
     ],
+    "redirects": [
+      { "source": "/taipei-current-zhongshan-datong", "destination": "/puma-policy-treasure/session-1.html", "type": 301 },
+      { "source": "/taipei-current-zhongshan-datong/", "destination": "/puma-policy-treasure/session-1.html", "type": 301 },
+      { "source": "/taipei-current-zhongshan-datong/index.html", "destination": "/puma-policy-treasure/session-1.html", "type": 301 }
+    ],
     "headers": [
       {
         "source": "/admin/**",
