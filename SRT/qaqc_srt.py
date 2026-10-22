@@ -74,6 +74,7 @@ _CJK_RE = re.compile(
 )
 _NOISE_RE = re.compile(r"[┌┐└┘├┤┬┴┼│─⊇◡◬Ⓓ჏ს⓪①②③④⑤⑥⑦⑧⑨]")
 _EXOTIC_RE = re.compile(r"[Ⴀ-ჿ؀-ۿЀ-ӿ฀-๿ऀ-ॿ]")
+_LATIN_WORDS_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9 .,!?'’+#/&\-]*")
 _LONG_LATIN_RE = re.compile(r"(?:[a-zA-Z]{2,}\s+){5,}")
 
 # Numeric thresholds + noise-char set come from dict/qaqc_config.json (SSoT shared
@@ -104,15 +105,21 @@ def is_garbled(text: str) -> bool:
     if non_space == 0:
         return True
     cjk_ratio = cjk_count / non_space
-    if cjk_ratio < _CJK_RATIO_MIN and non_space > _MIN_CHARS_FOR_RATIO:
-        return True
-    if "�" in text:
+    if "\ufffd" in text:
         return True
     if len(_NOISE_RE.findall(text)) > _NOISE_CHAR_MAX:
         return True
     if _EXOTIC_RE.search(text):
         return True
     if _LONG_LATIN_RE.search(text) and cjk_ratio < _LONG_LATIN_CJK_RATIO_MAX:
+        return True
+    # Speech, not garble (R1.2 exemptions, 2026-10-22): a short all-Latin cue ("Writing is rewriting",
+    # "domain knowledge") or Chinese + real Latin words ("我用 Google 的 Gemini Flash"). The ratio rule below
+    # used to drop both; caption-service hallucinations are still caught by R1.1 prefixes and the run rule above.
+    latin_part = _CJK_RE.sub("", text).strip()
+    if _LATIN_WORDS_RE.fullmatch(latin_part or "a") and (cjk_count or len(latin_part.split()) <= 5):
+        return False
+    if cjk_ratio < _CJK_RATIO_MIN and non_space > _MIN_CHARS_FOR_RATIO:
         return True
     return False
 
@@ -151,12 +158,16 @@ def phase_a_clean(blocks: list[dict], typo_map: dict[str, str],
             stats["dropped_hallucination"] += 1
             continue
         # Wrapper-prefix stripping (longest match first to avoid partial strips)
+        stripped = False
         for sp in sorted(strip_prefixes, key=len, reverse=True):
             if text.startswith(sp):
                 text = text[len(sp):].lstrip(" ,,。.")
                 stats["wrapper_stripped"] += 1
+                stripped = True
                 break
-        if len(text) < 3:
+        # The < 3 rule is for what is left after a wrapper is stripped (dict/hallucination_prefixes.json _meta).
+        # Applying it to every cue dropped valid short replies (對／好／了解), against is_garbled's own docstring.
+        if not text or (stripped and len(text) < 3):
             stats["dropped_empty"] += 1
             continue
         if is_garbled(text):

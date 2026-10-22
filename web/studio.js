@@ -432,7 +432,6 @@ function isGarbled(text, mode) {
             && totalNonSpace > QAQC_CFG.min_chars_for_ratio_check;
     }
     const cjkRatio = cjkCount / totalNonSpace;
-    if (cjkRatio < QAQC_CFG.cjk_ratio_min && totalNonSpace > QAQC_CFG.min_chars_for_ratio_check) return true;
     if (/[\ufffd]/.test(text)) return true;
     const noiseEsc = (QAQC_CFG.noise_chars || '').replace(/[.*+?^${}()|[\]\\-]/g, '\\$&');
     const noiseRe = noiseEsc ? new RegExp(`[${noiseEsc}]`, 'g') : null;
@@ -441,6 +440,12 @@ function isGarbled(text, mode) {
     if ((text.match(exoticRe) || []).length > 0) return true;
     const longLatinRun = /(?:[a-zA-Z]{2,}\s+){5,}/;
     if (longLatinRun.test(text) && cjkRatio < QAQC_CFG.long_latin_cjk_ratio_max) return true;
+    // Speech, not garble (R1.2 exemptions, 2026-10-22) — mirror of SRT/qaqc_srt.py:
+    // short all-Latin cue ("Writing is rewriting") or Chinese + real Latin words ("我用 Google 的 Gemini Flash").
+    const latinPart = text.replace(cjkRe, '').trim();
+    if (/^[A-Za-z0-9][A-Za-z0-9 .,!?'’+#\/&\-]*$/.test(latinPart || 'a')
+        && (cjkCount > 0 || latinPart.split(/\s+/).length <= 5)) return false;
+    if (cjkRatio < QAQC_CFG.cjk_ratio_min && totalNonSpace > QAQC_CFG.min_chars_for_ratio_check) return true;
     return false;
 }
 
