@@ -11,6 +11,7 @@ Usage:
     python3 groq_transcribe_en.py <media_file> [output_dir] [context_file]
 """
 
+import json
 import os
 import sys
 import subprocess
@@ -83,6 +84,15 @@ def format_srt_time(seconds):
     ms = int((seconds - total_seconds) * 1000)
     return f"{h:02d}:{m:02d}:{s:02d},{ms:03d}"
 
+def _has_audio(path):
+    """True when ffprobe reports a duration of at least 0.05 s (empty tail segments report none)."""
+    r = subprocess.run(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0", path],
+                       capture_output=True, text=True)
+    try:
+        return float(r.stdout.strip()) >= 0.05
+    except ValueError:
+        return False
+
 
 def extract_and_split_audio(input_file, temp_dir):
     base_name = Path(input_file).stem
@@ -97,7 +107,10 @@ def extract_and_split_audio(input_file, temp_dir):
     chunks = sorted([
         os.path.join(temp_dir, f)
         for f in os.listdir(temp_dir)
-        if f.startswith(f"{base_name}_chunk_")
+        if f.startswith(f"{base_name}_chunk_") and f.endswith(".mp3")   # .json = cached results (resume)
+        # A recording whose length is ~ a multiple of CHUNK_DURATION leaves an empty last segment (header only);
+        # Groq rejects it (400 audio_too_short) and the whole run used to fail. Skip segments with no audio.
+        and _has_audio(os.path.join(temp_dir, f))
     ])
     return chunks
 
@@ -243,7 +256,18 @@ def main():
             print(f"[groq-en] Transcribing chunk {i+1}/{len(chunks)} "
                   f"(using key #{key_index % len(api_keys) + 1}/{len(api_keys)})...")
             time_offset = i * CHUNK_DURATION
-            result, key_index = transcribe_chunk(chunk_path, api_keys, key_index, context_prompt)
+            # Resume (2026-10-22): a finished chunk's Groq result is cached next to it; a re-run after a
+            # failure reuses it instead of spending quota again. Re-splitting gives the same chunk names.
+            cache_path = os.path.splitext(chunk_path)[0] + ".json"
+            if os.path.exists(cache_path):
+                with open(cache_path, encoding="utf-8") as cf:
+                    result = json.load(cf)
+                print(f"  [resume] chunk {i+1} reused from cache")
+            else:
+                result, key_index = transcribe_chunk(chunk_path, api_keys, key_index, context_prompt)
+                if result:
+                    with open(cache_path, "w", encoding="utf-8") as cf:
+                        json.dump(result, cf, ensure_ascii=False)
             if result:
                 segments = result.get("segments", [])
                 for seg in segments:
@@ -261,6 +285,14 @@ def main():
                 print(f"  [FAILED] chunk {i+1}", file=sys.stderr)
             os.remove(chunk_path)
 
+    if failed_chunks:
+        # Same rule as the Chinese transcriber: never hand over an SRT with silent holes. Finished chunks stay
+        # cached in temp_dir, so re-running the same command resumes instead of starting over.
+        print(f"[groq-en] FATAL: {len(failed_chunks)} chunk(s) failed: {failed_chunks}; partial SRT has gaps.",
+              file=sys.stderr)
+        print(f"[groq-en] Finished chunks cached in {temp_dir} — re-run the same command to resume.",
+              file=sys.stderr)
+        sys.exit(2)
     shutil.rmtree(temp_dir, ignore_errors=True)
     elapsed = time.time() - start_time
     print(f"[groq-en] SRT saved: {srt_output}")
