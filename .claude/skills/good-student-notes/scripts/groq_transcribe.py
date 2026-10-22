@@ -111,7 +111,31 @@ def extract_and_split_audio(input_file, temp_dir):
     return chunks
 
 
-def transcribe_chunk(chunk_path, api_keys, key_index, context_prompt):
+ZH_LANG_NAMES = ("zh", "chinese", "mandarin", "cantonese")
+
+
+def build_request_data(context_prompt, language):
+    """language: "auto" | ISO-639-1 code。
+    CLAUDE.md Gotcha #6:預設自動偵測、prompt 中性不宣稱語言(宣稱會把偵測帶偏,
+    英文音檔被逼成中英沙拉)。只有確定是中文時才用繁中 base prompt(維持繁體輸出)。"""
+    if language == "zh":
+        base_prompt = "這是一段關於技術開發與會議簡報內容的繁體中文錄音。"
+        raw_prompt = f"{base_prompt} 內容包含：{context_prompt}。" if context_prompt else base_prompt
+    else:
+        raw_prompt = context_prompt
+    data = {
+        "model": "whisper-large-v3",
+        "response_format": "verbose_json",
+        "temperature": "0.0"
+    }
+    if raw_prompt:
+        data["prompt"] = truncate_prompt(raw_prompt, max_chars=896)
+    if language != "auto":
+        data["language"] = language
+    return data
+
+
+def transcribe_chunk(chunk_path, api_keys, key_index, context_prompt, language="auto"):
     """以多 key 輪替 + 重試轉錄。
     - 200: 成功
     - 429 (rate limit): 切下一把 key,線性退避
@@ -120,17 +144,7 @@ def transcribe_chunk(chunk_path, api_keys, key_index, context_prompt):
     - 其他 4xx: 視為致命,直接放棄
     回傳 (result_dict_or_None, updated_key_index)。
     """
-    base_prompt = "這是一段關於技術開發與會議簡報內容的繁體中文錄音。"
-    raw_prompt = f"{base_prompt} 內容包含：{context_prompt}。" if context_prompt else base_prompt
-    final_prompt = truncate_prompt(raw_prompt, max_chars=896)
-
-    data = {
-        "model": "whisper-large-v3",
-        "prompt": final_prompt,
-        "response_format": "verbose_json",
-        "language": "zh",
-        "temperature": "0.0"
-    }
+    data = build_request_data(context_prompt, language)
 
     rate_limit_attempts = 0
     server_error_attempts_on_current_key = 0
@@ -226,12 +240,13 @@ def transcribe_chunk(chunk_path, api_keys, key_index, context_prompt):
 
 def main():
     if len(sys.argv) < 2:
-        print("Usage: python3 groq_transcribe.py <media_file> [output_dir] [context_file]")
+        print("Usage: python3 groq_transcribe.py <media_file> [output_dir] [context_file] [language|auto]")
         sys.exit(1)
 
     input_file = sys.argv[1]
     output_dir = sys.argv[2] if len(sys.argv) > 2 else os.path.dirname(os.path.abspath(input_file))
-    context_file = sys.argv[3] if len(sys.argv) > 3 else None
+    context_file = sys.argv[3] if len(sys.argv) > 3 and sys.argv[3] else None
+    language = (sys.argv[4] if len(sys.argv) > 4 else os.environ.get("GROQ_LANGUAGE", "auto")) or "auto"
 
     if not os.path.exists(input_file):
         print(f"ERROR: File not found: {input_file}", file=sys.stderr)
@@ -284,13 +299,24 @@ def main():
     # Transcribe each chunk
     global_idx = 1
     key_index = 0
+    detected_language = language
     failed_chunks = []
     with open(srt_output, "w", encoding="utf-8") as srt_file:
         for i, chunk_path in enumerate(chunks):
             print(f"[groq] Transcribing chunk {i+1}/{len(chunks)} "
                   f"(using key #{key_index % len(api_keys) + 1}/{len(api_keys)})...")
             time_offset = i * CHUNK_DURATION
-            result, key_index = transcribe_chunk(chunk_path, api_keys, key_index, context_prompt)
+            result, key_index = transcribe_chunk(chunk_path, api_keys, key_index,
+                                                 context_prompt, language)
+            if result and language == "auto":
+                detected = (result.get("language") or "").lower()
+                language = "zh" if detected in ZH_LANG_NAMES else "auto"
+                print(f"[groq] Detected language: {detected or 'unknown'}")
+                if language == "zh":
+                    # 中文主線:改用繁中 prompt + language=zh 重轉第 1 段,其後各段沿用
+                    result, key_index = transcribe_chunk(chunk_path, api_keys, key_index,
+                                                         context_prompt, language)
+                detected_language = "zh" if language == "zh" else (detected or "unknown")
             if result:
                 segments = result.get("segments", [])
                 for seg in segments:
@@ -326,6 +352,7 @@ def main():
 
     # Output the SRT path for the caller
     print(f"OUTPUT_SRT={srt_output}")
+    print(f"DETECTED_LANGUAGE={detected_language}")
 
 
 if __name__ == "__main__":

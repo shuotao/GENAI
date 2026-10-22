@@ -24,7 +24,8 @@ _TRAIL_CAPS = re.compile(r"\s*(?:[A-Z]{2,}[\s,]+){1,}[A-Z]{2,}\s*$")        # �
 _JUNK_LINE = re.compile(r"^(ke+y?\s+terms?\b|kee terms\b|br\.\.|※|請訂閱|字幕)", re.I)
 # 英文幻覺片語(影片字幕殘留 / 靜音處):靠片語判斷,而非「整句是英文」——雙語場的真英文必須保留。
 _HALL_EN = re.compile(r"^(thank(s| you) for watching|please subscribe|subscribe\b|the end\.?$|"
-                      r"end of transcript|end credits|subtitles by|captions? by|transcription by)", re.I)
+                      r"end of transcript|end credits|subtitles by|captions? by|transcription by|"
+                      r"the (audio|recording) is not available)", re.I)
 
 
 def parse_srt(text):

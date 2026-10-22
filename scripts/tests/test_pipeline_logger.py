@@ -10,6 +10,7 @@ close_improvement、CLI --log/--list-open、jsonl 多筆 append 不互毀。
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -169,7 +170,9 @@ class TestPipelineLoggerCLI(unittest.TestCase):
             "sys.argv = ['pipeline_logger.py'] + %r; "
             "sys.exit(pl.main())"
         ) % (str(SCRIPTS_DIR), str(self.env_build), str(self.env_sessions), list(args))
-        return subprocess.run([sys.executable, "-c", code], capture_output=True, text=True)
+        env = {**os.environ, "PYTHONIOENCODING": "utf-8"}
+        return subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                              encoding="utf-8", env=env)
 
     def test_cli_log_and_list_open(self):
         result = self._run_cli("--log", "cli-slug", "S4.5-gate", "prepublish_gate.py", "fail",

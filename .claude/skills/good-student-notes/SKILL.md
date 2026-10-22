@@ -48,6 +48,7 @@ allowed-tools: Bash, Read, Write, Glob, Grep, Edit
 python3 scripts/session.py new "<media_file>" \
   [--context "<data-or-file>"] \
   [--domain <name>] \
+  [--lang {auto|zh|en}] \        # default: auto(英文場自動走 agy 翻 zh-TW,見 CLAUDE.md Gotcha #6)
   [--stop-at {transcribe|phase-a|phase-b|enhance|notes}]  # default: phase-b
   [--keywords "term1,term2"] \   # 觸發 Step 3
   [--enhance] \                  # 觸發 Step 3(自動辨識術語)

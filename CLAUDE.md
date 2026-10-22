@@ -145,7 +145,8 @@ marker 流程;`--force-api` 是唯一逃生口(session.py 在 engine=api 路徑�
 **Antigravity headless 通道(2026-07-05 引入):** `antigravity -p`(別名 `agy -p`)走
 Antigravity 自己的 OAuth login,屬合法 CLI 授權通道;「腳本禁打 Gemini API」守門
 只擋 API key 通道。`describe_images.py` 以此通道做圖片理解,單引擎 + 熔斷
-(規則見 prompts/publish_qaqc.md § S4.5.11)。
+(規則見 prompts/publish_qaqc.md § S4.5.11)。2026-10-22 起 `agy_zhtw.py` 也走此通道做
+英文場 Phase B 翻譯(EN→zh-TW,`gemini-3.8-flash-medium`;見 Gotcha #6「CLI 英文場閉環」)。
 
 Web 為什麼保留 Gemini API key 欄位是 **刻意的普及策略**:Gemini key 取得門檻最低
 (Google AI Studio 一鍵免費發 key),不要因為 CLI 不需要就拿掉 Web 欄位。
@@ -600,6 +601,16 @@ Whisper 的幻覺集中在**靜音/音樂/掌聲/休息/開場墊場**等非語�
    - **翻譯是另一道工**:EN→zh-TW 走結構保留流程 `scripts/lang/en/srt_zhtw.py`(原則 2),由 agent 親翻、1:1 對齊,**絕不**讓 Groq 在轉錄時順手翻(否則同時破壞「忠實原文/零省略」與「時間軸保護」)。
    - **例外:Web Step 2 的 `cleaned.md` 可選「翻譯成繁體中文」**。因為 `cleaned.md` 本就**刻意丟棄時間軸**(Step 2 產物定位),翻譯合併進 Phase B(Gemini 一次「忠實翻譯+校稿」)**不違反原則 2**(沒有時間軸要保護);零省略改用 **1:1 段落對齊**驗證(E3),不用跨語言失效的字數比。**要保留時間軸的翻譯**仍須走 `srt_zhtw.py` 結構保留路徑,不可用此捷徑。
    - **歷史假設更正**:本專案早期假設「音檔永遠是繁體中文」(`language` 寫死 zh),處理非中文音檔即壞。此假設已移除,改為自動偵測 + 可手動覆寫。
+   - **CLI 英文場閉環(2026-10-22 引入,human-out-of-loop)**:上一條的「已移除」當時只在 Web 生效,CLI 主線 `groq_transcribe.py` 仍寫死 `language=zh`(2026-10-22 一場英文 Teams 面試被逼成中英沙拉 + 「林鄭月娥/本集完」幻覺才發現)。現已修正並串成閉環,`session.py new <audio>` **不需任何參數**:
+     1. `groq_transcribe.py` 預設 `auto`:第 1 段以中性 prompt 偵測語言;偵測為中文才改用繁中 prompt + `language=zh` 重轉第 1 段(中文主線品質不退化)。`session.py --lang {auto,zh,en}` 可覆寫。
+     2. 英文 → Phase A 走 `scripts/lang/srt_clean_md.py --lang en` → `cleaned.raw.md`(原文、去時間軸)。
+     3. Phase B = `scripts/lang/en/agy_zhtw.py`:**agy headless(`agy -p`,OAuth 通道)+ `gemini-3.8-flash-medium`** 忠實翻譯 + 校稿成 zh-TW `cleaned.md`(即上一條「cleaned.md 翻譯例外」的 CLI 實作)。確定性外殼守門:`[Pnnn]` 區塊 1:1(E3)、每塊「CJK 字 / 英文詞 ≥ 0.9」防漏譯,不過即整批重譯(最多 3 次)後 exit 2;區塊內可依 § R2.1 再分段、段間可插 `##` 標題。失敗才寫 `.phase_b_pending.json` 交對話 agent。
+     4. 之後 Phase C/D 照常(原則 9)。
+
+7. **Windows:`python3` 是 WindowsApps 空殼(exit 9009)**
+   - `session.py` 以 `subprocess.run(["python3", …])` 呼叫子腳本,在 Windows 上會撞到 Microsoft Store 的 `python3.exe` 空殼 → exit 9009,轉錄第一步就掛。
+   - 解法:`session.py` 子程序一律用 `sys.executable`(常數 `PY`)。新增腳本呼叫子腳本時照此辦理,不要寫死 `"python3"`。
+   - 本機 Python:`D:\green-tools\python`(embed 版、**資料夾不帶版號**,升級直接覆蓋同路徑;`import site` 已開,套件裝在使用者層 `pip install --user`),放在**使用者層** PATH 最前面,並附 `python3.exe` 複本。
 
 ---
 
@@ -679,6 +690,7 @@ Web 使用者 git pull(或瀏覽器下次 reload)
 | 結構保留型翻譯(EN→zh-TW;原則 2) | `/scripts/lang/en/srt_zhtw.py`(prep/assemble + 時間軸 byte 驗證) |
 | SRT → cleaned.md(翻譯版,讀 zh_parts) | `/scripts/lang/en/srt_to_md.py` |
 | SRT → cleaned.md(直接清理合併,zh/en) | `/scripts/lang/srt_clean_md.py` |
+| 英文 cleaned.raw.md → zh-TW cleaned.md(agy headless 翻譯;Gotcha #6) | `/scripts/lang/en/agy_zhtw.py`(`[Pnnn]` 1:1 + 漏譯比例守門 + 自動重試) |
 | **Step 5** md → HTML | `/scripts/lang/en/md_to_html.py`(三模式:`--single` 單篇連續〔單一講者一場,`##`→文章內 h2、無章節卡/無「下一個」、只產 index.html、保留率 <99.5% 中止〕、`--multipage` 每場一頁〔多講者〕、預設單頁 SPA;`--cover` 封面 hero + OG 預覽圖;`--base-url` 給 OG 絕對網址;圖片大圖/並排/佔位 alt 抑制;字數 QAQC)。拆分依講者數(見原則 8 / SSoT § S4.5.0)。**hash `#fragment` 無法做各章節各自社群預覽 → 多頁模式每場獨立網址 + 各自 `og:image`(該場第一張圖,無圖用封面)** |
 | **Step 5** 圖片壓縮 + EXIF 轉正 | `/scripts/compress_images.py`(出版前壓縮省流量、把手機側拍照轉正) |
 | **Step 5** 出版到 Firebase goodedunote | `/scripts/publish_goodedunote.sh`(多頁 HTML + 壓圖 + `deploy --only hosting`;自動帶 `--base-url`) |

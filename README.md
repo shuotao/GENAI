@@ -91,6 +91,10 @@ python3 scripts/session.py new audio.m4a \
 # 想自動偵測文中的專業術語做補充
 python3 scripts/session.py new audio.m4a --stop-at enhance --enhance
 
+# 英文音檔:不用加參數,語言自動偵測(--lang auto)→ 原文轉錄 → 清理 →
+# Phase B 由 agy headless(Gemini 3.8 Flash)翻成 zh-TW cleaned.md(規則見 CLAUDE.md Gotcha #6)
+python3 scripts/session.py new meeting.mp4 --context "講者名, 公司名"
+
 # 也可以在 Claude Code 裡直接用 slash command
 /good-student-notes audio.m4a 建築師 --context "..." --domain parenting
 ```

@@ -17,7 +17,9 @@ Flow:
     2. symlink audio → source.<ext>; write context.txt (and metadata.json skeleton)
     3. groq_transcribe.py → transcript.srt  (IMMUTABLE)
     4. qaqc_srt.py --domain <name> → cleaned.srt  (Phase A only)
+       (英文場:srt_clean_md.py --lang en → cleaned.raw.md)
     5. phase B merged → cleaned.md
+       (英文場:agy_zhtw.py,agy headless 忠實翻 zh-TW + 校稿)
     6. (optional) qaqc_srt.py --structured → transcript.cleaned.srt  (timecode-safe)
     7. (optional) identity-based notes_<identity>.md
     8. Write final metadata.json (ratios, timings, typo hits, etc.)
@@ -39,6 +41,18 @@ GROQ_SCRIPT = PROJECT_ROOT / ".claude/skills/good-student-notes/scripts/groq_tra
 QAQC_SCRIPT = PROJECT_ROOT / "SRT/qaqc_srt.py"
 PHASE_B_SCRIPT = PROJECT_ROOT / "scripts/qaqc_phase_b.py"
 NORMALIZE_SCRIPT = PROJECT_ROOT / "scripts/normalize_punctuation.py"
+SRT_CLEAN_MD_SCRIPT = PROJECT_ROOT / "scripts/lang/srt_clean_md.py"
+AGY_ZHTW_SCRIPT = PROJECT_ROOT / "scripts/lang/en/agy_zhtw.py"
+# 子程序一律用目前的直譯器:Windows 上 `python3` 常是 WindowsApps 空殼(exit 9009)
+PY = sys.executable
+
+
+def detect_transcript_lang(srt_path: Path) -> str:
+    """確定性語言判斷(原則 6):CJK 佔字母+CJK ≥ 30% → zh,否則 en。"""
+    text = _srt_to_plain(srt_path)
+    cjk = len(re.findall(r"[一-鿿]", text))
+    latin = len(re.findall(r"[A-Za-z]", text))
+    return "zh" if cjk >= 0.3 * max(1, cjk + latin) else "en"
 
 
 # ─── Engine routing(誰在叫我?)──────────────────────────────────────
@@ -199,7 +213,7 @@ def new_session(args):
     transcript = sdir / "transcript.srt"
     # groq_transcribe.py signature: <media> [output_dir] [context_file]
     # We want output to be named transcript.srt (not <stem>.srt), so we handle rename.
-    run(["python3", str(GROQ_SCRIPT), str(src_link), str(sdir), str(ctx_path)])
+    run([PY, str(GROQ_SCRIPT), str(src_link), str(sdir), str(ctx_path), args.lang])
     # groq script outputs <stem>.srt — since we symlinked to source.<ext>, stem = "source"
     groq_out = sdir / "source.srt"
     if groq_out.exists():
@@ -215,21 +229,34 @@ def new_session(args):
           f"{groq_secs}s)")
 
     original_metrics = srt_effective_chars(transcript)
+    lang = args.lang if args.lang != "auto" else detect_transcript_lang(transcript)
+    meta["language"] = lang
+    print(f"[session] language={lang}")
 
-    # 5. Phase A cleanup → cleaned.srt
+    # 5. Phase A cleanup
+    #    zh → qaqc_srt.py → cleaned.srt
+    #    en → srt_clean_md.py --lang en → cleaned.raw.md(原文、去時間軸;翻譯在 Phase B)
     cleaned_srt = sdir / "cleaned.srt"
-    cmd = ["python3", str(QAQC_SCRIPT), str(transcript), "-o", str(cleaned_srt)]
-    if args.domain:
-        cmd += ["--domain", args.domain]
-    run(cmd)
+    cleaned_raw_md = sdir / "cleaned.raw.md"
+    if lang == "zh":
+        cmd = [PY, str(QAQC_SCRIPT), str(transcript), "-o", str(cleaned_srt)]
+        if args.domain:
+            cmd += ["--domain", args.domain]
+        run(cmd)
+        phase_a_metrics = srt_effective_chars(cleaned_srt)
+    else:
+        cleaned_srt = None
+        run([PY, str(SRT_CLEAN_MD_SCRIPT), str(transcript), str(cleaned_raw_md), "--lang", "en"])
+        phase_a_metrics = count_chars(cleaned_raw_md.read_text(encoding="utf-8"))
 
-    phase_a_metrics = srt_effective_chars(cleaned_srt)
-
-    # 6. Structured-preserving polish → transcript.cleaned.srt (optional)
+    # 6. Structured-preserving polish → transcript.cleaned.srt (optional, zh only)
     transcript_cleaned_srt = None
-    if args.structured_srt:
+    if args.structured_srt and lang != "zh":
+        print("[session] --structured-srt 目前只支援中文場;英文保留時間軸翻譯走 "
+              "scripts/lang/en/srt_zhtw.py", file=sys.stderr)
+    elif args.structured_srt:
         transcript_cleaned_srt = sdir / "transcript.cleaned.srt"
-        cmd = ["python3", str(QAQC_SCRIPT), str(transcript),
+        cmd = [PY, str(QAQC_SCRIPT), str(transcript),
                "-o", str(transcript_cleaned_srt),
                "--structured"]
         if args.domain:
@@ -248,7 +275,39 @@ def new_session(args):
     phase_b_stats = None
     do_phase_b = (not args.skip_phase_b
                   and args.stop_at not in ("transcribe", "phase-a"))
-    if do_phase_b:
+    if do_phase_b and lang != "zh":
+        # 英文場:Phase B = 忠實翻譯 zh-TW + 校稿,走 agy headless(OAuth 通道,任何 host 皆可)。
+        # 零省略以段落 1:1(E3)驗,工具內建;失敗才交對話 agent。
+        try:
+            run([PY, str(AGY_ZHTW_SCRIPT), str(cleaned_raw_md), str(cleaned_md),
+                 "--context", str(ctx_path), "--model", args.translate_model])
+            phase_b_stats = {"engine": "agy", "model": args.translate_model,
+                             "mode": "translate-en-zhTW", "status": "done",
+                             "alignment": "paragraph 1:1 (E3)"}
+        except subprocess.CalledProcessError as e:
+            cleaned_md.write_text(cleaned_raw_md.read_text(encoding="utf-8"), encoding="utf-8")
+            phase_b_stats = {"engine": "agy", "status": "failed", "error": str(e)}
+            if engine in ("claude", "gemini", "copilot"):
+                marker_path = sdir / ".phase_b_pending.json"
+                marker_path.write_text(json.dumps({
+                    "stage": "phase-b",
+                    "engine": engine,
+                    "input_file": str(cleaned_raw_md.relative_to(PROJECT_ROOT)),
+                    "output_file": str(cleaned_md.relative_to(PROJECT_ROOT)),
+                    "rules_ref": "CLAUDE.md Gotcha #6(cleaned.md 翻譯例外)+ § 核心鐵律",
+                    "context_file": str(ctx_path.relative_to(PROJECT_ROOT)),
+                    "instructions": (
+                        f"agy 翻譯失敗,Phase B 待 {engine} agent 接手。先重試 "
+                        f"`python3 scripts/lang/en/agy_zhtw.py {cleaned_raw_md.name} {cleaned_md.name}`;"
+                        "仍失敗則由 agent 親譯:忠實翻成 zh-TW、零省略、段落 1:1、段間插 ## 標題。"
+                        "完成後刪本 marker。"),
+                    "created_at": dt.datetime.now().isoformat(timespec="seconds"),
+                }, ensure_ascii=False, indent=2), encoding="utf-8")
+                phase_b_stats.update(status="pending_agent_handoff", marker_file=marker_path.name)
+                print(f"[session] agy 翻譯失敗,Phase B 待 {engine} agent 接手: "
+                      f"{marker_path.relative_to(PROJECT_ROOT)}", file=sys.stderr)
+
+    elif do_phase_b:
         plain = _srt_to_plain(cleaned_srt)
         in_m = count_chars(plain)
 
@@ -298,7 +357,7 @@ def new_session(args):
             tmp_in.write_text(plain, encoding="utf-8")
             try:
                 # session.py 已做過 engine routing(原則 5),帶 --force-api 通過守門
-                cmd = ["python3", str(PHASE_B_SCRIPT), str(tmp_in),
+                cmd = [PY, str(PHASE_B_SCRIPT), str(tmp_in),
                        "-o", str(cleaned_md), "--mode", "merged", "--force-api"]
                 if ctx_text:
                     cmd += ["--context", str(ctx_path)]
@@ -387,7 +446,7 @@ def new_session(args):
             # 全形化(§ R7.1)是確定性的,任何 engine 都能直接做;冒號(§ R7.2)/hook(§ R8)
             # 屬判斷,沒有對話 agent 無法完成 → 標 pending,出版閘(prepublish_gate.py)會擋。
             try:
-                run(["python3", str(NORMALIZE_SCRIPT), str(cleaned_md), "--in-place"])
+                run([PY, str(NORMALIZE_SCRIPT), str(cleaned_md), "--in-place"])
                 phase_c_stats = {"engine": engine, "status": "fullwidth_done_colon_pending",
                                  "note": "§ R7.1 全形化已跑;§ R7.2 冒號需判斷,無 agent 未完成"}
             except subprocess.CalledProcessError as e:
@@ -509,7 +568,7 @@ def new_session(args):
 
         elif engine == "api":
             try:
-                cmd = ["python3", str(PHASE_B_SCRIPT), str(cleaned_md),
+                cmd = [PY, str(PHASE_B_SCRIPT), str(cleaned_md),
                        "-o", str(enhanced_md), "--mode", "enhance", "--force-api"]
                 if args.keywords:
                     cmd += ["--keywords", args.keywords]
@@ -571,7 +630,7 @@ def new_session(args):
 
         elif engine == "api":
             try:
-                cmd = ["python3", str(PHASE_B_SCRIPT), str(source_md),
+                cmd = [PY, str(PHASE_B_SCRIPT), str(source_md),
                        "-o", str(notes_md), "--mode", "notes",
                        "--identity", args.identity, "--force-api"]
                 if ctx_text:
@@ -622,7 +681,8 @@ def new_session(args):
             "source": src_link.name,
             "context": ctx_path.name,
             "transcript_srt": transcript.name,
-            "cleaned_srt": cleaned_srt.name,
+            "cleaned_srt": cleaned_srt.name if cleaned_srt else None,
+            "cleaned_raw_md": cleaned_raw_md.name if cleaned_raw_md.exists() else None,
             "cleaned_md": cleaned_md.name if cleaned_md.exists() else None,
             "enhanced_md": enhanced_md.name if (enhanced_md and enhanced_md.exists()) else None,
             "notes_md": notes_md.name if (notes_md and notes_md.exists()) else None,
@@ -699,6 +759,11 @@ def main():
                           "claude|gemini|copilot: agent接手, 不打 API; "
                           "api: 走 Gemini API (純 shell/cron 用); "
                           "none: 跳過所有 LLM 步驟,只到 Phase A")
+    new.add_argument("--lang", choices=["auto", "zh", "en"], default="auto",
+                     help="音檔語言(預設 auto:Whisper 自動偵測 + 逐字稿 CJK 比例判斷)。"
+                          "en → 原文轉錄、srt_clean_md 清理,Phase B 以 agy headless 翻成 zh-TW")
+    new.add_argument("--translate-model", default="gemini-3.8-flash-medium",
+                     help="英文場 Phase B 翻譯用的 agy 模型(`agy models` 可列)")
     new.add_argument("--dry-run", action="store_true",
                      help="Just print engine routing decision and exit (no Groq/no API)")
 
