@@ -1,0 +1,33 @@
+{
+  "slug": "bim-mcp-10",
+  "title": "MCP 十月小聚",
+  "subtitle": "MCP 功能開發 × AU2026 — 三場分享",
+  "shelf": "reading",
+  "state": "A",
+  "recommended_mode": "multipage",
+  "sources": [
+    "2026-10-24_mcp10-01-yang-shang-lin",
+    "2026-10-24_mcp10-02-lo-chia-hsiang",
+    "2026-10-24_mcp10-03-lu-chi-ming"
+  ],
+  "speakers": [
+    {
+      "category": "整合平台",
+      "name": "楊尚霖",
+      "full": "楊尚霖 老師（ARCHWIZ 建巫資訊）",
+      "talk": "從 MCP，走到整合平台"
+    },
+    {
+      "category": "營建落地",
+      "name": "羅嘉祥",
+      "full": "羅嘉祥 老師",
+      "talk": "符合實務流程的 AI 落地：從溝通加速到剖面、標注與粉刷表"
+    },
+    {
+      "category": "Dynamo",
+      "name": "呂啟銘",
+      "full": "呂啟銘 老師",
+      "talk": "Dynamo Switchboard 與 Dynamo Automation：AI 時代 Dynamo 的定位"
+    }
+  ]
+}
