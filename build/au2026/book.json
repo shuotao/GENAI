@@ -1,7 +1,7 @@
 {
   "slug": "au2026",
   "title": "AU2026 年會",
-  "subtitle": "十三場實錄 · 從 AI 驅動工程到 BIM、MCP 與代理式工作流",
+  "subtitle": "十四場實錄 · 從 AI 驅動工程到 BIM、MCP 與代理式工作流",
   "shelf": "seminar",
   "state": "A",
   "recommended_mode": "multipage",
@@ -18,7 +18,8 @@
     "09_17__1000_CS3038",
     "09_17__1130_AS2669",
     "09_17__1500_AU4258",
-    "09_15__0600_AS1569"
+    "09_15__0600_AS1569",
+    "09_15__0600_PLT3523"
   ],
   "speakers": [
     {
@@ -98,6 +99,12 @@
       "name": "Phuc Le",
       "full": "Phuc Le（Ken，Autodesk Vietnam Account Technical Lead）",
       "talk": "多 AI 代理的 BIM 編排：為 Revit 打造自主的查詢、檢查、修正迴圈"
+    },
+    {
+      "category": "原生互通性",
+      "name": "Ram Hari、Srinivasan Venkatakrishnan",
+      "full": "Ram Hari、Srinivasan Venkatakrishnan（SrinSoft）",
+      "talk": "運用 AI 在共享領域資料時實現原生互通性"
     }
   ],
   "venue": "Autodesk University 2026 · Las Vegas",
