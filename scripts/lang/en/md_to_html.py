@@ -29,22 +29,26 @@ def _is_video(src):
 
 
 def _video_figure(alt, src):
-    """把 ![caption|poster=xxx.jpg|portrait](file.mp4) 轉成點擊播放的 <video> figure。
-    poster= 必填(缺封面的影片不得進發布);portrait 加直向壓高 class。"""
+    """把 ![caption|poster=xxx.jpg|portrait|loop](file.mp4) 轉成點擊播放的 <video> figure。
+    poster= 必填(缺封面的影片不得進發布);portrait 加直向壓高 class;
+    loop = 無聲示範片段:自動播放 + 循環(瀏覽器只允許 muted 的 autoplay)。"""
     parts = [p.strip() for p in alt.split("|")]
     caption = parts[0] if parts else ""
-    poster, portrait = "", False
+    poster, portrait, loop = "", False, False
     for p in parts[1:]:
         if p.lower().startswith("poster="):
             poster = p.split("=", 1)[1].strip()
         elif p.lower() == "portrait":
             portrait = True
+        elif p.lower() == "loop":
+            loop = True
     if not poster:
         raise SystemExit(f"[md_to_html] 影片缺少 poster= metadata,拒絕發布:{src}")
     cls = "kc-video portrait" if portrait else "kc-video"
     cap = "" if caption.lower() in _PLACEHOLDER_ALT else f'\n        <figcaption>{esc(caption)}</figcaption>'
+    attrs = "autoplay muted loop playsinline preload=\"auto\"" if loop else "controls preload=\"metadata\" playsinline"
     return (f'      <figure class="{cls}">\n'
-            f'        <video controls preload="metadata" playsinline poster="{esc(poster)}">\n'
+            f'        <video {attrs} poster="{esc(poster)}">\n'
             f'          <source src="{esc(src)}" type="video/mp4">\n'
             f'          您的瀏覽器不支援 HTML5 影片。\n'
             f'        </video>{cap}\n'
