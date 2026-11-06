@@ -1,7 +1,7 @@
 {
   "slug": "au2026",
   "title": "AU2026 年會",
-  "subtitle": "十五場實錄 · 從 AI 驅動工程到 BIM、MCP 與代理式工作流",
+  "subtitle": "十七場實錄 · 從 AI 驅動工程到 BIM、MCP 與代理式工作流",
   "shelf": "seminar",
   "state": "A",
   "recommended_mode": "multipage",
@@ -20,7 +20,9 @@
     "09_17__1500_AU4258",
     "09_15__0600_AS1569",
     "09_15__0600_PLT3523",
-    "09_15__0600_BES1043"
+    "09_15__0600_BES1043",
+    "09_15__0600_CES1396",
+    "09_15__0600_MFG2758"
   ],
   "speakers": [
     {
@@ -112,6 +114,18 @@
       "name": "Zachary Bratcher",
       "full": "Zachary Bratcher（DBR Engineering AI Integrator）",
       "talk": "從模型到圖面：在 Revit 中自動產生電氣單線圖"
+    },
+    {
+      "category": "AutoCAD Electrical × vibe coding",
+      "name": "Shinu Mathew",
+      "full": "Shinu Mathew（Autodesk Principal Business Consultant）",
+      "talk": "AutoCAD Electrical 遇上 vibe coding：不靠 DAX 與 M 專業，打造複雜儀表板"
+    },
+    {
+      "category": "AutoCAD Electrical 標準化",
+      "name": "Melissa Vrobel、Luke Van Hecke",
+      "full": "Melissa「Mel」Vrobel、Luke Van Hecke（FTI）",
+      "talk": "只要告訴它怎麼做，AutoCAD Electrical 就能好好運作"
     }
   ],
   "venue": "Autodesk University 2026 · Las Vegas",
