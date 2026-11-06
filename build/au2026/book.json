@@ -1,7 +1,7 @@
 {
   "slug": "au2026",
   "title": "AU2026 年會",
-  "subtitle": "十四場實錄 · 從 AI 驅動工程到 BIM、MCP 與代理式工作流",
+  "subtitle": "十五場實錄 · 從 AI 驅動工程到 BIM、MCP 與代理式工作流",
   "shelf": "seminar",
   "state": "A",
   "recommended_mode": "multipage",
@@ -19,7 +19,8 @@
     "09_17__1130_AS2669",
     "09_17__1500_AU4258",
     "09_15__0600_AS1569",
-    "09_15__0600_PLT3523"
+    "09_15__0600_PLT3523",
+    "09_15__0600_BES1043"
   ],
   "speakers": [
     {
@@ -105,6 +106,12 @@
       "name": "Ram Hari、Srinivasan Venkatakrishnan",
       "full": "Ram Hari、Srinivasan Venkatakrishnan（SrinSoft）",
       "talk": "運用 AI 在共享領域資料時實現原生互通性"
+    },
+    {
+      "category": "電氣單線圖自動化",
+      "name": "Zachary Bratcher",
+      "full": "Zachary Bratcher（DBR Engineering AI Integrator）",
+      "talk": "從模型到圖面：在 Revit 中自動產生電氣單線圖"
     }
   ],
   "venue": "Autodesk University 2026 · Las Vegas",
