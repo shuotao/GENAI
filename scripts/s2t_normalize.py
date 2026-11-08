@@ -11,7 +11,8 @@ Whisper 的「繁體中文」語言先驗,輸出會片段性漂移成簡體(2026
     用語一起換掉,等於改動講者原話,違反零省略/不改語意。
   - 台灣標準字形:為(非「爲」)、裡(非「裏」)、群(非「羣」)。`s2t` 會誤把
     原本就正確的「群」轉成「羣」,故不可用。
-  - 對已是正體的檔案是 no-op,可安全重跑。
+  - **只動「僅簡體字」**(本身不是任何正體字的字),且只在含這類字的行內動;正體原文
+    (含「干預」「後台」等兩可字)一律不變 → 可安全地對整份檔案自動跑(session.py 在 Phase A 後自動執行)。
 
 原則 1:`transcript.srt` 不可變 —— 本工具**拒絕**處理 transcript.srt。
 
@@ -41,14 +42,47 @@ except ImportError:
 KEEP_AS_IS = frozenset("台只了面")
 
 
-def normalize(text: str) -> str:
-    out = opencc.OpenCC("s2tw").convert(text)
+def _load_dict(name):
+    """OpenCC 套件自帶字典:每行 `來源\t目標1 目標2 …`。"""
+    d = {}
+    path = Path(opencc.__file__).resolve().parent / "dictionary" / name
+    for line in path.read_text(encoding="utf-8").splitlines():
+        if "\t" in line:
+            src, tgt = line.split("\t", 1)
+            d[src] = tgt.split()
+    return d
+
+
+def _simplified_only():
+    """「僅簡體字」:簡→繁字典的來源字,且本身不是任何正體字(不在繁→簡的來源、也不在簡→繁的目標)。
+    例:预/这/头/发/统 在內;干/后/台/只/了/面/制/系 不在(它們本身也是合法正體字)。"""
+    st, ts = _load_dict("STCharacters.txt"), _load_dict("TSCharacters.txt")
+    trad = set(ts) | {t for targets in st.values() for t in targets}
+    return frozenset(s for s, t in st.items() if s not in trad and t != [s])
+
+
+SIMPLIFIED_ONLY = _simplified_only()
+_CONVERTER = opencc.OpenCC("s2tw")
+
+
+def normalize_unit(text: str) -> str:
+    """一個 cue / 一行。只有含「僅簡體字」才轉(證明它漂移了);且只接受「原字 ∈ 僅簡體字」那些位置的
+    變更 —— 正體原文裡的「干預」「後台」「了解」永遠不會被動到(2026-11-08 審查:整檔 s2tw 會把
+    正體「干預」改成「幹預」)。轉換仍用 s2tw 的詞組字典,所以「干预」→「干預」、「头发」→「頭髮」正確。"""
+    if not any(c in SIMPLIFIED_ONLY for c in text):
+        return text
+    out = _CONVERTER.convert(text)
     if len(out) != len(text):
         return out  # 交由呼叫端的長度檢查中止
-    return "".join(
-        src_c if src_c in KEEP_AS_IS else out_c
-        for src_c, out_c in zip(text, out)
-    )
+    # 不變式:只改「本身不是任何正體字」的字 → 正確的正體原文永遠不會被改壞。
+    # 兩可字(据/干/后/里…)一律不動,即使在漂移行內(「数据」→「數据」、「头发干」的「干」不猜乾/幹),
+    # 交 Phase B 依語意改(§ R2.1)。2026-11-08 第三輪審查:用鄰字推斷兩可字會把「头发干」改成「頭髮幹」。
+    return "".join(o if (c in SIMPLIFIED_ONLY and c not in KEEP_AS_IS) else c for c, o in zip(text, out))
+
+
+def normalize(text: str) -> str:
+    """逐行處理(SRT 每個 cue 的文字是一行;md 每段一行)。行數與每行長度不變 → 時間軸不受影響。"""
+    return "\n".join(normalize_unit(line) for line in text.split("\n"))
 
 
 def main() -> int:

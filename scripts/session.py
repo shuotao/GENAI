@@ -210,6 +210,25 @@ def new_session(args):
         (sdir / "metadata.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2),
                                             encoding="utf-8")
         sys.exit(3)
+    # 覆蓋率閘門報告(groq_transcribe.py 寫 <stem>.transcribe_report.json)→ 併入 metadata
+    groq_report = sdir / "source.transcribe_report.json"
+    transcribe_unresolved = []
+    if groq_report.exists():
+        rep = json.loads(groq_report.read_text(encoding="utf-8"))
+        groq_report.rename(sdir / "transcribe_report.json")
+        transcribe_unresolved = rep.get("unresolved", [])
+        meta["transcription"] = {
+            "prompt_mode": rep.get("prompt_mode"),
+            "coverage_fallback": rep.get("coverage_fallback"),
+            "gate_version": rep.get("gate_version"),
+            "chunks_selected": {str(c.get("chunk")): c.get("selected") for c in rep.get("chunks", [])},
+            "unresolved_chunks": [u["chunk"] for u in transcribe_unresolved],
+            "review_ranges": sum(len(u.get("review_ranges", [])) for u in transcribe_unresolved),
+            "report": "transcribe_report.json",
+        }
+        if transcribe_unresolved:
+            print(f"[session] ⚠ transcription coverage: chunk(s) {[u['chunk'] for u in transcribe_unresolved]} "
+                  f"flagged — see transcribe_report.json (Phase B marker carries the pointer)", file=sys.stderr)
     groq_secs = round(time.time() - t0, 1)
     print(f"[session] transcript.srt saved ({transcript.stat().st_size} bytes, "
           f"{groq_secs}s)")
@@ -222,6 +241,16 @@ def new_session(args):
     if args.domain:
         cmd += ["--domain", args.domain]
     run(cmd)
+
+    # 不送 prompt 的轉錄會片段性漂移成簡體(gotchas #7/#8)→ 確定性字形正規化(原則 6)。
+    # 只碰 cleaned.srt;transcript.srt 不可變(原則 1)。對已是正體的檔案是 no-op。
+    s2t = PROJECT_ROOT / "scripts" / "s2t_normalize.py"
+    if s2t.exists():
+        try:
+            run(["python3", str(s2t), str(cleaned_srt), "--in-place"])
+        except subprocess.CalledProcessError as e:
+            print(f"[session] ⚠ s2t_normalize failed ({e}); Phase B must fix 簡體字形 (§ R2.1)",
+                  file=sys.stderr)
 
     phase_a_metrics = srt_effective_chars(cleaned_srt)
 
@@ -268,7 +297,12 @@ def new_session(args):
                 "target_chinese_chars_min": target_lo,
                 "target_chinese_chars_max": target_hi,
                 "context_file": str(ctx_path.relative_to(PROJECT_ROOT)),
+                "transcribe_review": ("transcribe_report.json" if transcribe_unresolved else None),
                 "instructions": (
+                    ("轉錄覆蓋率有疑點:先讀 transcribe_report.json 的 unresolved —— gaps 對照音訊確認"
+                     "是否真靜音;review_ranges 是另一版在該區間轉出的原文(可能是真語音,也可能是 "
+                     "prompt-echo 幻覺),判斷為真語音才補入並記入 corrections.json。"
+                     if transcribe_unresolved else "") +
                     f"Phase B 待 {engine} agent 接手。讀 {cleaned_md.name} 純文字版,套 "
                     "CLAUDE.md 的 Phase B 規則(零省略、合併斷行、加標點接續詞、加 ## 標題、"
                     f"中文字數落在 {target_lo}-{target_hi} 區間),寫回 {cleaned_md.name}。"
@@ -605,6 +639,7 @@ def new_session(args):
             "context_bytes": len(ctx_text.encode("utf-8")),
             "original_chars_no_space": original_metrics["no_space"],
             "original_chinese_chars": original_metrics["chinese"],
+            **meta.get("transcription", {}),   # 覆蓋率閘門摘要(prompt_mode / unresolved…)
         },
         "qaqc": {
             "phase_a_chars_no_space": phase_a_metrics["no_space"],

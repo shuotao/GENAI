@@ -9,10 +9,10 @@
 
 這幾個是本專案實際開發時踩過的坑,寫下來避免重蹈:
 
-1. **Groq Whisper prompt 有 896 字元上限**(characters,**不是 bytes**)
-   - 2026-05 實測 400 訊息:`prompt length must be 896 characters or fewer, but provided prompt contains 931 characters` → Groq 數的是**字元數**
-   - **歷史更正**:本條原寫「896 bytes / ≤290 中文字」,是 2026-04 第一次踩錯時的誤判。byte 上限只是字元上限的更嚴格子集 → 舊的 byte 裁切**不會 400**,但會把中文 context 砍到只剩 ~290 字,白白浪費 ⅔ 容量、減少送進 Whisper 的領域詞、降低辨識品質
-   - 解法:送 Groq 前確認整段 prompt(base + 內容包含 + context + 。)**≤ 896 字元**(中文用 `wc -m`,不是 `wc -c`)。CLI `groq_transcribe.py:truncate_prompt` 與 Web `studio.js:callGroqWhisper` 已統一按字元裁切
+1. **Groq Whisper prompt 有 896 上限 —— 現在以 UTF-8 bytes 計(2026-11-08 再更正)**
+   - **2026-11-08 實測**(同一把 key、3 秒音檔):`'a'*900` → 報 900;`'中'*300` → 報 **900**;`'中'*900` → 報 2700;一段 473 字元的中英混合 prompt → 報 **989** = 它的 UTF-8 byte 數。中文約 **298 字**即滿。
+   - **歷史**:2026-04 首次寫「896 bytes」;2026-05 實測訊息為「931 characters」而改成按**字元**裁;到 2026-11 Groq 口徑已變回 bytes(訊息仍寫 "characters"),按字元裁的 473 字 prompt 直接 400、整場轉錄中止。
+   - **解法(已內建)**:**永遠按 UTF-8 bytes 裁**,在字元邊界截斷 —— bytes ≥ 字元,所以不論 Groq 用哪種口徑都不會 400。CLI `groq_transcribe.py:truncate_prompt(max_bytes=896)`、Web `studio.js:truncateUtf8/buildGroqPrompt` 同口徑,由 `scripts/tests/test_groq_coverage.py` 守門(含 JS 對照)。人工檢查用 `wc -c`,不是 `wc -m`。
 
 2. **macOS APFS 是 case-insensitive filesystem**
    - `Gemini.md` 與 `GEMINI.md` 視為同一 inode
@@ -49,5 +49,15 @@
    - **代價與補償**:無 prompt 會失去專名先驗(如 Open Data→「Open Beta」),改由 Phase B 依 `context.txt` + 官方議程校正(核心鐵律 F1)。**字數門要記得放行**:ASR base 被幻覺灌水時 95–105% 的分母無效,真門是 `build_book_master` 的 self_assert(≥99.5%)與 `publish_qaqc` 字數漂移(<10%)。
    - **副作用:簡體漂移(2026-08-29 引入)**。拿掉 prompt 等於同時拿掉 Whisper 的「繁體中文」語言先驗,輸出會片段性漂移成簡體(MCP8 場 03:11,272 CJK 中 1,059 字為簡體)。這是**確定性字元對映,不該勞動 LLM 逐字改**(原則 6)→ 重轉後、進 Phase B 前跑 `python3 scripts/s2t_normalize.py sessions/<slug>/cleaned.md sessions/<slug>/cleaned.srt --in-place`(OpenCC `s2tw`,只換字形不換詞彙;`transcript.srt` 不可變,工具會自行拒絕)。
 
----
+8. **帶 prompt 的 Whisper 會「靜默漏句」—— 不是幻覺,是整段語音不見(2026-11-08)**
+   - **症狀**:安靜的會議廳、講者清楚,SRT 卻出現一段段 **20 秒級空白**,沒有任何錯誤或亂碼,字數只是「偏少」。與 #7 相反:#7 是 prompt 被吐回來**灌水**,這裡是 prompt 讓 Whisper **跳過**語音。比 #7 更難發現,因為內容讀起來是通順的。
+   - **實證**(2026 AI FORUM 許鈞湞場,16.5 分鐘,同一音檔四種設定):有 prompt 600s → 2,279 中文字、9 段空白共 192s;有 prompt 300s → **1,459 字**、17 段共 383s;無 prompt 600s → 3,515 字;無 prompt 300s → 3,545 字(兩者都只剩開場 16s 靜音)。**原因是 prompt,不是切段長度**;付費方案與額度無關。漏掉的是實質內容(例:「1MW 造價大概五億新台幣、兩年後 5.5 到 6 億」整段不在)。
+   - **再驗證**:只送一句 base prompt(「這是一段…繁體中文錄音。」、不帶 context)仍是 2,657 字、4 段 ~20s 空白 → **任何 prompt 都會觸發**。
+   - **解方(已內建,2026-11-08 起為預設)**:`groq_transcribe.py` **主轉錄不送 prompt**(`GROQ_PROMPT_MODE=plain`)。每段量覆蓋率(相鄰句 ≤6s 視為連續;段內空白 ≥12s、空白總長 >10%、時長未知、無文字、時間戳不合法、單句 ≥30s 且 <0.5 字/秒 → 可疑),可疑段**帶 prompt 再轉一次當診斷對照**:對照版多出來的時間區間寫進 `transcribe_report.json` 的 `review_ranges`(附原文),**不自動換版** —— 靜音處的 prompt 版內容可能正是 #7 的 prompt-echo 幻覺,交 Phase B agent 對照音訊判斷(Phase B marker 會帶指引)。`session.py` 在 Phase A 後自動跑 `s2t_normalize.py` 處理簡體漂移,並把摘要併入 `metadata.json.transcription`。
+   - **簡體漂移的自動修正有不變式**:`s2t_normalize.py` 只改「本身不是任何正體字」的字(由 OpenCC 套件字典導出的 3,804 字 `SIMPLIFIED_ONLY`),且只在含這類字的行內動;兩可字(据/干/后/里…,本身也是正體字)**永不自動改**,交 Phase B(§ R2.1)。早期版本整檔套 s2tw 會把正體「干預」改成「幹預」;用鄰字推斷兩可字會把「头发干」改成「頭髮幹」—— 兩者都被審查擋下。代價:「数据」只會修成「數据」,剩下的「据」由 Phase B 補。
+   - **時間戳**:輸出前以整數毫秒修補(不合法/倒退/超出段長/<1ms),文字一律保留,每筆修補的原值與寫出值記在報告 `timestamp_adjustments`(句尾超出段長 ≤1s 屬 Whisper 常態,只記不報)。
+   - **設計取捨**(terra 六輪審查 → sol 規格 → Fable 顧問,2026-11-08;第六輪 PASS):不做「兩版區間合併」(句界不對齊會產生半句重複,補進來的又常是幻覺);不擴大到 <6s 的漏句(與換氣停頓不可分)。閘門**只能找疑點,不能證明零省略**。
+   - **其他模式**:`GROQ_PROMPT_MODE=prompted`(舊行為,主轉錄帶 prompt;以區間差集「多覆蓋 ≥5s 且少覆蓋 ≤1s」才換成無 prompt 版)、`off`(= 舊 `GROQ_NO_PROMPT=1`,只轉一次);`GROQ_COVERAGE_FALLBACK=0` 關閉對照轉錄(可疑段標 `second_read_disabled`)。快取綁音訊 hash + 請求設定 + 閘門版本,對照轉錄失敗時保留快取,重跑只補那一次呼叫。Web `studio.js:transcribeWithCoverage` 同門檻同語義,`transcribe_report.json` 進 Session ZIP。守門:`scripts/tests/test_groq_coverage.py`(含 node 對照)。
+   - **人工自查**:SRT 相鄰 cue 間隔 >6s 的段數、以及「中文字/分鐘」(正常演講約 200 字/分以上;這場有 prompt 只有 138)。
 
+---

@@ -501,7 +501,7 @@ Whisper 的幻覺集中在**靜音/音樂/掌聲/休息/開場墊場**等非語�
 - **寫入**:由使用者在呼叫 CLI 時透過 `--context` 提供,或 Web 端 Step 1 textarea 填寫
   - **活動/年會場次的 context 必須包含每位講者人名、公司/產品名、講題核心專名**(ASR 對專名最不可靠,見核心鐵律 F1;實證 2026-07-11:day2 四場 28 條誤聽全是 context 沒涵蓋的專名)。
 - **儲存**:`sessions/<slug>/context.txt`(本 session 專屬)
-- **讀取**:Groq 轉錄時作為 Whisper prompt(注意 896 **字元**上限,見 Common Gotchas #1);Phase B 時作為專名校正參考
+- **讀取**:Groq 轉錄時作為 Whisper prompt(注意 896 上限**以 UTF-8 bytes 計**,中文約 298 字,見 Common Gotchas #1;帶 prompt 可能靜默漏句,已由覆蓋率閘門自動補救,見 #8);Phase B 時作為專名校正參考
 - **生命週期結束**:session 結束,context 就封存在該 session 目錄內,**絕不被下一個 session 自動沿用**
 
 **過去問題案例**:`SRT/context.txt` 長駐專案,是上個 PicCollage meetup 的殘留,卻在處理育兒主題音檔時被自動當 prompt,汙染辨識。升級後此 fallback 已移除(`groq_transcribe.py:129-136`)。
@@ -531,7 +531,7 @@ Whisper 的幻覺集中在**靜音/音樂/掌聲/休息/開場墊場**等非語�
 ---
 
 > **Common Gotchas(實戰事故紀錄,append-only)** 已移出至 [`docs/gotchas.md`](./docs/gotchas.md)。
-> 內含:Groq 896 字元上限、APFS 大小寫、dict-loader 需 HTTP、LLM 讀 SRT 會動時間軸、
+> 內含:Groq 896 上限(UTF-8 bytes)、**帶 prompt 靜默漏句與覆蓋率閘門**、APFS 大小寫、dict-loader 需 HTTP、LLM 讀 SRT 會動時間軸、
 > EXIF 轉正、轉錄語言不要硬指定、**吵雜場地的 prompt-echo 幻覺與兩層偵測**。
 > 動手前若涉及上述任一主題,先讀該檔。
 

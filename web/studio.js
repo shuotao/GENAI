@@ -228,6 +228,11 @@ async function downloadSessionZip(sessionSlug) {
 
     // Core artifacts (only include files that exist in current state)
     if (srtContent) folder.file('transcript.srt', srtContent);
+    if (transcribeReport.length) folder.file('transcribe_report.json', JSON.stringify({
+        source: 'web-studio', prompt_mode: 'plain', chunks: transcribeReport,
+        unresolved: transcribeReport.filter(r => r.unresolved_reasons.length)
+            .map(r => ({ chunk: r.chunk, reasons: r.unresolved_reasons, gaps: r.gaps, review_ranges: r.review_ranges, invalid_segments: r.invalid_segments, timestamp_adjustments: r.timestamp_adjustments })),
+        note: '閘門只能找疑點,不能證明零省略(docs/gotchas.md #8)' }, null, 2));
     if (cleanedMd) folder.file('cleaned.md', cleanedMd);
     if (enhancedMd) folder.file('enhanced.md', enhancedMd);
     if (notesMd) {
@@ -279,6 +284,10 @@ async function downloadSessionZip(sessionSlug) {
             context_bytes: new TextEncoder().encode(ctx).length,
             original_chars_no_space: rawM.no_space,
             original_chinese_chars: rawM.chinese,
+            prompt_mode: 'plain',
+            status: transcribeFailed ? 'failed' : (srtContent ? 'ok' : null),
+            unresolved_chunks: transcribeReport.filter(r => r.unresolved_reasons.length).map(r => r.chunk),
+            report: transcribeReport.length ? 'transcribe_report.json' : null,
         },
         qaqc: {
             phase_a_chars_no_space: rawM.no_space,
@@ -343,10 +352,12 @@ function makeSessionSlug() {
 }
 
 function formatSrtTime(sec) {
-    const h = Math.floor(sec / 3600);
-    const m = Math.floor((sec % 3600) / 60);
-    const s = Math.floor(sec % 60);
-    const ms = Math.floor((sec % 1) * 1000);
+    // 先四捨五入到整數毫秒再格式化(與 CLI format_srt_time 同;浮點截斷會把 1.001 寫成 1,000)
+    const total = Math.max(0, Math.round(sec * 1000));
+    const h = Math.floor(total / 3600000);
+    const m = Math.floor((total % 3600000) / 60000);
+    const s = Math.floor((total % 60000) / 1000);
+    const ms = total % 1000;
     return `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')},${String(ms).padStart(3,'0')}`;
 }
 
@@ -372,6 +383,21 @@ function showResult(stepN) {
     $(`res-${stepN}`).classList.add('show');
 }
 
+let transcribeReport = [];   // 每段覆蓋率決策(匯出 ZIP 時寫 transcribe_report.json)
+let transcribeFailed = false;  // 本次轉錄失敗(空結果)→ ZIP metadata 標 status: failed
+// 換上新逐字稿(轉錄成功、空結果失敗或貼上)時,上一份稿的下游產物都作廢,不得混進同一個 ZIP
+function addTranscribeDiagnosticsLink(report, reason) {
+    const btn = document.createElement('button');
+    btn.className = 'btn btn-secondary';
+    btn.textContent = '⬇ 下載本次轉錄診斷(transcribe_report.failed.json)';
+    btn.addEventListener('click', () => downloadFile('transcribe_report.failed.json', JSON.stringify({
+        source: 'web-studio', status: 'failed', reason, chunks: report,
+        note: '本次轉錄未完成;此報告不屬於畫面上的(上一份)逐字稿' }, null, 2)));
+    $('prog-1-lines').appendChild(btn);
+}
+function resetDownstreamArtifacts() {
+    rawCleaned = ''; cleanedMd = ''; enhancedMd = ''; notesMd = ''; imageNotesPngs = [];
+}
 function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
 
 // ─────────────────────────────────────────────────────────
@@ -558,7 +584,7 @@ async function fileToMp3Segments(file) {
     for (let s = 0; s < nSeg; s++) {
         const slice = int16.subarray(s * segSamples, Math.min((s + 1) * segSamples, int16.length));
         const blob = encodePcmToMp3(slice, SR);
-        jobs.push({ blob, timeOffset: s * SEG_SEC, filename: 'audio.mp3', bytes: blob.size });
+        jobs.push({ blob, timeOffset: s * SEG_SEC, duration: slice.length / SR, filename: 'audio.mp3', bytes: blob.size });
     }
     return { jobs, duration: mono.duration };
 }
@@ -567,13 +593,28 @@ async function fileToMp3Segments(file) {
 //  Groq Whisper API
 // ─────────────────────────────────────────────────────────
 
-// Build the Whisper prompt for a given language mode. Groq prompt 上限 896 字元。
+// Groq prompt 上限 896 —— 以 UTF-8 bytes 計(2026-11-08 實測:'中'*300 → 報 900)。
+// 與 CLI groq_transcribe.py:truncate_prompt 同口徑;在字元邊界截斷。
+const GROQ_PROMPT_MAX_BYTES = 896;
+function truncateUtf8(str, maxBytes) {
+    const enc = new TextEncoder();
+    if (enc.encode(str).length <= maxBytes) return str;
+    let out = '', used = 0;
+    for (const ch of str) {           // for..of 走 code point,不切壞代理對
+        const n = enc.encode(ch).length;
+        if (used + n > maxBytes) break;
+        out += ch; used += n;
+    }
+    return out;
+}
+
+// Build the Whisper prompt for a given language mode.
 // - 'auto':中性 —— 不宣稱任何語言(否則會把自動偵測帶偏),只把使用者 context 當提示詞
 // - 'zh' / 'en':宣稱語言 + 對應語系的 context 框架
 function buildGroqPrompt(language, contextPrompt) {
-    const maxLen = 896;
+    const maxBytes = GROQ_PROMPT_MAX_BYTES;
     if (language === 'auto') {
-        return contextPrompt ? contextPrompt.slice(0, maxLen) : '';
+        return contextPrompt ? truncateUtf8(contextPrompt, maxBytes) : '';
     }
     const profiles = {
         zh: { base: '這是一段繁體中文錄音。', pre: ' 內容包含：', suf: '。' },
@@ -582,14 +623,202 @@ function buildGroqPrompt(language, contextPrompt) {
     const p = profiles[language] || profiles.zh;
     if (!contextPrompt) return p.base;
     const prefix = `${p.base}${p.pre}`;
-    const budget = maxLen - prefix.length - p.suf.length;
-    const trimmed = budget > 0 ? contextPrompt.slice(0, budget) : '';
+    const enc = new TextEncoder();
+    const budget = maxBytes - enc.encode(prefix).length - enc.encode(p.suf).length;
+    const trimmed = budget > 0 ? truncateUtf8(contextPrompt, budget) : '';
     return `${prefix}${trimmed}${p.suf}`;
 }
 
-async function callGroqWhisper(audioBlob, apiKey, contextPrompt, filename, language) {
+// ── 覆蓋率閘門(與 CLI groq_transcribe.py 同門檻與同語義;改一邊要改另一邊)──
+// 實證(docs/gotchas.md #8):帶任何 prompt(連一句 base prompt)Whisper 都會靜默跳過整段語音。
+// → 主轉錄一律不送 prompt;可疑段落再帶 prompt 轉一次當「診斷對照」,對照版多出的區間只回報、
+//   不自動換版(靜音處的 prompt 版可能是 prompt-echo 幻覺)。閘門只能找疑點,不能證明零省略。
+const COVERAGE_GAP_SEC = 6.0, COVERAGE_SUSPECT_GAP_SEC = 12.0, COVERAGE_SUSPECT_RATIO = 0.10;
+const COVERAGE_SPARSE_SEG_SEC = 30.0, COVERAGE_SPARSE_DENSITY = 0.5, COVERAGE_REVIEW_MIN_SEC = 1.0;
+const COVERAGE_WS_RE = /[ \t\n\r\f\v\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000\ufeff]+/g;
+// 有限數值;接受 number 與非空白數字字串,拒絕 bool/null/空白/NaN/Infinity(CLI _finite 同規則)
+function covFinite(x) {
+    if (typeof x === 'number') return Number.isFinite(x) ? x : null;
+    if (typeof x === 'string' && x.trim() !== '') { const v = Number(x); return Number.isFinite(v) ? v : null; }
+    return null;
+}
+// 原始時間值寫進報告(CLI _json_safe 同規則):null/bool/string/有限數值原樣;非有限 → "NaN"/"Infinity"
+function covRaw(x) {
+    if (x === undefined || x === null) return null;
+    if (typeof x === 'number') return Number.isFinite(x) ? x : String(x);
+    if (typeof x === 'boolean' || typeof x === 'string') return x;
+    return String(x);
+}
+// 單句時間戳驗證(覆蓋率與輸出共用;CLI seg_times 同規則)
+function covSegTimes(sg, dur) {
+    const a = covFinite(sg.start); let e = covFinite(sg.end);
+    if (a === null || e === null || a < 0 || e <= a || (dur !== null && a >= dur)) return null;
+    if (dur !== null) e = Math.min(e, dur);
+    return [a, e];
+}
+function covValidDuration(...cands) { for (const c of cands) { const v = covFinite(c); if (v !== null && v > 0) return v; } return null; }
+function covTextLen(t) { return Array.from((t || '').replace(COVERAGE_WS_RE, '')).length; }
+function covTotal(iv) { return iv.reduce((n, [a, e]) => n + (e - a), 0); }
+function intervalDiff(A, B) {
+    const out = [];
+    for (const [a, e] of A) {
+        let cur = a, done = false;
+        for (const [b, f] of B) {
+            if (f <= cur || b >= e) continue;
+            if (b > cur) out.push([cur, b]);
+            cur = Math.max(cur, f);
+            if (cur >= e) { done = true; break; }
+        }
+        if (!done && cur < e) out.push([cur, e]);
+    }
+    return out;
+}
+function chunkCoverage(segments, duration) {
+    const dur = covValidDuration(duration);
+    const spans = [], sparse = [], invalidDetails = [];
+    let invalid = 0, chars = 0;
+    for (const [idx, sg] of (segments || []).entries()) {
+        const n = covTextLen(sg.text);
+        if (n === 0) continue;
+        const t = covSegTimes(sg, dur);
+        if (t === null) {
+            invalid++;
+            invalidDetails.push({ index: idx, start: covRaw(sg.start), end: covRaw(sg.end), text: (sg.text || '').trim() });
+            continue;
+        }
+        const [a, e] = t;
+        chars += n;
+        spans.push([a, e]);
+        if (e - a >= COVERAGE_SPARSE_SEG_SEC && n / (e - a) < COVERAGE_SPARSE_DENSITY) sparse.push([a, e]);
+    }
+    spans.sort((x, y) => x[0] - y[0] || x[1] - y[1]);
+    const iv = [];
+    for (const [a, e] of spans) {
+        if (iv.length && a - iv[iv.length - 1][1] <= COVERAGE_GAP_SEC) iv[iv.length - 1][1] = Math.max(iv[iv.length - 1][1], e);
+        else iv.push([a, e]);
+    }
+    if (iv.length && iv[0][0] <= COVERAGE_GAP_SEC) iv[0][0] = 0;
+    if (iv.length && dur !== null && dur - iv[iv.length - 1][1] <= COVERAGE_GAP_SEC) iv[iv.length - 1][1] = dur;
+    const gaps = []; let cursor = 0;
+    iv.forEach(([a, e], i) => { if (a > cursor) gaps.push([cursor, a, i === 0 ? 'lead' : 'interior']); cursor = e; });
+    if (dur !== null && dur > cursor) gaps.push([cursor, dur, 'tail']);
+    const gapTotal = gaps.reduce((n, g) => n + (g[1] - g[0]), 0);
+    const interior = gaps.filter(g => g[2] === 'interior').map(g => g[1] - g[0]);
+    const maxInteriorGap = interior.length ? Math.max(...interior) : 0;
+    const reasons = [];
+    if (dur === null) reasons.push('duration_unknown');
+    if (chars === 0) reasons.push('no_text');
+    if (invalid) reasons.push('invalid_timestamps');
+    if (maxInteriorGap >= COVERAGE_SUSPECT_GAP_SEC) reasons.push('interior_gap');
+    if (dur !== null && gapTotal > COVERAGE_SUSPECT_RATIO * dur) reasons.push('gap_ratio');
+    if (sparse.length) reasons.push('sparse_segment');
+    return { duration: dur, textChars: chars, intervals: iv, gaps, gapTotal, maxInteriorGap,
+             covered: covTotal(iv), invalidSegments: invalid, invalidDetails, sparseSegments: sparse, reasons };
+}
+function coverageSuspicious(c) { return c.reasons.length > 0; }
+function coverageReviewRanges(selCov, otherCov, otherSegments, offset, otherMode) {
+    const out = [];
+    for (const [a, e] of intervalDiff(otherCov.intervals, selCov.intervals)) {
+        if (e - a <= COVERAGE_REVIEW_MIN_SEC) continue;
+        const text = (otherSegments || []).filter(sg => (covFinite(sg.end) || 0) > a && (covFinite(sg.start) || 0) < e && covTextLen(sg.text))
+            .map(sg => (sg.text || '').trim()).join('');
+        out.push({ start: +(a + offset).toFixed(2), end: +(e + offset).toFixed(2), source: otherMode, text });
+    }
+    return out;
+}
+// 輸出用時間戳(與 CLI repair_times 同規則、同 adjustments 格式),以整數毫秒運算:文字一律保留;
+// 不合法 → 緊接上一句長 1s;倒退 → 緊接上一句保留原長;超出段長 → 裁切;< 1ms → 補到 1ms。
+const COVERAGE_MINOR_OVERSHOOT_MS = 1000;
+function covMs(x) { return Math.round(x * 1000); }
+function covRepairTimes(segments, duration) {
+    const dur = covValidDuration(duration);
+    const durMs = dur !== null ? covMs(dur) : null;
+    const rows = [], adj = [];
+    let prevStart = 0, prevEnd = 0;
+    (segments || []).forEach((sg, idx) => {
+        const text = (sg.text || '').trim();
+        if (!text) return;
+        const ra = covFinite(sg.start), re = covFinite(sg.end);
+        const reasons = [];
+        let a, e;
+        if (ra === null || re === null || ra < 0 || re <= ra || (dur !== null && ra >= dur)) {
+            a = prevEnd; e = prevEnd + 1000; reasons.push('invalid');
+        } else {
+            a = covMs(ra); e = covMs(re);
+            if (rows.length && a < prevStart) { const len = e - a; a = prevEnd; e = prevEnd + len; reasons.push('out_of_order'); }
+        }
+        if (durMs !== null && e > durMs) {
+            reasons.push(!reasons.length && e - durMs <= COVERAGE_MINOR_OVERSHOOT_MS ? 'clamp_end_minor' : 'clamp_end');
+            e = durMs;
+        }
+        if (e - a < 1) {
+            e = a + 1;
+            if (durMs !== null && e > durMs) { e = durMs; a = Math.max(0, durMs - 1); }
+            reasons.push('min_length');
+        }
+        if (reasons.length) adj.push({ index: idx, text, original: [covRaw(sg.start), covRaw(sg.end)],
+                                       written: [a / 1000, e / 1000], reason: reasons });
+        rows.push({ start: a / 1000, end: e / 1000, text });
+        prevStart = a; prevEnd = e;
+    });
+    return { rows, adj };
+}
+function covSafeTimes(segments, duration) { return covRepairTimes(segments, duration).rows; }
+function covTimingUnresolved(adj) { return adj.some(x => x.reason.some(r => r !== 'clamp_end_minor')); }
+// 單次 Groq 呼叫 + 重試(網路/逾時/5xx/429;其他 4xx 不重試)。兩次轉錄各自重試,互不重做。
+async function callGroqWithRetry(blob, apiKey, context, filename, language, opts, onLog) {
+    for (let attempt = 1; ; attempt++) {
+        try {
+            return await callGroqWhisper(blob, apiKey, context, filename, language, opts);
+        } catch (err) {
+            const m = err.message || '';
+            const retriable = /逾時|Failed to fetch|NetworkError|network|aborted|Groq API (5\d\d|429)/i.test(m);
+            if (!retriable || attempt >= GROQ_CHUNK_RETRIES) throw err;
+            onLog && onLog(`第 ${attempt} 次失敗(${m.slice(0, 60)}),重試中...`);
+            await sleep(/429/.test(m) ? 5000 * attempt : 2000);
+        }
+    }
+}
+// 轉一段 + 覆蓋率閘門。回傳 { result, report }。knownDuration = 本地已知段長(秒)。
+async function transcribeWithCoverage(blob, apiKey, context, filename, language, knownDuration, offset, onLog) {
+    const primary = await callGroqWithRetry(blob, apiKey, context, filename, language, { noPrompt: true }, onLog);
+    const duration = covValidDuration(knownDuration, primary.duration);
+    const pcov = chunkCoverage(primary.segments, duration);
+    const report = { offset: offset || 0, duration, primary_mode: 'plain', selected: 'plain', second_mode: 'prompted',
+                     second_status: 'not_needed', second_error: null, review_ranges: [], unresolved_reasons: [],
+                     primary: { covered: pcov.covered, gap_total: pcov.gapTotal, text_chars: pcov.textChars, reasons: pcov.reasons } };
+    let reasons = pcov.reasons.slice();
+    if (coverageSuspicious(pcov)) {
+        if (!buildGroqPrompt(language || 'auto', context)) {
+            report.second_status = 'disabled';          // 沒有可送的 prompt,無對照可做
+        } else {
+            onLog && onLog(`⚠ 覆蓋率可疑(${pcov.reasons.join(', ')},空白 ${Math.round(pcov.gapTotal)} 秒),帶提示詞轉一次當對照...`);
+            try {
+                const second = await callGroqWithRetry(blob, apiKey, context, filename, language, {}, onLog);
+                const scov = chunkCoverage(second.segments, duration);
+                report.second_status = 'done';
+                report.second = { covered: scov.covered, gap_total: scov.gapTotal, text_chars: scov.textChars, reasons: scov.reasons };
+                report.review_ranges = coverageReviewRanges(pcov, scov, second.segments, offset || 0, 'prompted');
+            } catch (err) {
+                report.second_status = 'failed';
+                report.second_error = err.message;
+                onLog && onLog(`⚠ 對照轉錄失敗(${err.message.slice(0, 60)}),保留無提示詞版並標記待核對`);
+            }
+        }
+    }
+    if (report.second_status === 'failed' || report.second_status === 'disabled') reasons.push(`second_read_${report.second_status}`);
+    if (report.review_ranges.length) reasons.push('other_version_has_extra_ranges');
+    report.timestamp_adjustments = covRepairTimes(primary.segments, duration).adj;
+    if (covTimingUnresolved(report.timestamp_adjustments)) reasons.push('timestamps_adjusted');
+    report.unresolved_reasons = reasons;
+    report.invalid_segments = pcov.invalidDetails;
+    report.gaps = pcov.gaps.map(([a, e, k]) => [+(a + (offset || 0)).toFixed(2), +(e + (offset || 0)).toFixed(2), k]);
+    return { result: primary, report };
+}
+
+async function callGroqWhisper(audioBlob, apiKey, contextPrompt, filename, language, opts) {
     const lang = language || 'auto';
-    const finalPrompt = buildGroqPrompt(lang, contextPrompt);
+    const finalPrompt = (opts && opts.noPrompt) ? '' : buildGroqPrompt(lang, contextPrompt);
     const fd = new FormData();
     // Direct-send path passes the real filename so Groq detects the format;
     // chunk fallback passes WAV blobs as 'audio.wav'.
@@ -718,8 +947,10 @@ async function runTranscribe() {
 
     const btn = $('btn-transcribe');
     btn.disabled = true;
+    if ($('btn-paste-next')) $('btn-paste-next').disabled = true;   // 轉錄中不允許貼上換稿(非同步結果會蓋掉)
     showProgress(1);
 
+    const jobReport = [];    // 本次任務的報告;與逐字稿一起在成功時提交(不和上一輪混用)
     try {
         const allSegments = [];
         const sizeMB = (file.size / 1024 / 1024).toFixed(1);
@@ -732,12 +963,12 @@ async function runTranscribe() {
             //    不解碼、不重採樣、不手動拼時間軸。 ──
             addProgressLine(1, `⏳ 直接上傳原檔 (${sizeMB}MB) 至 Groq...`, 'run');
             setProgressBar(1, 20);
-            const result = await callGroqWhisper(file, apiKey, context, file.name, language);
+            const { result, report } = await transcribeWithCoverage(file, apiKey, context, file.name, language, null, 0, m => addProgressLine(1, m, 'fail'));
+            report.chunk = 1;
+            jobReport.push(report);
             let idx = 1;
-            for (const seg of (result.segments || [])) {
-                const text = (seg.text || '').trim();
-                if (!text) continue;
-                allSegments.push({ idx: idx++, start: seg.start, end: seg.end, text });
+            for (const seg of covSafeTimes(result.segments, report.duration)) {
+                allSegments.push({ idx: idx++, start: seg.start, end: seg.end, text: seg.text });
             }
             duration = allSegments.length ? allSegments[allSegments.length - 1].end : 0;
             setProgressBar(1, 90);
@@ -758,7 +989,7 @@ async function runTranscribe() {
                 addProgressLine(1, `⚠ MP3 壓縮不可用(${e.message}),改用 WAV 切段`, 'fail');
                 const c = await fileToChunks(file);
                 duration = c.duration;
-                jobs = c.chunks.map((blob, i) => ({ blob, timeOffset: i * CHUNK_DURATION, filename: 'audio.wav', bytes: blob.size }));
+                jobs = c.chunks.map((blob, i) => ({ blob, timeOffset: i * CHUNK_DURATION, duration: Math.min(CHUNK_DURATION, c.duration - i * CHUNK_DURATION), filename: 'audio.wav', bytes: blob.size }));
                 segLabel = '轉錄';
                 addProgressLine(1, `✓ 時長 ${Math.round(duration)}秒，${jobs.length} 段(WAV)`, 'ok');
             }
@@ -767,53 +998,55 @@ async function runTranscribe() {
             let globalIdx = 1;
             for (let i = 0; i < jobs.length; i++) {
                 addProgressLine(1, `⏳ ${segLabel} ${i+1}/${jobs.length} ...`, 'run');
-                // 慢/不穩的上傳:逾時或網路中斷時自動重試(最多 GROQ_CHUNK_RETRIES 次)。
-                // 401/4xx 等金鑰/請求錯誤不重試(重試也沒用)→ 直接拋出。
-                let result = null;
-                for (let attempt = 1; attempt <= GROQ_CHUNK_RETRIES; attempt++) {
-                    try {
-                        result = await callGroqWhisper(jobs[i].blob, apiKey, context, jobs[i].filename, language);
-                        break;
-                    } catch (err) {
-                        const retriable = /逾時|Failed to fetch|NetworkError|network|aborted/i.test(err.message);
-                        if (retriable && attempt < GROQ_CHUNK_RETRIES) {
-                            addProgressLine(1, `⚠ 第 ${i+1} 段第 ${attempt} 次逾時/中斷,重試中...`, 'fail');
-                            await sleep(2000);
-                            continue;
-                        }
-                        throw err;
-                    }
-                }
-                if (result && result.segments) {
-                    for (const seg of result.segments) {
-                        const text = (seg.text || '').trim();
-                        if (!text) continue;
-                        allSegments.push({
-                            idx: globalIdx++,
-                            start: seg.start + jobs[i].timeOffset,
-                            end: seg.end + jobs[i].timeOffset,
-                            text,
-                        });
-                    }
+                // 重試在單次 API 呼叫層(callGroqWithRetry);對照轉錄失敗不會丟掉已成功的主轉錄。
+                const segDur = jobs[i].duration || null;
+                const { result, report } = await transcribeWithCoverage(jobs[i].blob, apiKey, context, jobs[i].filename, language,
+                    segDur, jobs[i].timeOffset, m => addProgressLine(1, `第 ${i+1} 段:${m}`, 'fail'));
+                report.chunk = i + 1;
+                jobReport.push(report);
+                for (const seg of covSafeTimes(result && result.segments, report.duration)) {
+                    allSegments.push({
+                        idx: globalIdx++,
+                        start: seg.start + jobs[i].timeOffset,
+                        end: seg.end + jobs[i].timeOffset,
+                        text: seg.text,
+                    });
                 }
                 addProgressLine(1, `✓ 片段 ${i+1} 完成`, 'ok');
                 setProgressBar(1, 10 + 80 * ((i+1) / jobs.length));
             }
         }
 
+        // 逐字稿與報告同一時間提交(中途例外則兩者都維持上一輪的狀態)
+        transcribeReport = jobReport;
+        resetDownstreamArtifacts();
+        transcribeFailed = !allSegments.length;
+        if (!allSegments.length) {
+            srtContent = '';
+            throw new Error('轉錄結果沒有任何文字(純靜音或檔案有誤?)— 請按下方「下載本次轉錄診斷」核對');
+        }
         srtContent = allSegments.map(s =>
             `${s.idx}\n${formatSrtTime(s.start)} --> ${formatSrtTime(s.end)}\n${s.text}\n`
         ).join('\n');
 
         setProgressBar(1, 100);
         addProgressLine(1, `✓ 共 ${allSegments.length} 句`, 'ok');
+        const flagged = jobReport.filter(r => r.unresolved_reasons.length);
+        if (flagged.length) {
+            const ranges = flagged.reduce((n, r) => n + r.review_ranges.length, 0);
+            addProgressLine(1, `⚠ ${flagged.length} 段轉錄覆蓋率待核對(空白可能是真靜音/播影片;${ranges} 個區間另一版有文字)— 詳見匯出 ZIP 的 transcribe_report.json`, 'fail');
+        }
         $('res-1-text').value = srtContent;
         $('res-1-stat').textContent = `${allSegments.length} segments · ${Math.round(duration)}s`;
         showResult(1);
     } catch (err) {
         addProgressLine(1, `✗ ${err.message}`, 'fail');
+        // 本次失敗的診斷另外提供下載,不混進上一份成功稿的 ZIP(中途例外時上一份稿與報告維持原樣)
+        if (jobReport.length) addTranscribeDiagnosticsLink(jobReport, err.message);
+        if (!srtContent && $('res-1')) $('res-1').classList.remove('show');
     } finally {
         btn.disabled = false;
+        if ($('btn-paste-next')) $('btn-paste-next').disabled = false;
     }
 }
 
@@ -1475,6 +1708,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const text = $('paste-input').value.trim();
         if (!text) return alert('請貼上逐字稿內容');
         srtContent = text;
+        transcribeReport = [];   // 貼上的逐字稿沒有覆蓋率報告,不沿用上一輪的
+        transcribeFailed = false;
+        resetDownstreamArtifacts();
         goToStep(2);
     });
     $('btn-dl-srt').addEventListener('click', () => downloadFile('transcript.srt', srtContent));
