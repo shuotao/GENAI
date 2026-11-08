@@ -1,0 +1,21 @@
+{
+  "slug": "ai-forum-2026",
+  "title": "2026 AI FORUM：Physical AI & Agentic AI",
+  "subtitle": "技術落地 × 產業轉型 × 全球共創｜TAIA 台灣人工智慧協會年會",
+  "shelf": "public",
+  "state": "A",
+  "recommended_mode": "multipage",
+  "sources": [
+    "2026-11-08_aiforum2026-01-hpe-hsu"
+  ],
+  "speakers": [
+    {
+      "category": "AI 基礎建設",
+      "name": "許鈞湞",
+      "full": "許鈞湞（Allan Hsu）· HPE 慧與科技 數位科技服務事業處 資深技術協理",
+      "talk": "高密度 AI 數據中心規劃與管理"
+    }
+  ],
+  "venue": "政大公企中心 國際會議廳",
+  "date": "2026.11.08"
+}
