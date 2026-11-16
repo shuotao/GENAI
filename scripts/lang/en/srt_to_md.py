@@ -20,8 +20,29 @@ Implements CLAUDE.md 「整理」定義 + 零省略原則(Zero Omission):
 import sys, json, glob, re, argparse
 from pathlib import Path
 
-PARA_MIN_CHARS = 300          # 段落達此長度且句尾收束即換段
+PARA_MIN_CJK = 60             # § R2.1:每段目標 60~120 CJK 字、寧短勿長
+PARA_MAX_CJK = 120
 SENT_END = "。！？”」』）.!?"   # 視為句子結束的字元
+
+
+def cjk(text: str) -> int:
+    return len(re.findall(r"[\u4e00-\u9fff]", text))
+
+
+def split_long(para: str) -> list[str]:
+    """超過 PARA_MAX_CJK 的段落在句末處切開(§ R2.1);只切不刪,字字保留。"""
+    if cjk(para) <= PARA_MAX_CJK:
+        return [para]
+    sents = re.findall(r"[^。！？]*[。！？]+[”」』）]*|[^。！？]+$", para)
+    chunks, cur = [], ""
+    for sent in sents:
+        if cur and cjk(cur) >= PARA_MIN_CJK and cjk(cur + sent) > PARA_MAX_CJK:
+            chunks.append(cur)
+            cur = ""
+        cur += sent
+    if cur:
+        chunks.append(cur)
+    return chunks
 
 
 def load(workdir):
@@ -88,10 +109,10 @@ def main():
         if not txt:
             continue
         kept += 1
-        src_chars += len(zh[i])
+        src_chars += len(re.sub(r"\s", "", txt))   # E1:與正文同口徑(去空白)
         para += txt
         # 段落收束:夠長且本句以句末標點結尾 → 換段
-        if len(para) >= PARA_MIN_CHARS and para[-1] in SENT_END:
+        if cjk(para) >= PARA_MIN_CJK and para[-1] in SENT_END:
             flush()
     flush()
 
@@ -107,7 +128,7 @@ def main():
     print(f"[md] kept cues       : {kept}")
     print(f"[md] 來源譯文字數     : {src_nospace}")
     print(f"[md] 正文字數(去標題): {body_chars}")
-    print(f"[md] 保留率           : {ratio:.3%}  (零省略應 ≈100%+)")
+    print(f"[md] 保留率           : {ratio:.3%}  (零省略應約 100%)")
     print(f"[md] 段落數           : {sum(1 for l in md.splitlines() if l and not l.startswith('#') and not l.startswith('*') and not l.startswith('# '))}")
     print(f"[md] 寫出             : {args.out_md}")
 
