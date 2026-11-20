@@ -26,7 +26,8 @@ from insert_images import content_lines, line_type  # noqa: E402
 # 未複核而擋下(prepublish_gate / publish_qaqc)。四角色鏈(§ S4.5.11)規劃讓 Codex
 # 找插入位、Opus 驗證,但那些標籤進不了白名單 —— 規劃與實作在此處對不上。
 # 現改為單一常數,新增複核者只動這一行。
-REVIEWED_ENGINES = ("haiku-reviewed", "human", "codex-reviewed", "opus-reviewed")
+REVIEWED_ENGINES = ("haiku-reviewed", "human", "codex-reviewed", "opus-reviewed",
+                    "tri-view-reviewed")  # § S4.5.11 逐張三立場校位;與 publish_qaqc 對齊
 
 
 def main() -> int:
