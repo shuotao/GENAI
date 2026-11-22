@@ -211,14 +211,16 @@ S4.5.9 沒做好,應該回頭改文字而不是放任 grep 每次 fail。
     密場會崩(mean|Δ| 4.86)→ 密場**優先文字訊號(content_signal)或轉人工**,不硬套 deck-flow。
 
 **引擎**
-- 描述:Antigravity CLI headless — `antigravity -p --model gemini-3.6-flash-medium
-  --add-dir <session>`(OAuth login;`agy -p` 等效)。送圖前 `exif_transpose`
+- 描述:Antigravity CLI headless — `antigravity --model gemini-4-hydrogen-medium
+  --add-dir <session> -p …`(OAuth login;`agy` 等效;**`-p` 必須放最後**,否則會把 `--model` 吞成提示詞)。
+  **2026-11-22 起全面改用 Gemini 4 Hydrogen**,取代先前因 flash 太慢而採的三向分工
+  (Sonnet OCR / Haiku 聽眾 / Codex terra 講者)分批任務 —— 單引擎產完整三立場,~20 s/張。送圖前 `exif_transpose`
   到 `.img_norm/` 暫存(原檔不動)。
 - **model 用 slug id、且啟動時自動解析(2026-09-01 引入)**:Antigravity 會**下架舊 model**
   ——「Gemini 3.5 Flash (Medium)」在 2026-09-01 整批失效(`invalid model selection`),
   三張連續失敗直接觸發熔斷、整批停擺。`describe_images.resolve_model()` 因此在啟動時跑一次
   `antigravity models`:指定的 model 不在清單就依 `MODEL_PREFERENCE`
-  (`gemini-3.6-flash-medium` → `3.7-medium` → `*-low`)自動退而求其次,清單抓不到才原樣放行。
+  (`gemini-4-hydrogen-medium` → `hydrogen-high` → `hydrogen-low` → `3.8-flash-medium` → …)自動退而求其次,清單抓不到才原樣放行。
   **一次改名不該擋掉整批描述**;現行可用清單以 `antigravity models` 為準,不要在文件裡寫死顯示名稱。
 - 失敗處理:同引擎重試 2 次(退避 5s);連續 3 張失敗即中止整批
   (`--max-consecutive-fails`)。連續失敗先以最小指令
@@ -226,7 +228,7 @@ S4.5.9 沒做好,應該回頭改文字而不是放任 grep 每次 fail。
   **`invalid model selection` = 改名/下架**(照上一條處理);空回應/節流(如日配額用盡,
   連非 Gemini model 都空)→ 冷卻等待或**改用 Opus 對話 agent 直接 Read 圖產同 schema 描述**
   (engine=opus-fallback),補完少數卡住的圖。
-- 插圖位置判斷:Claude Haiku subagent;套用與驗證:`insert_images.py`(確定性)。
+- 插圖位置判斷:**Gemini 4 Hydrogen**(`anchor_review.py review`,見「逐張三立場校位」);套用與驗證:`insert_images.py`(確定性)。
 
 **描述 prompt 五要求 + 一禁令**
 1. `text_in_image`:逐字保留原語言(英/中/日,含頁碼)
@@ -236,7 +238,7 @@ S4.5.9 沒做好,應該回頭改文字而不是放任 grep 每次 fail。
 5. `caption`:12-20 字、含具體實體(地點/產品/主題)
 禁:拍攝 meta(顛倒/角度/反光)。
 
-**描述三立場規則(2026-10-15 引入;引擎 = Antigravity headless `agy -p`,model `gemini-3.8-flash-medium`)**
+**描述三立場規則(2026-10-15 引入;引擎 = Antigravity headless `agy -p`,model `gemini-4-hydrogen-medium`,2026-11-22 起)**
 圖面描述的三個核心欄位各有明確規則,prompt 原文在 `describe_images.py` 的 `PROMPT_TEMPLATE`:
 1. **OCR 當頁文字**(`text_in_image`):是 OCR 不是摘要 —— 抄錄當頁**所有**可見文字(標題、內文、
    項目符號、圖表標籤與數值、程式碼、UI 截圖的按鈕/欄位、頁尾頁碼);原語言原樣、不翻譯不改寫不濃縮;
@@ -275,7 +277,10 @@ S4.5.9 沒做好,應該回頭改文字而不是放任 grep 每次 fail。
 - **流程**(`scripts/anchor_review.py`,確定性外殼 + agent 判斷):
   1. `anchor_review.py packet --session <dir> --anchors <supervisor 產出>` → 每張圖一份對照包:
      OCR、講者立場、聽眾立場 + 目前錨點 ±6 行的**完整**正文。
-  2. **每一張**都交覆核 agent(subagent 分組平行,**不用 Haiku**):親自看圖、讀三立場、逐行讀候選段,
+  2. **每一張**都交覆核(**2026-11-22 起 = Gemini 4 Hydrogen**:`anchor_review.py review --session <dir>
+     --packet <packet.json>`,agy headless 逐張開圖、逐張落盤可續跑;單張 R2/R3 不過當場帶錯誤回饋重問,
+     三次不過即列缺、連續 3 張熔斷。取代先前「Sonnet subagent 分組平行」—— 那種分批曾兩組未開圖就交差):
+     親自看圖、讀三立場、逐行讀候選段,
      定 `keep / move / drop` 與 `after_line`,並從選定行**逐字摘錄 evidence**(≥6 字)+ 一句 reason。
      放置原則同「人放圖規律」:錨在講者解說該圖的段尾、不錨小標下;章節頁放在引入該章的第一段後。
   3. `anchor_review.py merge` 機械驗收 R1 完備(每張恰一筆)/ R2 視窗內且非標題行 / **R3 evidence 逐字出現在該行**
@@ -811,3 +816,4 @@ S6 事後 audit 的語意同步改成「**不得渲染成字面**」:
 - 2026-08-09:新增 § S6.14 連結語法殘留(雙側守門:prepublish_gate 出版前擋、publish_qaqc 出版後 audit)。起因:COSCUP Day 2 要把簡報網址補進內文時查出 `md_to_html.inline_md()` 不支援 `[文字](網址)`,會渲染成字面文字,且前後皆無檢查。同步:本檔 § S6.14 條款與 § S6.10 清單、`scripts/prepublish_gate.py`、`scripts/publish_qaqc.py`。既有 6 本 master 與 10 本已出版書實測零命中,零誤擋。
 - 2026-09-02:§ S6.11 記入 **spec_gap(尚未修)** —— State A 含圖書的 S6.11 圖文相關性與 S6.11.c 順序檢核會**靜默跳過**:§ S4.5.13 的 `sK-` 跨場前綴只作用在 master/部署檔,`image_notes.json` 仍存裸檔名,導致 `slug in sess.parent.name` 與 `_notes_match_slug()` 兩條選取條件皆為 False(實測 bim-mcp-8 兩場交集皆 0)。修時須一併處理「notes 合併鍵碰撞」(各場裸 `page-NN.png`,bim-mcp-8 場 01/02 有 27 個同名鍵互蓋)與「`endswith` 一對多」。在修好前,含圖 State A 書的實際把關者是 `prepublish_gate` (3b/3c)(對 publish.md 無條件跑、`_SEQ_RE` + `_deck_family` 不受前綴影響)。起因:mcp8-02 貼 27 張簡報出版後 audit 全綠,核對才發現那兩項沒真的驗到。
 - 2026-09-02:`md_to_html` 修補述框內的 **HTML 註解與 `---`** —— 框內 `> <!-- ▍補述插入點:… -->` 原本被 `esc()` 跳脫成可見文字,把內部 TODO 漏到公開頁面;框內 `---` 渲染成字面 `<p>---</p>`。兩者頂層皆已正確處理,只有巢狀在 blockquote 內漏掉(新增 `HTML_COMMENT_Q`,頂層那條刻意維持嚴格以免框首註解把 blockquote 切成兩個)。同類問題:`normalize_punctuation._HTML_COMMENT_RE` 不接受前導 `>`,會把 `<!--` 轉成 `<！--` 使註解失效 —— 這也是 `prepublish_gate` 對該檔報「2 處半形標點未轉」卻無法安全自動修的原因,一併修正。`payload_nws` 的計數尺刻意不動(改了會掀開表格分隔列/圍欄標記的既有量測不對稱,保留率跳到 100.68%)。
+- 2026-11-22:§ S4.5.11 圖片 stage **全面改用 Gemini 4 Hydrogen**(`agy models` 新上架 `gemini-4-hydrogen-{low,medium,high,xhigh}`)。描述:`describe_images.py` 預設 `gemini-4-hydrogen-medium`,取代 2026-11 的三向分工(Sonnet OCR / Haiku 聽眾 / Codex terra 講者)分批任務。逐張三立場校位:新增 `anchor_review.py review`(agy headless 逐張開圖、單張 R2/R3 當場退件重問、逐張落盤可續跑、連續 3 張熔斷),取代 Sonnet 分組 subagent(那種分批曾兩組未開圖交差);`merge` R1–R5 機械驗收不變。實測 CS329Z lec1 對照:描述 ~20 s/張、覆核 ~12 s/張,與先前 Sonnet 覆核一致(±1 行)。另記 agy 旗標地雷:`-p` 必須放最後。

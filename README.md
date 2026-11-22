@@ -157,7 +157,7 @@ Step 6  **publish_qaqc audit(306 項)**
 | 你做的 | 系統做的 |
 |---|---|
 | 提供音檔 + **context(務必含每位講者人名/產品專名**,ASR 對專名最不可靠) | 轉錄/清理/校稿/標點/hook,全程零省略 |
-| (可選)自己排圖前先讀 `images_readme.md`,看見簡報中你沒注意到的細節 | describe 必跑;AI 放圖時 supervisor 反塌陷 + Haiku 複核 |
+| (可選)自己排圖前先讀 `images_readme.md`,看見簡報中你沒注意到的細節 | describe 必跑(Gemini 4 Hydrogen);AI 放圖時 supervisor 反塌陷 + Hydrogen 逐張三立場校位 |
 | (可選)手改 cleaned.md:改專名、拆段、刪口語——**你的終稿是權威**,刻意連放/重複圖會被標 human_grouped 放行 | 手改的 diff 會回流成規則(本輪已把你的段落風格 60~120 字寫進 §R2,Peggy 場驗證自動達標 71%) |
 | 按「發」(deploy 永遠人工扳機) | gate 擋壞件、audit 事後驗、fail 自動開單 |
 | **認真閱讀與學習內容本身** | 資料正確性由迴圈把關 |
@@ -255,7 +255,7 @@ GitHub Pages 部署版:`https://shuotao.github.io/GENAI/web/studio.html`
 - **`publish_goodedunote.sh`** + **`publish_qaqc.py`**: Step 5 出版(md→HTML→壓圖→deploy;`DRY_RUN=1` 可停在部署前;拆分依講者數:單一講者一場用 `--single` 單篇連續、多講者用 `--multipage`,見 CLAUDE.md 原則 8)與 Step 6 出版後 audit(S6.1–S6.6 + **S6.14 連結語法殘留**)
 - **`dialogue_check.py`**: 多講者座談對談歸屬與順序檢核(純 stdlib、確定性)— D1 講者標籤覆蓋、D2 對照 `reference_notes.md` 的 LIS 順序率/anchor 覆蓋、D3 跨講者混併警告;`prepublish_gate.py` § S4.5.14 出版前擋、`publish_qaqc.py` § S6.13 出版後 audit(規則見 prompts/publish_qaqc.md § S4.5.14 / § S6.13)
 - **`gnote_db.py`** / **`seed_admin.py`** / **`import_roster.py`** / **`sync_ga_stats.py`** / **`inject_ga.py`**: goodedunote 營運後台(`goodedunote.web.app/admin/`)的本機工具鏈 — 共用 Firestore 連線層、管理員白名單種子、GWS 名冊匯入(唯讀 GWS,`--dry-run`/`--reconcile`/`--rollback`)、GA4 統計同步、既有 HTML 補埋點。規範見 CLAUDE.md 原則 10
-- **`describe_images.py`** + **`dedupe_images.py`** + **`propose_anchors.py`** + **`insert_images.py`** + **`pipeline_autopilot.sh`**: 圖片理解(Antigravity headless;必跑,產 `images_readme.md` 描述伴讀供手排圖者參考)→ Haiku 自動插圖 → 閉環入口(`session.py --images <dir>`,見 prompts/publish_qaqc.md § S4.5.11)
+- **`describe_images.py`** + **`dedupe_images.py`** + **`propose_anchors.py`** + **`insert_images.py`** + **`pipeline_autopilot.sh`**: 圖片理解(Antigravity headless · Gemini 4 Hydrogen;必跑,產 `images_readme.md` 描述伴讀供手排圖者參考)→ `anchor_review.py review`(同模型逐張校位)→ 自動插圖 → 閉環入口(`session.py --images <dir>`,見 prompts/publish_qaqc.md § S4.5.11)
 - **`placement_check.py`** + **`placement_supervisor.py`** + **`finalize_placement.py`**: 插圖分佈/順序監管(反塌陷、不逆位、去重間距;§ S4.5.11)
 - **`pipeline_logger.py`**: Step1~6 結構化 log(`pipeline_log.jsonl` / `build/pipeline_runs.jsonl`)+ check fail 自動進 `build/improvement_queue.jsonl` 的 return-and-improvement 迴圈
 - **`compress_images.py`**: 出版前圖片壓縮 + EXIF 轉正

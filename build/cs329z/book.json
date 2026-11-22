@@ -3,21 +3,34 @@
   "title": "CS 329Z: Engineering AI Agents",
   "subtitle": "Stanford / Fall 2026｜共 11 講",
   "shelf": "reading",
-  "state": "C",
-  "recommended_mode": "single",
+  "state": "A",
+  "recommended_mode": "multipage",
   "sources": [
-    "sessions/2026-11-20_stanford-cs329z-lec1"
+    "sessions/2026-11-20_stanford-cs329z-lec1",
+    "sessions/2026-11-22_stanford-cs329z-lec2",
+    "sessions/2026-11-22_stanford-cs329z-lec3"
   ],
   "speakers": [
     {
-      "category": "第 1 講",
+      "category": "Foundations & Landscape",
       "name": "Diyi Yang",
       "full": "Diyi Yang · Stanford 電腦科學助理教授（與 Michael Ryan、John Yang 共同授課）",
-      "talk": "Intro to Agentic Systems：什麼是 AI 代理？代理式系統導論"
+      "talk": "第 1 講｜Intro to Agentic Systems：什麼是 AI 代理？代理式系統導論"
+    },
+    {
+      "category": "Foundations & Landscape",
+      "name": "Michael Ryan",
+      "full": "Michael Ryan · Stanford 電腦科學博士生（CS329Z 授課教師）",
+      "talk": "第 2 講｜LLMs for Agent Builders：給代理建構者的 LLM——上下文工程"
+    },
+    {
+      "category": "Building Blocks",
+      "name": "Diyi Yang",
+      "full": "Diyi Yang · Stanford 電腦科學助理教授",
+      "talk": "第 3 講｜RAG Explained：從 BM25 到代理式 RAG"
     }
   ],
   "venue": "Stanford Online · 課堂錄影",
   "date": "2026.11.20",
-  "lectures_total": 11,
-  "slides": "refs/lecture01.pdf"
+  "lectures_total": 11
 }

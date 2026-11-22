@@ -168,7 +168,7 @@ marker 流程;`--force-api` 是唯一逃生口(session.py 在 engine=api 路徑�
 | Web (studio.html) | 使用者貼 user-supplied API key | 使用者貼 user-supplied API key |
 | **Antigravity CLI headless(被 Claude Code 指揮)** | **自帶 OAuth login(`antigravity -p`)** | —(不經 Groq) |
 
-**Antigravity headless 通道(2026-07-05 引入):** `antigravity -p`(別名 `agy -p`)走
+**Antigravity headless 通道(2026-07-05 引入):** `antigravity -p`(別名 `agy -p`;**`-p` 須放在所有旗標之後**)走
 Antigravity 自己的 OAuth login,屬合法 CLI 授權通道;「腳本禁打 Gemini API」守門
 只擋 API key 通道。`describe_images.py` 以此通道做圖片理解,單引擎 + 熔斷
 (規則見 prompts/publish_qaqc.md § S4.5.11)。
@@ -228,6 +228,12 @@ Phase A/B/C/D 都在精修同一份 cleaned.md(A/B 產出、C/D 出版前強制�
 **影像四角色鏈範例(規劃,SSoT § S4.5.11):** Antigravity 讀簡報 → **Codex** 找插入位(只補
 `propose_anchors.py` 標低信心的 tail)→ **Haiku** 驅動 `insert_images.py --apply` → **Opus** 驗證。
 **插入/去重/驗證永遠留在確定性工具,LLM 絕不放 bytes**——這正是本原則:找位置是判斷(LLM),把圖放進去是機械(工具)。
+
+**圖片 stage 現行引擎(2026-11-22 起):Gemini 4 Hydrogen 單引擎全包。** 描述(`describe_images.py`,
+預設 `gemini-4-hydrogen-medium`)與逐張三立場校位(`anchor_review.py review`)都走 Antigravity headless
+同一模型,**取代**先前的三向分工(Sonnet OCR / Haiku 聽眾 / Codex terra 講者)與 Sonnet 分組覆核等分批任務;
+`anchor_review.py merge` R1–R5、`insert_images.py`、`placement_check.py` 照舊做機械驗收。
+角色分工細節以 [`docs/model-routing.md`](./docs/model-routing.md) 為準。
 
 **做法守則:**
 - 多檔批次**一個做完再做下一個**(sequential),不要平行燒算力。

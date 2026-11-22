@@ -9,7 +9,7 @@ SSoT: prompts/publish_qaqc.md § S4.5.11。CLAUDE.md 原則 5/6/9 對齊:
 
 用法:
     python3 scripts/describe_images.py --session sessions/<slug> \
-        [--model gemini-3.6-flash-medium] [--limit N] [--max-consecutive-fails N]
+        [--model gemini-4-hydrogen-medium] [--limit N] [--max-consecutive-fails N]
 
 產物: sessions/<slug>/image_notes.json(list[dict],schema 見 § S4.5.11)
 完成: 全部 described → 刪 .images_pending.json、metadata.json 記 images stats。
@@ -33,8 +33,13 @@ from pathlib import Path
 # 2026-10-12:偏好序補上 3.8(實測 `antigravity models` 已提供 3.8/3.7/3.6 三代 flash)。
 # 原本停在 3.6/3.7,新機型上線後不會被選到,等於長期跑在舊模型上。排序一律「新→舊、
 # medium→low」,新增世代時往前插即可。
-DEFAULT_MODEL = "gemini-3.8-flash-medium"
-MODEL_PREFERENCE = ("gemini-3.8-flash-medium", "gemini-3.7-flash-medium",
+# 2026-11-22:Gemini 4 Hydrogen 上線(`agy models`:gemini-4-hydrogen-{low,medium,high,xhigh})。
+# 使用者裁定圖片 stage **全面改用 hydrogen**,取代先前因 flash 太慢而採的三向分工
+# (Sonnet OCR / Haiku 聽眾 / Codex terra 講者)分批任務 —— 單引擎即可產完整三立場。
+DEFAULT_MODEL = "gemini-4-hydrogen-medium"
+MODEL_PREFERENCE = ("gemini-4-hydrogen-medium", "gemini-4-hydrogen-high",
+                    "gemini-4-hydrogen-low",
+                    "gemini-3.8-flash-medium", "gemini-3.7-flash-medium",
                     "gemini-3.6-flash-medium", "gemini-3.8-flash-low",
                     "gemini-3.7-flash-low", "gemini-3.6-flash-low")
 
@@ -61,7 +66,7 @@ def resolve_model(want: str) -> str:
             print(f"[images] ⚠️ model「{want}」已不在 antigravity 清單 → 改用 {cand}",
                   file=sys.stderr)
             return cand
-    flash = sorted(i for i in ids if "flash" in i)
+    flash = sorted(i for i in ids if "hydrogen" in i) or sorted(i for i in ids if "flash" in i)
     if flash:
         print(f"[images] ⚠️ model「{want}」不存在 → 退用 {flash[0]}", file=sys.stderr)
         return flash[0]
@@ -204,9 +209,15 @@ def call_antigravity(img_path: Path, session_dir: Path, model: str) -> str:
     正解與 srt_translate_zhtw.py 一致:檔案重導(pipe 不會滿、不被孫程序卡住)
     + stdin=DEVNULL + start_new_session,逾時殺整個 process group。
     """
-    prompt = PROMPT_TEMPLATE.format(img_path=img_path)
-    cmd = ["antigravity", "-p", prompt, "--add-dir", str(session_dir),
-           "--model", model, "--dangerously-skip-permissions"]
+    return run_agy(PROMPT_TEMPLATE.format(img_path=img_path), session_dir, model)
+
+
+def run_agy(prompt: str, session_dir: Path, model: str,
+            timeout_s: int = CALL_TIMEOUT_S) -> str:
+    """通用 agy headless 呼叫(檔案重導 + process group;見 call_antigravity docstring)。
+    anchor_review.py review 也走這支,不另寫一份。"""
+    cmd = ["antigravity", "--model", model, "--add-dir", str(session_dir),
+           "--dangerously-skip-permissions", "-p", prompt]
     with tempfile.TemporaryDirectory(prefix="agy_img_") as td:
         o, e = Path(td) / "out.txt", Path(td) / "err.txt"
         with open(o, "wb") as fo, open(e, "wb") as fe:
@@ -214,7 +225,7 @@ def call_antigravity(img_path: Path, session_dir: Path, model: str) -> str:
                                     stdin=subprocess.DEVNULL,
                                     start_new_session=True)
             try:
-                rc = proc.wait(timeout=CALL_TIMEOUT_S)
+                rc = proc.wait(timeout=timeout_s)
             except subprocess.TimeoutExpired:
                 try:
                     os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
@@ -224,7 +235,7 @@ def call_antigravity(img_path: Path, session_dir: Path, model: str) -> str:
                     proc.wait(timeout=10)
                 except subprocess.TimeoutExpired:
                     pass
-                raise RuntimeError(f"antigravity timeout >{CALL_TIMEOUT_S}s "
+                raise RuntimeError(f"antigravity timeout >{timeout_s}s "
                                    f"(已殺整個 process group)")
         err = e.read_text(encoding="utf-8", errors="replace")
         if rc != 0:
@@ -314,6 +325,11 @@ def main() -> int:
     ap.add_argument("--limit", type=int, default=0, help="只處理前 N 張(smoke/測試用)")
     ap.add_argument("--max-consecutive-fails", type=int, default=3,
                     help="連續失敗達此數即中止整批(原則 9,別在死路裡空轉;預設 3)")
+    ap.add_argument("--shard", default=None, metavar="K/N",
+                    help="平行工人:只處理第 K 份(0-based,依序號 idx %% N == K),寫 image_notes.shardKofN.json,"
+                         "不收尾;全部工人跑完後用 --merge-shards 合併(2026-11-22,Hydrogen 多工人)")
+    ap.add_argument("--merge-shards", action="store_true",
+                    help="把 image_notes.shard*.json 併回 image_notes.json 並做完成收尾")
     ap.add_argument("--readme-only", action="store_true",
                     help="不打 antigravity,只從既有 image_notes.json 重產 images_readme.md")
     a = ap.parse_args()
@@ -353,10 +369,30 @@ def main() -> int:
     notes_path = sdir / "image_notes.json"
     notes: list[dict] = json.loads(notes_path.read_text(encoding="utf-8")) if notes_path.exists() else []
     by_file = {n["file"]: n for n in notes}
+    shard_files = sorted(sdir.glob("image_notes.shard*.json"))
+    if a.merge_shards:
+        for sf in shard_files:
+            for n in json.loads(sf.read_text(encoding="utf-8")):
+                if n.get("status") == "described" or n["file"] not in by_file:
+                    by_file[n["file"]] = n
+        notes = [by_file[k] for k in sorted(by_file)]
+        notes_path.write_text(json.dumps(notes, ensure_ascii=False, indent=2), encoding="utf-8")
+        for sf in shard_files:
+            sf.unlink()
+        print(f"[images] 合併 {len(shard_files)} 份 shard → {notes_path}")
+    if a.shard:
+        k, n_sh = (int(x) for x in a.shard.split("/"))
+        images = [im for i, im in enumerate(images) if i % n_sh == k]
+        notes_path = sdir / f"image_notes.shard{k}of{n_sh}.json"
+        if notes_path.exists():  # 本 shard 之前的進度(續跑)
+            for n in json.loads(notes_path.read_text(encoding="utf-8")):
+                by_file[n["file"]] = n
+        by_file = {f: n for f, n in by_file.items()
+                   if any(f.endswith("/" + im.name) or f == im.name for im in images)}
 
     done = errs = 0
     consecutive_fails = 0
-    for i, img in enumerate(images, 1):
+    for i, img in enumerate([] if a.merge_shards else images, 1):
         rel = f"{rel_prefix}/{img.name}" if rel_prefix else img.name
         existing = by_file.get(rel)
         if existing and existing.get("status") in ("described", "anchored", "inserted"):
@@ -401,7 +437,7 @@ def main() -> int:
     total_described = sum(1 for n in by_file.values() if n.get("status") in ("described", "anchored", "inserted"))
     print(f"[images] 本輪 {done} 張完成 / {errs} 張失敗 | 累計 described {total_described}/{len(images)}")
 
-    if total_described == len(images) and not a.limit:
+    if total_described == len(images) and not a.limit and not a.shard:
         readme = write_images_readme(sdir, notes)  # 描述伴讀(§ S4.5.11)
         print(f"[images] 描述伴讀 → {readme}")
         marker = sdir / ".images_pending.json"

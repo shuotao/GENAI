@@ -47,7 +47,10 @@ while IFS= read -r r; do
 done < <(grep -hoE '<img [^>]*src="[^"]+"' "$PUB"/*.html | grep -oE 'src="[^"]+"' | sed 's/^src="//;s/"$//' | sort -u)
 if [ "${#SRCS[@]}" -gt 0 ]; then
   echo "[publish] 壓縮 ${#SRCS[@]} 張圖 → $PUB"
-  python3 "$ROOT/scripts/compress_images.py" "$PUB" "${SRCS[@]}"
+  # IMG_MAXDIM / IMG_QUALITY(選):投影片很多的單頁(如 CS329Z 第 2 講 141 張)超過 § S6.5 的 10MB 時調低;
+  # 預設 1600 / 82 與原本一致,不帶就不影響其他書。
+  python3 "$ROOT/scripts/compress_images.py" "$PUB" "${SRCS[@]}" \
+    --maxdim "${IMG_MAXDIM:-1600}" --quality "${IMG_QUALITY:-82}"
 fi
 
 # 2b) 影片(<source src=*.mp4>)與其封面(poster=*.jpg)原檔複製進部署夾。

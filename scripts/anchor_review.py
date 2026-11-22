@@ -17,6 +17,11 @@
      {"file": "images/page-07.png", "verdict": "keep|move|drop",
       "after_line": 33, "evidence": "<從 after_line 那一行逐字摘錄、≥6 字>",
       "reason": "一句話:講者在這段解說了圖上的哪個內容"}
+  2') 或交 Gemini 4 Hydrogen 逐張覆核(2026-11-22 起預設;取代 Sonnet 分組 subagent):
+     python3 scripts/anchor_review.py review --session sessions/<slug> \
+         --packet <packet.json> [--model gemini-4-hydrogen-medium] [--out reviews.json]
+     逐張呼叫 agy headless(附圖檔路徑,模型必須親自開圖),本地先跑 R2/R3 單張檢查,
+     不過就把錯誤回饋重問一次;逐張落盤、可續跑。仍需 3) merge 做 R1–R5 總驗收。
   3) 合併校驗 → 新 anchors(可直接餵 insert_images --apply)
      python3 scripts/anchor_review.py merge --session sessions/<slug> \
          --packet <packet.json> --reviews <reviews.json> [--out anchors_reviewed.json]
@@ -76,10 +81,42 @@ def cmd_packet(a) -> int:
     return 0
 
 
+def repair_order(packet: list[dict], reviews: list[dict], max_per_anchor: int) -> list[tuple]:
+    """確定性收尾(2026-11-22):逐張獨立覆核時,相鄰投影片常各自選了彼此前後的段落
+    (講同一段)→ R4 逆位 / R5 疊太多。依 packet(deck_page)順序掃描:after_line 不得早於前一張、
+    單段 ≤ max_per_anchor、非正文行跳過,超出即順延到下一個正文行;evidence 改取該行開頭。
+    只做機械順延,不做語意判斷;順延超出候選視窗即放棄(交回人工)。回傳變更清單。"""
+    import re as _re
+    by = {r["file"]: r for r in reviews}
+    prev, cnt, changed = -1, Counter(), []
+    for p in packet:
+        r = by.get(p["file"])
+        if not r or r.get("verdict") == "drop" or r.get("after_line", -1) < 0:
+            continue
+        win = {w["index"]: w for w in p["window"]}
+        al = max(r["after_line"], prev)
+        while al in win and (cnt[al] >= max_per_anchor or win[al]["type"] != "para"):
+            al += 1
+        if al not in win:
+            continue  # 視窗內放不下 → 交給 merge 報錯
+        if al != r["after_line"]:
+            changed.append((p["file"], r["after_line"], al))
+            txt = _re.sub(r"^[^：]{1,20}：", "", win[al]["text"])
+            r.update(after_line=al, evidence=txt[:14],
+                     verdict="keep" if al == p["current_after_line"] else "move",
+                     reason=(r.get("reason", "") + "(repair-order:保投影片順序/單段上限,機械順延)"))
+        cnt[al] += 1
+        prev = al
+    return changed
+
+
 def cmd_merge(a) -> int:
     sdir = Path(a.session)
     packet = _load(Path(a.packet))
     reviews = _load(Path(a.reviews))
+    if a.repair_order:
+        ch = repair_order(packet, reviews, a.max_per_anchor)
+        print(f"[merge] repair-order 順延 {len(ch)} 張:{ch}")
     by_file: dict[str, dict] = {}
     errs: list[str] = []
     for r in reviews:
@@ -142,6 +179,100 @@ def cmd_merge(a) -> int:
     return 0
 
 
+REVIEW_PROMPT = """You are reviewing where ONE lecture slide image should be inserted into a Chinese (zh-TW) lecture transcript.
+1. Open and look at the image file: {img}
+   (You MUST open the image itself; the text below is only a helper.)
+2. Slide helper info — caption: {caption}
+   OCR: {ocr}
+   speaker view: {speaker}
+   audience view: {audience}
+3. Candidate transcript lines (index: [type] text). The slide is currently after line {cur}.
+{window}
+
+Rule: the slide goes AFTER the paragraph where the lecturer is explaining / has just started explaining this slide's content
+(end of the explaining paragraph, never directly under a heading). A section-title slide goes after the first paragraph that opens that section.
+Keep the current position unless another candidate line is clearly better. Use "drop" only for an exact duplicate or a slide with no reasonable spot.
+Only choose a line whose type is "para".
+
+Output ONLY one JSON object, no prose, no code fence:
+{{"verdict": "keep|move|drop", "after_line": <int index from the candidates, or -1 for drop>,
+  "evidence": "<copy 8-20 characters VERBATIM from the chosen line's text>",
+  "reason": "<one sentence in Traditional Chinese: which slide content the lecturer explains in that line>",
+  "opened_image": true}}
+{feedback}"""
+
+
+def _check_one(p: dict, r: dict) -> list[str]:
+    """單張版 R2/R3(與 merge 同口徑),讓 review 當場退件重問。"""
+    if r.get("verdict") not in ("keep", "move", "drop"):
+        return [f"verdict 必須是 keep/move/drop,得到 {r.get('verdict')!r}"]
+    if r["verdict"] == "drop":
+        return []
+    win = {w["index"]: w for w in p["window"]}
+    al = r.get("after_line")
+    if al not in win:
+        return [f"after_line={al} not in candidates {min(win)}-{max(win)}"]
+    errs = []
+    if win[al]["type"] != "para" and al != 0:
+        errs.append(f"line {al} is a heading ({win[al]['type']}); choose a para line")
+    ev = (r.get("evidence") or "").strip()
+    if len(ev) < MIN_EVIDENCE or ev not in win[al]["text"]:
+        errs.append(f"evidence {ev[:30]!r} is not a verbatim substring (>= {MIN_EVIDENCE} chars) of line {al}")
+    if r["verdict"] == "keep" and al != p["current_after_line"]:
+        errs.append("verdict=keep but after_line differs from current; use move")
+    return errs
+
+
+def cmd_review(a) -> int:
+    from describe_images import run_agy, extract_json, resolve_model
+    sdir = Path(a.session).resolve()
+    packet = _load(Path(a.packet))
+    model = resolve_model(a.model)
+    dst = Path(a.out) if a.out else sdir / "anchor_reviews.json"
+    done = {r["file"]: r for r in (_load(dst) if dst.exists() else [])}
+    fails = 0
+    for i, p in enumerate(packet, 1):
+        if p["file"] in done:
+            continue
+        img = sdir / p["file"]
+        window = "\n".join(f"{w['index']}: [{w['type']}] {w['text']}" for w in p["window"])
+        feedback, rec = "", None
+        for attempt in (1, 2, 3):
+            prompt = REVIEW_PROMPT.format(img=img, caption=p.get("caption"), ocr=(p.get("ocr") or "")[:1500],
+                                          speaker=p.get("speaker_view"), audience=p.get("audience_view"),
+                                          cur=p["current_after_line"], window=window, feedback=feedback)
+            try:
+                r = extract_json(run_agy(prompt, sdir, model, timeout_s=a.timeout))
+            except RuntimeError as e:
+                print(f"  [{p['file']}] 第{attempt}次呼叫失敗:{e}", file=sys.stderr)
+                continue
+            if not r:
+                feedback = "\nPrevious answer was not valid JSON. Output only the JSON object."
+                continue
+            errs = _check_one(p, r)
+            if not errs:
+                rec = {"file": p["file"], "verdict": r["verdict"],
+                       "after_line": -1 if r["verdict"] == "drop" else r["after_line"],
+                       "evidence": r.get("evidence", ""), "reason": r.get("reason", ""),
+                       "opened_image": bool(r.get("opened_image")), "engine": f"agy/{model}"}
+                break
+            feedback = "\nYour previous answer was REJECTED: " + "; ".join(errs) + ". Fix it."
+        if rec is None:
+            fails += 1
+            print(f"[review {i}/{len(packet)}] ✗ {p['file']} 三次皆不合格", file=sys.stderr)
+            if fails >= a.max_consecutive_fails:
+                print("[review] ✗ 連續失敗達熔斷門檻,中止(可續跑)", file=sys.stderr)
+                return 2
+            continue
+        fails = 0
+        done[p["file"]] = rec
+        dst.write_text(json.dumps(list(done.values()), ensure_ascii=False, indent=2), encoding="utf-8")
+        print(f"[review {i}/{len(packet)}] {p['file']} {rec['verdict']} → {rec['after_line']}")
+    missing = [p["file"] for p in packet if p["file"] not in done]
+    print(f"[review] {len(done)}/{len(packet)} 張完成 → {dst}" + (f";缺 {len(missing)} 張" if missing else ""))
+    return 1 if missing else 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="逐張三立場校位(§ S4.5.11)")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -151,14 +282,23 @@ def main() -> int:
     pk.add_argument("--anchors", required=True)
     pk.add_argument("--window", type=int, default=6)
     pk.add_argument("--out")
+    rv = sub.add_parser("review", help="Gemini 4 Hydrogen(agy headless)逐張覆核 → reviews JSON")
+    rv.add_argument("--session", required=True)
+    rv.add_argument("--packet", required=True)
+    rv.add_argument("--model", default="gemini-4-hydrogen-medium")
+    rv.add_argument("--timeout", type=int, default=300)
+    rv.add_argument("--max-consecutive-fails", type=int, default=3)
+    rv.add_argument("--out")
     mg = sub.add_parser("merge")
     mg.add_argument("--session", required=True)
     mg.add_argument("--packet", required=True)
     mg.add_argument("--reviews", required=True)
     mg.add_argument("--max-per-anchor", type=int, default=2)
+    mg.add_argument("--repair-order", action="store_true",
+                    help="先做確定性收尾(保 deck 順序、單段上限、順延到下一正文行),再驗 R1–R5")
     mg.add_argument("--out")
     a = ap.parse_args()
-    return cmd_packet(a) if a.cmd == "packet" else cmd_merge(a)
+    return {"packet": cmd_packet, "review": cmd_review, "merge": cmd_merge}[a.cmd](a)
 
 
 if __name__ == "__main__":

@@ -15,6 +15,8 @@
 
 | 家族 | id |
 |---|---|
+| **Gemini 4 Hydrogen**(2026-11-22 實測) | `gemini-4-hydrogen-{low,medium,high,xhigh}` |
+| Gemini 4 Neon / Argon(2026-11-22 列出,未用) | `gemini-4-neon-{low,medium,high,xhigh}`、`gemini-4-argon-{low,medium,high}` |
 | Gemini Flash **3.8** | `gemini-3.8-flash-{high,medium,low}` |
 | Gemini Flash 3.7 | `gemini-3.7-flash-{high,medium,low}` |
 | Gemini Flash 3.6 | `gemini-3.6-flash-{high,medium,low}` |
@@ -22,8 +24,19 @@
 | Claude | `claude-opus-5-5-{low,medium,high}`、`claude-sonnet-5-5-{low,medium,high}` |
 | 開源 | `gpt-oss-120b-medium` |
 
+> **⚠️ 旗標順序地雷(2026-11-22 實際踩到)**:`agy -p --model X "提示"` 會讓 `-p` 把
+> `--model` 當成提示詞,直接報錯退出。**正解:`-p` 放最後**(`agy --model X … -p "提示"`)
+> 或寫成 `-p='提示'`。`describe_images.run_agy()` 已照此排序。
+
 Auth:Antigravity 自己的 OAuth login(`antigravity -p`)。**不是 API key 通道**,
 所以不受「腳本禁打 Gemini API」守門限制(CLAUDE.md 原則 5)。
+
+> **2026-11-22 圖片 stage 全面改 Gemini 4 Hydrogen**:`describe_images.py` 預設
+> `gemini-4-hydrogen-medium`(偏好序 hydrogen-medium → high → low → 3.8 flash …);
+> 逐張三立場校位改由 `anchor_review.py review`(同模型、agy headless、逐張開圖)完成。
+> **取代** 2026-11 的「Sonnet OCR / Haiku 聽眾 / Codex terra 講者」三向分工與
+> 「Sonnet 分組 subagent 覆核」分批任務。實測(CS329Z lec1 對照):描述 ~20 s/張、
+> 覆核 ~12 s/張,覆核結果與先前 Sonnet 人工覆核一致(±1 行)。
 
 > **2026-10-12 修正**:`describe_images.py` 的 `MODEL_PREFERENCE` 原本停在 3.6/3.7,
 > 3.8 上線後永遠不會被選到 → 長期跑在舊模型上。已改為新→舊排序並把預設提到
@@ -55,7 +68,8 @@ Auth:OAuth login token。**無影像生成通道**(讀圖可以,生圖不行)。
 | Phase B 校稿 | **對話 agent**(本 repo 預設 = Claude Code) | 判斷:語意幻覺、專名校正、分段 |
 | Phase C 標點 | `normalize_punctuation.py` + agent 補全形冒號 | 機械 + 少量判斷 |
 | Phase D hook | agent,`phase_d_check.py` 機械證明只插不改 | 判斷,但有子序列證明把關 |
-| **圖片理解** | **Antigravity headless** `agy -p --model gemini-3.8-flash-medium`(`describe_images.py`) | 單一引擎 + 熔斷;Claude Code 這端只負責指揮 |
+| **圖片理解** | **Antigravity headless** `agy --model gemini-4-hydrogen-medium -p …`(`describe_images.py`) | 單一引擎 + 熔斷;Claude Code 這端只負責指揮(2026-11-22 起取代三向分工) |
+| **逐張三立場校位** | **Gemini 4 Hydrogen**(`anchor_review.py review`,逐張開圖 + 單張 R2/R3 當場退件)→ `anchor_review.py merge` R1–R5 | 取代 Sonnet 分組 subagent;判斷由模型、驗收由工具 |
 | 錨點提案 | `propose_anchors.py`(DP,零 LLM) | 確定性 |
 | **低信心尾巴複核** | **Claude Haiku subagent**(現行)+ **Codex `gpt-6.1-sol`**(2026-10-12 起實跑) | 判斷;兩者分歧才升級 |
 | 分歧裁決 | **Opus**(對話 agent) | 只處理分歧,不是每筆都看 |
