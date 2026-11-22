@@ -106,16 +106,16 @@ def check(after_path: Path, base_path: Path, max_growth: float) -> bool:
         reasons.append(f"CJK 成長 {growth:.3f} > {max_growth}(插入過量,恐已改寫)")
 
     print(f"[phase-d] {after_path}")
-    print(f"          段落 {len(pb)} → {len(pa)}｜CJK {nb} → {na}(×{growth:.3f})"
-          f"｜子序列 {'✓' if ok_sub else '✗'}")
-    print(f"          → {'✓ 通過' if not reasons else '✗ 未通過：' + '；'.join(reasons)}")
-
+    # WARNING 印在統計/結論兩行之前:結論恆為最後兩行(下游 gate 取 tail 當摘要)
     hits = causal_insertions(before, after)
     if hits:
         print(f"          ⚠ WARNING:{len(hits)} 處插入片段含因果標記(§ R8.2 hook 不得斷定講者沒說的原因)"
               "——請逐條對照原句確認講者確實有這個因果,否則改用不斷定因果的 hook:")
         for n, m, c in hits:
             print(f"            - 第 {n} 段「{m}」:…{c}…")
+    print(f"          段落 {len(pb)} → {len(pa)}｜CJK {nb} → {na}(×{growth:.3f})"
+          f"｜子序列 {'✓' if ok_sub else '✗'}")
+    print(f"          → {'✓ 通過' if not reasons else '✗ 未通過：' + '；'.join(reasons)}")
     return not reasons
 
 

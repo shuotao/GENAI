@@ -45,6 +45,7 @@ class CausalWarning(unittest.TestCase):
             self.assertEqual(r.returncode, 0, r.stdout)
             self.assertIn("WARNING", r.stdout)
             self.assertIn("因此", r.stdout)
+            self.assertIn("通過", r.stdout.strip().splitlines()[-1])   # 結論恆為最後一行
 
     def test_rewrite_still_fails(self):
         with tempfile.TemporaryDirectory() as t:
