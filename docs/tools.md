@@ -15,7 +15,7 @@
 | `scripts/compare_placement.py` | 比對一組放置(anchors: deck→after_ci)與 ground-truth,算語意相符率。 |
 | `scripts/compress_images.py` | 壓縮 + EXIF 自動轉正圖片到目標目錄(不改原檔)。Step 5 出版前用,省 Firebase 流量。 |
 | `scripts/dedupe_images.py` | dedupe_images.py — 重複圖片檢測與去重(§ S4.5.12 / § S6.12)。 |
-| `scripts/describe_images.py` | describe_images.py — 圖片理解 orchestrator(確定性外殼,LLM 只做看圖判斷)。 |
+| `scripts/describe_images.py` | describe_images.py — 圖片理解 orchestrator(確定性外殼,LLM 只做看圖判斷;`--shard` 平行、`--list-pending`/`--import-dir` 配額用盡後備)。 |
 | `scripts/dialogue_check.py` | scripts/dialogue_check.py — 多講者座談對談歸屬與順序檢核(§ S4.5.14) |
 | `scripts/finalize_placement.py` | finalize_placement.py — 依 deck 順序把 anchors 收斂成「單調 + max-2 + 無 -1」的確定性收尾。 |
 | `scripts/gnote_db.py` | goodedunote 後台的共用 Firestore 連線層。 |
@@ -23,7 +23,7 @@
 | `scripts/img_context_score.py` | img_context_score.py — 圖文相關性計分(確定性,gate 與 Step 6 audit 共用)。 |
 | `scripts/import_roster.py` | 把 GWS 的報名資料批次匯入 goodedunote 後台的 Firestore 名冊。 |
 | `scripts/inject_ga.py` | 把 GA4 埋點補進「已經產出」的 goodedunote HTML。 |
-| `scripts/anchor_review.py` | anchor_review.py — 逐張三立場校位(packet 產對照包 / review 交 Gemini 4 Hydrogen 逐張開圖覆核 / merge 機械驗收 R1–R5;§ S4.5.11)。 |
+| `scripts/anchor_review.py` | anchor_review.py — 逐張三立場校位(packet 產對照包 / review 交 Gemini 4 Hydrogen 逐張開圖覆核 / override 視窗外校正 / merge(--repair-order)機械驗收 R1–R5;§ S4.5.11)。 |
 | `scripts/insert_images.py` | insert_images.py — 自動插圖工具(plan / apply / verify 三模式,確定性)。 |
 | `scripts/lock_sessions.py` | 為某本 goodedunote 書的 session 頁加上「前端密碼軟鎖」(校稿期間用)。 |
 | `scripts/md_to_a4_png.py` | scripts/md_to_a4_png.py — 把 markdown 確定性渲染成 A4 白底 PNG(多頁),可選疊「好學生筆記」註解。 |

@@ -22,6 +22,10 @@
          --packet <packet.json> [--model gemini-4-hydrogen-medium] [--out reviews.json]
      逐張呼叫 agy headless(附圖檔路徑,模型必須親自開圖),本地先跑 R2/R3 單張檢查,
      不過就把錯誤回饋重問一次;逐張落盤、可續跑。仍需 3) merge 做 R1–R5 總驗收。
+  2'') 覆核者回報「正確位置不在候選視窗」時(監管提案漂移,常見於無頁碼的標題/收尾頁):
+     python3 scripts/anchor_review.py override --session <dir> --anchors <supervised.json> \
+         --reviews <reviews.json> page-087.png=301[:理由] ...
+     改該圖提案 → 重產 packet(他圖視窗不變)→ 寫統籌者裁決(evidence 取該行開頭),之後照常 merge。
   3) 合併校驗 → 新 anchors(可直接餵 insert_images --apply)
      python3 scripts/anchor_review.py merge --session sessions/<slug> \
          --packet <packet.json> --reviews <reviews.json> [--out anchors_reviewed.json]
@@ -273,6 +277,41 @@ def cmd_review(a) -> int:
     return 1 if missing else 0
 
 
+def cmd_override(a) -> int:
+    """覆核者已讀正文指出正確行、但不在視窗內 → 統籌者裁決(2026-11-22,CS329Z lec4–7 共 10 張)。"""
+    import re as _re
+    sdir = Path(a.session)
+    ov = {}
+    for spec in a.items:
+        f, rest = spec.split("=", 1)
+        line, _, why = rest.partition(":")
+        ov[f if "/" in f else f"images/{f}"] = (int(line), why)
+    an = _load(Path(a.anchors))
+    for x in an:
+        if x["file"] in ov:
+            x["after_line"] = ov[x["file"]][0]
+    Path(a.anchors).write_text(json.dumps(an, ensure_ascii=False, indent=2), encoding="utf-8")
+    a.md, a.window, a.out = "cleaned.md", a.window, None
+    if cmd_packet(a):
+        return 1
+    pk = {p["file"]: p for p in _load(sdir / "anchor_review_packet.json")}
+    reviews = _load(Path(a.reviews))
+    for r in reviews:
+        if r["file"] not in ov:
+            continue
+        ln, why = ov[r["file"]]
+        w = {x["index"]: x for x in pk[r["file"]]["window"]}
+        if w.get(ln, {}).get("type") != "para":
+            print(f"[override] ✗ {r['file']} 第 {ln} 行不是正文段", file=sys.stderr)
+            return 1
+        r.update(verdict="keep", after_line=ln,
+                 evidence=_re.sub(r"^[^：]{1,20}：", "", w[ln]["text"])[:14],
+                 reason="統籌者裁決:" + (why or "正確位置不在原候選視窗"), adjudicated="orchestrator")
+        print(f"[override] {r['file']} → {ln}")
+    Path(a.reviews).write_text(json.dumps(reviews, ensure_ascii=False, indent=1), encoding="utf-8")
+    return 0
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(description="逐張三立場校位(§ S4.5.11)")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -289,6 +328,12 @@ def main() -> int:
     rv.add_argument("--timeout", type=int, default=300)
     rv.add_argument("--max-consecutive-fails", type=int, default=3)
     rv.add_argument("--out")
+    ov = sub.add_parser("override", help="覆核者指出視窗外的正確行 → 改提案、重產 packet、寫統籌者裁決")
+    ov.add_argument("--session", required=True)
+    ov.add_argument("--anchors", required=True)
+    ov.add_argument("--reviews", required=True)
+    ov.add_argument("--window", type=int, default=6)
+    ov.add_argument("items", nargs="+", help="page-087.png=301[:理由]")
     mg = sub.add_parser("merge")
     mg.add_argument("--session", required=True)
     mg.add_argument("--packet", required=True)
@@ -298,7 +343,7 @@ def main() -> int:
                     help="先做確定性收尾(保 deck 順序、單段上限、順延到下一正文行),再驗 R1–R5")
     mg.add_argument("--out")
     a = ap.parse_args()
-    return {"packet": cmd_packet, "review": cmd_review, "merge": cmd_merge}[a.cmd](a)
+    return {"packet": cmd_packet, "review": cmd_review, "override": cmd_override, "merge": cmd_merge}[a.cmd](a)
 
 
 if __name__ == "__main__":

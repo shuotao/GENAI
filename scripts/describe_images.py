@@ -330,10 +330,18 @@ def main() -> int:
                          "不收尾;全部工人跑完後用 --merge-shards 合併(2026-11-22,Hydrogen 多工人)")
     ap.add_argument("--merge-shards", action="store_true",
                     help="把 image_notes.shard*.json 併回 image_notes.json 並做完成收尾")
+    ap.add_argument("--list-pending", action="store_true",
+                    help="列出尚未 described 的圖(後備方案:交給 Claude subagent 描述用),不打任何引擎")
+    ap.add_argument("--import-dir", default=None,
+                    help="後備方案:匯入 <dir>/<圖檔 stem>.json(同 PROMPT_TEMPLATE schema,由 Claude subagent "
+                         "直接 Read 圖產出);逐張驗必填欄位,palette/deck_page 仍由本工具確定性計算")
+    ap.add_argument("--engine-tag", default="claude-fallback",
+                    help="--import-dir 匯入條目的 engine 標籤(例:claude-fallback/haiku)")
     ap.add_argument("--readme-only", action="store_true",
                     help="不打 antigravity,只從既有 image_notes.json 重產 images_readme.md")
     a = ap.parse_args()
-    a.model = resolve_model(a.model)
+    if not (a.list_pending or a.import_dir):
+        a.model = resolve_model(a.model)
 
     sdir = Path(a.session).resolve()
 
@@ -389,6 +397,50 @@ def main() -> int:
                 by_file[n["file"]] = n
         by_file = {f: n for f, n in by_file.items()
                    if any(f.endswith("/" + im.name) or f == im.name for im in images)}
+
+    if a.list_pending or a.import_dir:
+        # ── 後備方案(2026-11-22,§ S4.5.11「配額用盡後備」)──
+        # Antigravity 帳號配額(429 Individual quota)用盡時,不改預設引擎;改由 Claude subagent
+        # 直接 Read 圖、照 PROMPT_TEMPLATE 寫 <stem>.json,再由這裡確定性驗收匯入。
+        pending = [im for im in images
+                   if (by_file.get(f"{rel_prefix}/{im.name}" if rel_prefix else im.name) or {}).get("status")
+                   not in ("described", "anchored", "inserted", "duplicate")]
+        if a.list_pending:
+            for im in pending:
+                print(im)
+            print(f"[images] 待描述 {len(pending)} 張", file=sys.stderr)
+            return 0
+        src = Path(a.import_dir)
+        ok = bad = 0
+        for im in pending:
+            rel = f"{rel_prefix}/{im.name}" if rel_prefix else im.name
+            jf = src / f"{im.stem}.json"
+            if not jf.exists():
+                continue
+            d = extract_json(jf.read_text(encoding="utf-8"))
+            missing = validate(d) if d else ["(非 JSON)"]
+            if missing:
+                print(f"  ✗ {rel} 缺欄位 {missing}", file=sys.stderr); bad += 1
+                continue
+            deck_page = extract_deck_page(d["text_in_image"], rel)
+            by_file[rel] = {"file": rel, "palette_hex": extract_palette(im),
+                            "text_in_image": d["text_in_image"], "layout": d["layout"],
+                            "speaker_view": d["speaker_view"], "audience_view": d["audience_view"],
+                            "content_signal": d.get("content_signal") or [], "caption": d["caption"],
+                            "deck_page": deck_page, "needs_review": deck_page is None,
+                            "anchor": (by_file.get(rel) or {}).get("anchor"),
+                            "engine": a.engine_tag, "status": "described"}
+            ok += 1
+        notes = [by_file[k] for k in sorted(by_file)]
+        notes_path.write_text(json.dumps(notes, ensure_ascii=False, indent=2), encoding="utf-8")
+        left = len(pending) - ok
+        print(f"[images] 後備匯入 {ok} 張(驗收失敗 {bad})| 仍待描述 {left} 張")
+        if left == 0:
+            print(f"[images] 描述伴讀 → {write_images_readme(sdir, notes)}")
+            marker = sdir / ".images_pending.json"
+            if marker.exists():
+                marker.unlink()
+        return 1 if bad else 0
 
     done = errs = 0
     consecutive_fails = 0

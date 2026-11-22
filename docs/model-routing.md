@@ -28,6 +28,12 @@
 > `--model` 當成提示詞,直接報錯退出。**正解:`-p` 放最後**(`agy --model X … -p "提示"`)
 > 或寫成 `-p='提示'`。`describe_images.run_agy()` 已照此排序。
 
+> **⚠️ 個人配額上限(2026-11-22 實際踩到)**:Antigravity 有**帳號層級**的 `Individual quota reached`
+> (429 `RESOURCE_EXHAUSTED`,Hydrogen/Flash/Claude 全部一起停,約 4–5 小時重置)。當天累計約
+> 239 張描述 + 205 張校位 + ~90 批翻譯後,再開 **16 個平行工人**約 15 分鐘就燒完。
+> 熔斷器會正確停下(錯誤訊息含 `Resets in …`),工具都可續跑。**平行建議 ≤ 8 個 agy 工人**;
+> 大批量前先估總呼叫數,翻譯可改派 Claude subagent 分擔(同 zh_parts 格式 + zh_parts_check 驗收)。
+
 Auth:Antigravity 自己的 OAuth login(`antigravity -p`)。**不是 API key 通道**,
 所以不受「腳本禁打 Gemini API」守門限制(CLAUDE.md 原則 5)。
 
@@ -69,6 +75,7 @@ Auth:OAuth login token。**無影像生成通道**(讀圖可以,生圖不行)。
 | Phase C 標點 | `normalize_punctuation.py` + agent 補全形冒號 | 機械 + 少量判斷 |
 | Phase D hook | agent,`phase_d_check.py` 機械證明只插不改 | 判斷,但有子序列證明把關 |
 | **圖片理解** | **Antigravity headless** `agy --model gemini-4-hydrogen-medium -p …`(`describe_images.py`) | 單一引擎 + 熔斷;Claude Code 這端只負責指揮(2026-11-22 起取代三向分工) |
+| **配額用盡後備**(429 時才啟用) | 描述 **Claude Haiku** subagent(`describe_images.py --list-pending / --import-dir`);校位與翻譯缺口 **Claude Sonnet** subagent | 預設不變;engine 標 `claude-fallback/*`,SSoT § S4.5.11 |
 | **逐張三立場校位** | **Gemini 4 Hydrogen**(`anchor_review.py review`,逐張開圖 + 單張 R2/R3 當場退件)→ `anchor_review.py merge` R1–R5 | 取代 Sonnet 分組 subagent;判斷由模型、驗收由工具 |
 | 錨點提案 | `propose_anchors.py`(DP,零 LLM) | 確定性 |
 | **低信心尾巴複核** | **Claude Haiku subagent**(現行)+ **Codex `gpt-6.1-sol`**(2026-10-12 起實跑) | 判斷;兩者分歧才升級 |

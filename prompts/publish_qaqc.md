@@ -229,6 +229,18 @@ S4.5.9 沒做好,應該回頭改文字而不是放任 grep 每次 fail。
   連非 Gemini model 都空)→ 冷卻等待或**改用 Opus 對話 agent 直接 Read 圖產同 schema 描述**
   (engine=opus-fallback),補完少數卡住的圖。
 - 插圖位置判斷:**Gemini 4 Hydrogen**(`anchor_review.py review`,見「逐張三立場校位」);套用與驗證:`insert_images.py`(確定性)。
+- **配額用盡後備(2026-11-22 引入;只在觸及限制時啟用,預設引擎不變)**:Antigravity 有**帳號層級**
+  `Individual quota reached`(429 `RESOURCE_EXHAUSTED`,所有模型一起停,約 4–5 小時重置)。判準:
+  `agy --model <id> -p "reply with OK only"` 回 429 且訊息含 `Resets in …`。觸發後:
+  1. **描述 → Claude Haiku subagent**:`describe_images.py --session <dir> --list-pending` 列出未描述圖,
+     subagent 逐張 **Read 圖**、照 `PROMPT_TEMPLATE` 寫 `<dir>/_desc_fallback/<stem>.json`;
+     `describe_images.py --import-dir <dir>/_desc_fallback --engine-tag claude-fallback/haiku` 逐張驗必填欄位後匯入
+     (palette/deck_page 仍由工具計算)。統籌者抽查 OCR 與三立場品質。
+  2. **逐張三立場校位 → Claude Sonnet subagent**:packet 切塊交 subagent,每張親自開圖、寫 reviews JSON
+     (同 `anchor_review.py` reviews schema,含 evidence 逐字);`anchor_review.py merge --repair-order` 照舊 R1–R5 機械驗收。
+  3. **翻譯缺口 → Claude Sonnet subagent**:同 `zh_parts/part_NNNNN-MMMMM.json` 格式補缺 index,`zh_parts_check.py` 驗收。
+  4. engine 標籤如實記錄(`claude-fallback/haiku`、reviews 標 sonnet),metadata 記「後備啟用原因」。配額恢復後新工作回到 Hydrogen。
+  - **預防**:平行 agy 工人 ≤ 8;大批量前先估總呼叫數(2026-11-22 實測:239 描述 + 205 校位 + ~90 批翻譯後,16 工人 15 分鐘燒完)。
 
 **描述 prompt 五要求 + 一禁令**
 1. `text_in_image`:逐字保留原語言(英/中/日,含頁碼)
@@ -283,6 +295,9 @@ S4.5.9 沒做好,應該回頭改文字而不是放任 grep 每次 fail。
      親自看圖、讀三立場、逐行讀候選段,
      定 `keep / move / drop` 與 `after_line`,並從選定行**逐字摘錄 evidence**(≥6 字)+ 一句 reason。
      放置原則同「人放圖規律」:錨在講者解說該圖的段尾、不錨小標下;章節頁放在引入該章的第一段後。
+  2'. 覆核者若回報「正確位置不在候選視窗」(監管提案漂移,常見於無頁碼的標題頁/收尾頁),用
+     `anchor_review.py override --session <dir> --anchors <supervised> --reviews <reviews> page-NN.png=<行>[:理由]`
+     改提案、重產該圖視窗並寫統籌者裁決;不得硬塞到錯的段落,也不要因視窗不對就 drop。
   3. `anchor_review.py merge` 機械驗收 R1 完備(每張恰一筆)/ R2 視窗內且非標題行 / **R3 evidence 逐字出現在該行**
      (證明讀過該段,不是憑分數)/ R4 不逆位 / R5 單錨 ≤2;任一不過 exit 1、不產 anchors,退回覆核者重做。
   4. `insert_images.py --apply --anchors anchors_reviewed.json` → `--verify` → `placement_check.py`。
@@ -816,4 +831,5 @@ S6 事後 audit 的語意同步改成「**不得渲染成字面**」:
 - 2026-08-09:新增 § S6.14 連結語法殘留(雙側守門:prepublish_gate 出版前擋、publish_qaqc 出版後 audit)。起因:COSCUP Day 2 要把簡報網址補進內文時查出 `md_to_html.inline_md()` 不支援 `[文字](網址)`,會渲染成字面文字,且前後皆無檢查。同步:本檔 § S6.14 條款與 § S6.10 清單、`scripts/prepublish_gate.py`、`scripts/publish_qaqc.py`。既有 6 本 master 與 10 本已出版書實測零命中,零誤擋。
 - 2026-09-02:§ S6.11 記入 **spec_gap(尚未修)** —— State A 含圖書的 S6.11 圖文相關性與 S6.11.c 順序檢核會**靜默跳過**:§ S4.5.13 的 `sK-` 跨場前綴只作用在 master/部署檔,`image_notes.json` 仍存裸檔名,導致 `slug in sess.parent.name` 與 `_notes_match_slug()` 兩條選取條件皆為 False(實測 bim-mcp-8 兩場交集皆 0)。修時須一併處理「notes 合併鍵碰撞」(各場裸 `page-NN.png`,bim-mcp-8 場 01/02 有 27 個同名鍵互蓋)與「`endswith` 一對多」。在修好前,含圖 State A 書的實際把關者是 `prepublish_gate` (3b/3c)(對 publish.md 無條件跑、`_SEQ_RE` + `_deck_family` 不受前綴影響)。起因:mcp8-02 貼 27 張簡報出版後 audit 全綠,核對才發現那兩項沒真的驗到。
 - 2026-09-02:`md_to_html` 修補述框內的 **HTML 註解與 `---`** —— 框內 `> <!-- ▍補述插入點:… -->` 原本被 `esc()` 跳脫成可見文字,把內部 TODO 漏到公開頁面;框內 `---` 渲染成字面 `<p>---</p>`。兩者頂層皆已正確處理,只有巢狀在 blockquote 內漏掉(新增 `HTML_COMMENT_Q`,頂層那條刻意維持嚴格以免框首註解把 blockquote 切成兩個)。同類問題:`normalize_punctuation._HTML_COMMENT_RE` 不接受前導 `>`,會把 `<!--` 轉成 `<！--` 使註解失效 —— 這也是 `prepublish_gate` 對該檔報「2 處半形標點未轉」卻無法安全自動修的原因,一併修正。`payload_nws` 的計數尺刻意不動(改了會掀開表格分隔列/圍欄標記的既有量測不對稱,保留率跳到 100.68%)。
+- 2026-11-22:§ S4.5.11 新增「配額用盡後備」(Haiku 描述 / Sonnet 校位與補翻;`describe_images.py --list-pending / --import-dir`)。只在 Antigravity 429 時啟用,預設仍是 Hydrogen。
 - 2026-11-22:§ S4.5.11 圖片 stage **全面改用 Gemini 4 Hydrogen**(`agy models` 新上架 `gemini-4-hydrogen-{low,medium,high,xhigh}`)。描述:`describe_images.py` 預設 `gemini-4-hydrogen-medium`,取代 2026-11 的三向分工(Sonnet OCR / Haiku 聽眾 / Codex terra 講者)分批任務。逐張三立場校位:新增 `anchor_review.py review`(agy headless 逐張開圖、單張 R2/R3 當場退件重問、逐張落盤可續跑、連續 3 張熔斷),取代 Sonnet 分組 subagent(那種分批曾兩組未開圖交差);`merge` R1–R5 機械驗收不變。實測 CS329Z lec1 對照:描述 ~20 s/張、覆核 ~12 s/張,與先前 Sonnet 覆核一致(±1 行)。另記 agy 旗標地雷:`-p` 必須放最後。

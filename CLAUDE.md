@@ -234,6 +234,8 @@ Phase A/B/C/D 都在精修同一份 cleaned.md(A/B 產出、C/D 出版前強制�
 同一模型,**取代**先前的三向分工(Sonnet OCR / Haiku 聽眾 / Codex terra 講者)與 Sonnet 分組覆核等分批任務;
 `anchor_review.py merge` R1–R5、`insert_images.py`、`placement_check.py` 照舊做機械驗收。
 角色分工細節以 [`docs/model-routing.md`](./docs/model-routing.md) 為準。
+**觸及 Antigravity 帳號配額(429 `Individual quota reached`)時的後備**:描述改 Claude Haiku、校位與翻譯缺口改 Claude Sonnet
+(subagent 只產 JSON,工具驗收匯入),**預設引擎不變**、engine 標籤如實記錄;平行 agy 工人 ≤ 8。流程見 § S4.5.11「配額用盡後備」。
 
 **做法守則:**
 - 多檔批次**一個做完再做下一個**(sequential),不要平行燒算力。

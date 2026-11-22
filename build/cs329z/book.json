@@ -1,36 +1,63 @@
 {
   "slug": "cs329z",
   "title": "CS 329Z: Engineering AI Agents",
-  "subtitle": "Stanford / Fall 2026｜共 11 講",
+  "subtitle": "Stanford / Fall 2026｜第 1–4 週",
   "shelf": "reading",
   "state": "A",
   "recommended_mode": "multipage",
   "sources": [
     "sessions/2026-11-20_stanford-cs329z-lec1",
     "sessions/2026-11-22_stanford-cs329z-lec2",
-    "sessions/2026-11-22_stanford-cs329z-lec3"
+    "sessions/2026-11-22_stanford-cs329z-lec3",
+    "sessions/2026-11-22_stanford-cs329z-lec4",
+    "sessions/2026-11-22_stanford-cs329z-lec5",
+    "sessions/2026-11-22_stanford-cs329z-lec6",
+    "sessions/2026-11-22_stanford-cs329z-lec7"
   ],
   "speakers": [
     {
-      "category": "Foundations & Landscape",
+      "category": "第 1 週（三）",
       "name": "Diyi Yang",
       "full": "Diyi Yang · Stanford 電腦科學助理教授（與 Michael Ryan、John Yang 共同授課）",
-      "talk": "第 1 講｜Intro to Agentic Systems：什麼是 AI 代理？代理式系統導論"
+      "talk": "Foundations & Landscape｜Intro to Agentic Systems：什麼是 AI 代理？代理式系統導論"
     },
     {
-      "category": "Foundations & Landscape",
+      "category": "第 2 週（一）",
       "name": "Michael Ryan",
       "full": "Michael Ryan · Stanford 電腦科學博士生（CS329Z 授課教師）",
-      "talk": "第 2 講｜LLMs for Agent Builders：給代理建構者的 LLM——上下文工程"
+      "talk": "Foundations & Landscape｜LLMs for Agent Builders：給代理建構者的 LLM——上下文工程"
     },
     {
-      "category": "Building Blocks",
+      "category": "第 2 週（三）",
       "name": "Diyi Yang",
       "full": "Diyi Yang · Stanford 電腦科學助理教授",
-      "talk": "第 3 講｜RAG Explained：從 BM25 到代理式 RAG"
+      "talk": "Building Blocks｜Retrieval-Augmented Generation：從 BM25 到代理式 RAG"
+    },
+    {
+      "category": "第 3 週（一）",
+      "name": "Diyi Yang",
+      "full": "Diyi Yang · Stanford 電腦科學助理教授",
+      "talk": "Building Blocks｜Tool Use & Function Calling：AI 代理如何使用工具——函式呼叫與 MCP"
+    },
+    {
+      "category": "第 3 週（三）",
+      "name": "Michael Ryan",
+      "full": "Michael Ryan · Stanford 電腦科學博士生（CS329Z 授課教師）",
+      "talk": "Frameworks & Agent Design｜Frameworks & Orchestration：DSPy 與 LangGraph——AI 代理框架解析"
+    },
+    {
+      "category": "第 4 週（一）",
+      "name": "Michael Ryan",
+      "full": "Michael Ryan · Stanford 電腦科學博士生（CS329Z 授課教師）",
+      "talk": "Frameworks & Agent Design｜Agent Design Patterns & Scaffolds：ReAct、CodeAct 與更多"
+    },
+    {
+      "category": "第 4 週（三）",
+      "name": "Michael Ryan",
+      "full": "Michael Ryan · Stanford 電腦科學博士生（CS329Z 授課教師）",
+      "talk": "Memory & Multi-Agent Systems｜Agent Memory Architectures：MemGPT 與記憶類型"
     }
   ],
   "venue": "Stanford Online · 課堂錄影",
-  "date": "2026.11.20",
-  "lectures_total": 11
+  "date": "2026.11.20"
 }
